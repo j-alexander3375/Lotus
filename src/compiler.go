@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const Version = "b0.1.0 pre-release"
+const Version = "b0.1.1 pre-release"
 
 // Compiler encapsulates the compilation process
 type Compiler struct {
