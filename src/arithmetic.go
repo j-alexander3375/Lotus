@@ -43,12 +43,12 @@ func (cg *CodeGenerator) generateBinaryOp(binop *BinaryOp) {
 	case TokenStar:
 		cg.textSection.WriteString("    imulq %rcx, %rax\n")
 	case TokenSlash:
-		cg.textSection.WriteString("    cqo\n")                    // sign extend rax to rdx:rax
-		cg.textSection.WriteString("    idivq %rcx\n")             // divide rax by rcx
+		cg.textSection.WriteString("    cqo\n")        // sign extend rax to rdx:rax
+		cg.textSection.WriteString("    idivq %rcx\n") // divide rax by rcx
 	case TokenPercent:
-		cg.textSection.WriteString("    cqo\n")                    // sign extend rax to rdx:rax
-		cg.textSection.WriteString("    idivq %rcx\n")             // divide rax by rcx
-		cg.textSection.WriteString("    movq %rdx, %rax\n")        // move remainder to rax
+		cg.textSection.WriteString("    cqo\n")             // sign extend rax to rdx:rax
+		cg.textSection.WriteString("    idivq %rcx\n")      // divide rax by rcx
+		cg.textSection.WriteString("    movq %rdx, %rax\n") // move remainder to rax
 	default:
 		fmt.Printf("Unknown binary operator: %v\n", binop.Operator)
 	}
@@ -93,4 +93,3 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 		}
 	}
 }
-

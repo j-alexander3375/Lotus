@@ -66,4 +66,3 @@ type Variable struct {
 	Type   TokenType
 	Offset int // stack offset from rbp
 }
-
