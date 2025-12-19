@@ -29,22 +29,10 @@ type ForLoop struct {
 
 func (f *ForLoop) astNode() {}
 
-// ComparisonOp represents comparison operators
-type ComparisonOp string
-
-const (
-	CmpEqual       ComparisonOp = "=="
-	CmpNotEqual    ComparisonOp = "!="
-	CmpLess        ComparisonOp = "<"
-	CmpLessEq      ComparisonOp = "<="
-	CmpGreater     ComparisonOp = ">"
-	CmpGreaterEq   ComparisonOp = ">="
-)
-
 // Comparison represents a comparison expression
 type Comparison struct {
 	Left     ASTNode
-	Operator ComparisonOp
+	Operator TokenType // TokenEqual, TokenNotEqual, TokenLess, TokenLessEq, TokenGreater, TokenGreaterEq
 	Right    ASTNode
 }
 
@@ -170,17 +158,17 @@ func (cg *CodeGenerator) generateComparison(cmp *Comparison) {
 
 	// Set result based on condition
 	switch cmp.Operator {
-	case CmpEqual:
+	case TokenEqual:
 		cg.textSection.WriteString("    sete %al\n")
-	case CmpNotEqual:
+	case TokenNotEqual:
 		cg.textSection.WriteString("    setne %al\n")
-	case CmpLess:
+	case TokenLess:
 		cg.textSection.WriteString("    setl %al\n")
-	case CmpLessEq:
+	case TokenLessEq:
 		cg.textSection.WriteString("    setle %al\n")
-	case CmpGreater:
+	case TokenGreater:
 		cg.textSection.WriteString("    setg %al\n")
-	case CmpGreaterEq:
+	case TokenGreaterEq:
 		cg.textSection.WriteString("    setge %al\n")
 	}
 

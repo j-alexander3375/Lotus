@@ -28,9 +28,30 @@ const (
 	TokenFatalln
 	TokenLogf
 	TokenLogln
-	TokenLParen // (
-	TokenRParen // )
-	TokenComma  // ,
+	TokenLParen    // (
+	TokenRParen    // )
+	TokenComma     // ,
+	TokenPlus      // +
+	TokenMinus     // -
+	TokenStar      // *
+	TokenSlash     // /
+	TokenPercent   // %
+	TokenEqual     // ==
+	TokenNotEqual  // !=
+	TokenLess      // <
+	TokenLessEq    // <=
+	TokenGreater   // >
+	TokenGreaterEq // >=
+	TokenAmpersand // &
+	TokenExclaim   // !
+	TokenLBrace    // {
+	TokenRBrace    // }
+	TokenIf        // if
+	TokenElse      // else
+	TokenWhile     // while
+	TokenFor       // for
+	TokenFn        // fn
+	TokenReturn    // return
 	TokenUnknown
 )
 
@@ -45,3 +66,4 @@ type Variable struct {
 	Type   TokenType
 	Offset int // stack offset from rbp
 }
+

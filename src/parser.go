@@ -233,8 +233,105 @@ func (p *Parser) parseFunctionCall() (*FunctionCall, error) {
 	}, nil
 }
 
-// parseExpression parses an expression
+// parseExpression parses an expression with operator precedence
 func (p *Parser) parseExpression() (ASTNode, error) {
+	return p.parseAddSubtract()
+}
+
+// parseAddSubtract handles + and - operators
+func (p *Parser) parseAddSubtract() (ASTNode, error) {
+	left, err := p.parseMultiplyDivide()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenPlus || p.current().Type == TokenMinus {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseMultiplyDivide()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseMultiplyDivide handles * / % operators
+func (p *Parser) parseMultiplyDivide() (ASTNode, error) {
+	left, err := p.parseComparison()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenStar || p.current().Type == TokenSlash || p.current().Type == TokenPercent {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseComparison()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseComparison handles comparison operators
+func (p *Parser) parseComparison() (ASTNode, error) {
+	left, err := p.parseUnary()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenEqual || p.current().Type == TokenNotEqual ||
+		p.current().Type == TokenLess || p.current().Type == TokenLessEq ||
+		p.current().Type == TokenGreater || p.current().Type == TokenGreaterEq {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		left = &Comparison{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseUnary handles unary operators
+func (p *Parser) parseUnary() (ASTNode, error) {
+	if p.current().Type == TokenMinus || p.current().Type == TokenExclaim || p.current().Type == TokenAmpersand || p.current().Type == TokenStar {
+		op := p.current().Type
+		p.advance()
+		operand, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryOp{
+			Operator: op,
+			Operand:  operand,
+		}, nil
+	}
+
+	return p.parsePrimary()
+}
+
+// parsePrimary handles primary expressions (literals, identifiers, parentheses)
+func (p *Parser) parsePrimary() (ASTNode, error) {
 	switch p.current().Type {
 	case TokenInt:
 		val, _ := parseIntToken(p.current().Value)
@@ -256,6 +353,16 @@ func (p *Parser) parseExpression() (ASTNode, error) {
 		name := p.current().Value
 		p.advance()
 		return &Identifier{Name: name}, nil
+	case TokenLParen:
+		p.advance()
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+		return expr, nil
 	default:
 		return nil, fmt.Errorf("unexpected token in expression: type %d", p.current().Type)
 	}

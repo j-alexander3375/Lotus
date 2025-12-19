@@ -61,6 +61,8 @@ func Tokenize(input string) []Token {
 			switch word {
 			case "ret":
 				tokens = append(tokens, Token{Type: TokenRet, Value: ""})
+			case "return":
+				tokens = append(tokens, Token{Type: TokenReturn, Value: ""})
 			case "true", "false":
 				tokens = append(tokens, Token{Type: TokenBool, Value: word})
 			case "int":
@@ -71,6 +73,16 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenTypeBool, Value: ""})
 			case "float":
 				tokens = append(tokens, Token{Type: TokenTypeFloat, Value: ""})
+			case "if":
+				tokens = append(tokens, Token{Type: TokenIf, Value: ""})
+			case "else":
+				tokens = append(tokens, Token{Type: TokenElse, Value: ""})
+			case "while":
+				tokens = append(tokens, Token{Type: TokenWhile, Value: ""})
+			case "for":
+				tokens = append(tokens, Token{Type: TokenFor, Value: ""})
+			case "fn":
+				tokens = append(tokens, Token{Type: TokenFn, Value: ""})
 			case "Printf":
 				tokens = append(tokens, Token{Type: TokenPrintf, Value: ""})
 			case "FPrintf":
@@ -123,11 +135,57 @@ func Tokenize(input string) []Token {
 		} else if c == ';' {
 			tokens = append(tokens, Token{Type: TokenSemi, Value: ""})
 		} else if c == '=' {
-			tokens = append(tokens, Token{Type: TokenAssign, Value: ""})
+			// Check for ==
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenEqual, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenAssign, Value: ""})
+			}
+		} else if c == '!' {
+			// Check for !=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenNotEqual, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenExclaim, Value: ""})
+			}
+		} else if c == '<' {
+			// Check for <=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenLessEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenLess, Value: ""})
+			}
+		} else if c == '>' {
+			// Check for >=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenGreaterEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenGreater, Value: ""})
+			}
+		} else if c == '+' {
+			tokens = append(tokens, Token{Type: TokenPlus, Value: ""})
+		} else if c == '-' {
+			tokens = append(tokens, Token{Type: TokenMinus, Value: ""})
+		} else if c == '*' {
+			tokens = append(tokens, Token{Type: TokenStar, Value: ""})
+		} else if c == '/' {
+			tokens = append(tokens, Token{Type: TokenSlash, Value: ""})
+		} else if c == '%' {
+			tokens = append(tokens, Token{Type: TokenPercent, Value: ""})
+		} else if c == '&' {
+			tokens = append(tokens, Token{Type: TokenAmpersand, Value: ""})
 		} else if c == '(' {
 			tokens = append(tokens, Token{Type: TokenLParen, Value: ""})
 		} else if c == ')' {
 			tokens = append(tokens, Token{Type: TokenRParen, Value: ""})
+		} else if c == '{' {
+			tokens = append(tokens, Token{Type: TokenLBrace, Value: ""})
+		} else if c == '}' {
+			tokens = append(tokens, Token{Type: TokenRBrace, Value: ""})
 		} else if c == ',' {
 			tokens = append(tokens, Token{Type: TokenComma, Value: ""})
 		} else {
@@ -145,6 +203,8 @@ func TokenValue(t Token) string {
 	switch t.Type {
 	case TokenRet:
 		return "ret"
+	case TokenReturn:
+		return "return"
 	case TokenInt:
 		return t.Value
 	case TokenSemi:
@@ -197,6 +257,46 @@ func TokenValue(t Token) string {
 		return ")"
 	case TokenComma:
 		return ","
+	case TokenPlus:
+		return "+"
+	case TokenMinus:
+		return "-"
+	case TokenStar:
+		return "*"
+	case TokenSlash:
+		return "/"
+	case TokenPercent:
+		return "%"
+	case TokenEqual:
+		return "=="
+	case TokenNotEqual:
+		return "!="
+	case TokenLess:
+		return "<"
+	case TokenLessEq:
+		return "<="
+	case TokenGreater:
+		return ">"
+	case TokenGreaterEq:
+		return ">="
+	case TokenAmpersand:
+		return "&"
+	case TokenExclaim:
+		return "!"
+	case TokenLBrace:
+		return "{"
+	case TokenRBrace:
+		return "}"
+	case TokenIf:
+		return "if"
+	case TokenElse:
+		return "else"
+	case TokenWhile:
+		return "while"
+	case TokenFor:
+		return "for"
+	case TokenFn:
+		return "fn"
 	default:
 		return "unknown"
 	}

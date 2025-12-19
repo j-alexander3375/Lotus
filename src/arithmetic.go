@@ -2,21 +2,10 @@ package main
 
 import "fmt"
 
-// ArithmeticOperator represents binary arithmetic operations
-type ArithmeticOperator int
-
-const (
-	OpAdd ArithmeticOperator = iota
-	OpSubtract
-	OpMultiply
-	OpDivide
-	OpModulo
-)
-
 // BinaryOp represents a binary operation expression
 type BinaryOp struct {
 	Left     ASTNode
-	Operator ArithmeticOperator
+	Operator TokenType // TokenPlus, TokenMinus, TokenStar, TokenSlash, TokenPercent
 	Right    ASTNode
 }
 
@@ -24,7 +13,7 @@ func (b *BinaryOp) astNode() {}
 
 // UnaryOp represents a unary operation expression
 type UnaryOp struct {
-	Operator string // "+", "-", "!"
+	Operator TokenType // TokenMinus, TokenExclaim, TokenAmpersand, TokenStar
 	Operand  ASTNode
 }
 
@@ -47,19 +36,21 @@ func (cg *CodeGenerator) generateBinaryOp(binop *BinaryOp) {
 
 	// Perform operation
 	switch binop.Operator {
-	case OpAdd:
+	case TokenPlus:
 		cg.textSection.WriteString("    addq %rcx, %rax\n")
-	case OpSubtract:
+	case TokenMinus:
 		cg.textSection.WriteString("    subq %rcx, %rax\n")
-	case OpMultiply:
+	case TokenStar:
 		cg.textSection.WriteString("    imulq %rcx, %rax\n")
-	case OpDivide:
-		cg.textSection.WriteString("    cqo\n")
-		cg.textSection.WriteString("    idivq %rcx\n")
-	case OpModulo:
-		cg.textSection.WriteString("    cqo\n")
-		cg.textSection.WriteString("    idivq %rcx\n")
-		cg.textSection.WriteString("    movq %rdx, %rax\n") // remainder in rdx
+	case TokenSlash:
+		cg.textSection.WriteString("    cqo\n")                    // sign extend rax to rdx:rax
+		cg.textSection.WriteString("    idivq %rcx\n")             // divide rax by rcx
+	case TokenPercent:
+		cg.textSection.WriteString("    cqo\n")                    // sign extend rax to rdx:rax
+		cg.textSection.WriteString("    idivq %rcx\n")             // divide rax by rcx
+		cg.textSection.WriteString("    movq %rdx, %rax\n")        // move remainder to rax
+	default:
+		fmt.Printf("Unknown binary operator: %v\n", binop.Operator)
 	}
 }
 
@@ -68,14 +59,16 @@ func (cg *CodeGenerator) generateUnaryOp(unop *UnaryOp) {
 	cg.generateExpressionToReg(unop.Operand, "rax")
 
 	switch unop.Operator {
-	case "-":
+	case TokenMinus:
 		cg.textSection.WriteString("    negq %rax\n")
-	case "+":
-		// No-op for unary plus
-	case "!":
+	case TokenExclaim:
 		cg.textSection.WriteString("    testq %rax, %rax\n")
 		cg.textSection.WriteString("    setzb %al\n")
 		cg.textSection.WriteString("    movzbl %al, %eax\n")
+	case TokenAmpersand:
+		// Unary & (address-of) - handled in references.go
+	case TokenStar:
+		// Unary * (dereference) - handled in references.go
 	}
 }
 
@@ -100,3 +93,4 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 		}
 	}
 }
+
