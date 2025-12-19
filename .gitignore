@@ -1,0 +1,6 @@
+*.s
+*.o
+lotus
+a.out
+*.lts.bak
+*.backup

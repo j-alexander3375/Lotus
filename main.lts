@@ -1,0 +1,4 @@
+int first = 3;
+int second = first;
+
+ret 0;
