@@ -116,7 +116,7 @@ func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 		cg.generatePrintInt(call.Args)
 	case "Println":
 		cg.generatePrintln(call.Args)
-	// Add more print functions as needed
+		// Add more print functions as needed
 	}
 }
 
