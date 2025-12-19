@@ -5,23 +5,47 @@ import (
 	"strings"
 )
 
+// escapeAssemblyString escapes a string for use in assembly code
+func escapeAssemblyString(s string) string {
+	result := strings.Builder{}
+	for _, ch := range s {
+		switch ch {
+		case '\n':
+			result.WriteString("\\n")
+		case '\t':
+			result.WriteString("\\t")
+		case '\r':
+			result.WriteString("\\r")
+		case '"':
+			result.WriteString("\\\"")
+		case '\\':
+			result.WriteString("\\\\")
+		default:
+			result.WriteRune(ch)
+		}
+	}
+	return result.String()
+}
+
 // CodeGenerator handles AST to assembly conversion
 type CodeGenerator struct {
-	dataSection strings.Builder
-	textSection strings.Builder
-	variables   map[string]Variable
-	stackOffset int
-	stringCount int
-	exitCode    int
+	dataSection  strings.Builder
+	textSection  strings.Builder
+	variables    map[string]Variable
+	stringLengths map[string]int // maps variable name to string length
+	stackOffset  int
+	stringCount  int
+	exitCode     int
 }
 
 // NewCodeGenerator creates a new code generator
 func NewCodeGenerator() *CodeGenerator {
 	return &CodeGenerator{
-		variables:   make(map[string]Variable),
-		stackOffset: 0,
-		stringCount: 0,
-		exitCode:    0,
+		variables:     make(map[string]Variable),
+		stringLengths: make(map[string]int),
+		stackOffset:   0,
+		stringCount:   0,
+		exitCode:      0,
 	}
 }
 
@@ -90,10 +114,13 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 		if lit, ok := decl.Value.(*StringLiteral); ok {
 			label := fmt.Sprintf(".str%d", cg.stringCount)
 			cg.stringCount++
-			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, lit.Value))
-			cg.textSection.WriteString(fmt.Sprintf("    # string %s = \"%s\"\n", decl.Name, lit.Value))
+			escapedStr := escapeAssemblyString(lit.Value)
+			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, escapedStr))
+			cg.textSection.WriteString(fmt.Sprintf("    # string %s = \"%s\"\n", decl.Name, escapedStr))
 			cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%rax\n", label))
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, -%d(%%rbp)\n", cg.stackOffset))
+			// Track the string length for this variable
+			cg.stringLengths[decl.Name] = len(lit.Value)
 		}
 	}
 }
@@ -110,13 +137,14 @@ func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 	switch call.Name {
 	case "Printf":
 		cg.generatePrintf(call.Args)
+	case "printf":
+		cg.generatePrintf(call.Args)
 	case "PrintString":
 		cg.generatePrintString(call.Args)
 	case "PrintInt":
 		cg.generatePrintInt(call.Args)
 	case "Println":
 		cg.generatePrintln(call.Args)
-		// Add more print functions as needed
 	}
 }
 
@@ -139,16 +167,47 @@ func (cg *CodeGenerator) generatePrintString(args []ASTNode) {
 	}
 }
 
-// generatePrintf generates code for Printf(format, args...)
+// generatePrintf generates code for Printf(format) or printf(str)
 func (cg *CodeGenerator) generatePrintf(args []ASTNode) {
 	if len(args) < 1 {
 		return
 	}
 
 	cg.textSection.WriteString("    # Printf\n")
-	// Printf implementation would link to libc printf
-	// For now, just emit a comment
-	cg.textSection.WriteString("    # call to printf() would go here\n")
+
+	// Handle string literal
+	if lit, ok := args[0].(*StringLiteral); ok {
+		label := fmt.Sprintf(".str%d", cg.stringCount)
+		length := len(lit.Value)
+		cg.stringCount++
+		escapedStr := escapeAssemblyString(lit.Value)
+		cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, escapedStr))
+		// write() syscall: rax=1, rdi=fd(1), rsi=buf, rdx=count
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%rsi\n", label))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
+		cg.textSection.WriteString("    movq $1, %rdi\n")       // stdout fd
+		cg.textSection.WriteString("    movq $1, %rax\n")       // write syscall
+		cg.textSection.WriteString("    syscall\n")
+		return
+	}
+
+	// Handle identifier (variable reference)
+	if id, ok := args[0].(*Identifier); ok {
+		if v, exists := cg.variables[id.Name]; exists {
+			cg.textSection.WriteString("    # Printf with variable\n")
+			// Load string pointer from stack
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", v.Offset))
+			// Use tracked string length if available, otherwise use max
+			length := 100
+			if len, ok := cg.stringLengths[id.Name]; ok {
+				length = len
+			}
+			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
+			cg.textSection.WriteString("    movq $1, %rdi\n")               // stdout fd
+			cg.textSection.WriteString("    movq $1, %rax\n")               // write syscall
+			cg.textSection.WriteString("    syscall\n")
+		}
+	}
 }
 
 // generatePrintInt generates code for PrintInt(val)

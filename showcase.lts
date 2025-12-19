@@ -1,4 +1,0 @@
-int answer = 42;
-bool success = true;
-string welcome = "Lotus";
-ret 0;
