@@ -78,6 +78,16 @@ func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 		cg.generateReturnStatement(s)
 	case *FunctionCall:
 		cg.generateFunctionCall(s)
+	case *Assignment:
+		cg.generateAssignment(s)
+	case *IfStatement:
+		cg.generateIfStatement(s)
+	case *WhileLoop:
+		cg.generateWhileLoop(s)
+	case *ForLoop:
+		cg.generateForLoop(s)
+	case *FunctionDefinition:
+		cg.generateFunctionDefinition(s)
 	}
 }
 
@@ -134,6 +144,11 @@ func (cg *CodeGenerator) generateReturnStatement(ret *ReturnStatement) {
 
 // generateFunctionCall generates code for a function call
 func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
+	// Check if it's a user-defined function first
+	if cg.generateUserFunctionCall(call) {
+		return
+	}
+
 	// Check if it's a registered print function
 	if printFunc, ok := RegisteredPrintFunctions[call.Name]; ok {
 		printFunc.CodeGen(cg, call.Args)
