@@ -1,0 +1,7 @@
+printf("Test printf - no newline at end: ");
+printf("done");
+printf("\n");
+println("Test println function");
+string msg = "String in variable";
+println(msg);
+ret 0;

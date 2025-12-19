@@ -134,92 +134,14 @@ func (cg *CodeGenerator) generateReturnStatement(ret *ReturnStatement) {
 
 // generateFunctionCall generates code for a function call
 func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
-	switch call.Name {
-	case "Printf":
-		cg.generatePrintf(call.Args)
-	case "printf":
-		cg.generatePrintf(call.Args)
-	case "PrintString":
-		cg.generatePrintString(call.Args)
-	case "PrintInt":
-		cg.generatePrintInt(call.Args)
-	case "Println":
-		cg.generatePrintln(call.Args)
-	}
-}
-
-// generatePrintString generates code for PrintString(str)
-func (cg *CodeGenerator) generatePrintString(args []ASTNode) {
-	if len(args) < 1 {
+	// Check if it's a registered print function
+	if printFunc, ok := RegisteredPrintFunctions[call.Name]; ok {
+		printFunc.CodeGen(cg, call.Args)
 		return
 	}
 
-	if lit, ok := args[0].(*StringLiteral); ok {
-		label := fmt.Sprintf(".str%d", cg.stringCount)
-		cg.stringCount++
-		cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, lit.Value))
-
-		cg.textSection.WriteString("    # PrintString\n")
-		cg.textSection.WriteString("    leaq " + label + "(%rip), %rdi\n")
-		cg.textSection.WriteString("    movq $1, %rsi\n") // length = 1 byte for now (simplified)
-		// We could call libc write() here, but for now just comment
-		cg.textSection.WriteString("    # call to write() would go here\n")
-	}
-}
-
-// generatePrintf generates code for Printf(format) or printf(str)
-func (cg *CodeGenerator) generatePrintf(args []ASTNode) {
-	if len(args) < 1 {
-		return
-	}
-
-	cg.textSection.WriteString("    # Printf\n")
-
-	// Handle string literal
-	if lit, ok := args[0].(*StringLiteral); ok {
-		label := fmt.Sprintf(".str%d", cg.stringCount)
-		length := len(lit.Value)
-		cg.stringCount++
-		escapedStr := escapeAssemblyString(lit.Value)
-		cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, escapedStr))
-		// write() syscall: rax=1, rdi=fd(1), rsi=buf, rdx=count
-		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%rsi\n", label))
-		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
-		cg.textSection.WriteString("    movq $1, %rdi\n")       // stdout fd
-		cg.textSection.WriteString("    movq $1, %rax\n")       // write syscall
-		cg.textSection.WriteString("    syscall\n")
-		return
-	}
-
-	// Handle identifier (variable reference)
-	if id, ok := args[0].(*Identifier); ok {
-		if v, exists := cg.variables[id.Name]; exists {
-			cg.textSection.WriteString("    # Printf with variable\n")
-			// Load string pointer from stack
-			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", v.Offset))
-			// Use tracked string length if available, otherwise use max
-			length := 100
-			if len, ok := cg.stringLengths[id.Name]; ok {
-				length = len
-			}
-			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
-			cg.textSection.WriteString("    movq $1, %rdi\n")               // stdout fd
-			cg.textSection.WriteString("    movq $1, %rax\n")               // write syscall
-			cg.textSection.WriteString("    syscall\n")
-		}
-	}
-}
-
-// generatePrintInt generates code for PrintInt(val)
-func (cg *CodeGenerator) generatePrintInt(args []ASTNode) {
-	cg.textSection.WriteString("    # PrintInt\n")
-	cg.textSection.WriteString("    # call to print int would go here\n")
-}
-
-// generatePrintln generates code for Println(args...)
-func (cg *CodeGenerator) generatePrintln(args []ASTNode) {
-	cg.textSection.WriteString("    # Println\n")
-	cg.textSection.WriteString("    # call to println would go here\n")
+	// If not a recognized print function, emit a comment (future: user-defined functions)
+	cg.textSection.WriteString(fmt.Sprintf("    # Unknown function call: %s\n", call.Name))
 }
 
 // buildFinalAssembly builds the final assembly program
