@@ -17,6 +17,21 @@ const (
 	TokenTypeString // type keyword: string
 	TokenTypeBool   // type keyword: bool
 	TokenTypeFloat  // type keyword: float
+	TokenPrintString
+	TokenPrintf
+	TokenFPrintf
+	TokenPrintln
+	TokenSPrint
+	TokenSPrintf
+	TokenSPrintln
+	TokenFatalf
+	TokenFatalln
+	TokenLogf
+	TokenLogln
+	TokenLParen // (
+	TokenRParen // )
+	TokenComma  // ,
+	TokenUnknown
 )
 
 type Token struct {

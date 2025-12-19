@@ -57,20 +57,8 @@ func (c *Compiler) CompileFile(inputPath string) error {
 		return c.writeAssembly(asm)
 	}
 
-	// Handle binary output mode
-	if c.Options.OutPath != "a.out" {
-		return c.buildBinary(asm)
-	}
-
-	// Default: just report tokenization status
-	if tokens[len(tokens)-1].Type == TokenEOF {
-		log.Println("Tokenization completed successfully.")
-		log.Print("End of File reached. Closing File Buffer.")
-	} else {
-		return fmt.Errorf("tokenization did not complete successfully")
-	}
-
-	return nil
+	// Default: build binary
+	return c.buildBinary(asm)
 }
 
 // writeAssembly writes assembly output to file

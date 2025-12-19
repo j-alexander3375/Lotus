@@ -71,6 +71,26 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenTypeBool, Value: ""})
 			case "float":
 				tokens = append(tokens, Token{Type: TokenTypeFloat, Value: ""})
+			case "Printf":
+				tokens = append(tokens, Token{Type: TokenPrintf, Value: ""})
+			case "FPrintf":
+				tokens = append(tokens, Token{Type: TokenFPrintf, Value: ""})
+			case "Println":
+				tokens = append(tokens, Token{Type: TokenPrintln, Value: ""})
+			case "SPrint":
+				tokens = append(tokens, Token{Type: TokenSPrint, Value: ""})
+			case "SPrintf":
+				tokens = append(tokens, Token{Type: TokenSPrintf, Value: ""})
+			case "Sprintln":
+				tokens = append(tokens, Token{Type: TokenSPrintln, Value: ""})
+			case "Fatalf":
+				tokens = append(tokens, Token{Type: TokenFatalf, Value: ""})
+			case "Fatalln":
+				tokens = append(tokens, Token{Type: TokenFatalln, Value: ""})
+			case "Logf":
+				tokens = append(tokens, Token{Type: TokenLogf, Value: ""})
+			case "Logln":
+				tokens = append(tokens, Token{Type: TokenLogln, Value: ""})
 			default:
 				tokens = append(tokens, Token{Type: TokenIdentifier, Value: word})
 			}
@@ -104,6 +124,12 @@ func Tokenize(input string) []Token {
 			tokens = append(tokens, Token{Type: TokenSemi, Value: ""})
 		} else if c == '=' {
 			tokens = append(tokens, Token{Type: TokenAssign, Value: ""})
+		} else if c == '(' {
+			tokens = append(tokens, Token{Type: TokenLParen, Value: ""})
+		} else if c == ')' {
+			tokens = append(tokens, Token{Type: TokenRParen, Value: ""})
+		} else if c == ',' {
+			tokens = append(tokens, Token{Type: TokenComma, Value: ""})
 		} else {
 			fmt.Fprintf(os.Stderr, "Unable to parse %c\n", c)
 			return []Token{}
@@ -145,6 +171,32 @@ func TokenValue(t Token) string {
 		return "bool"
 	case TokenTypeFloat:
 		return "float"
+	case TokenPrintf:
+		return "Printf"
+	case TokenFPrintf:
+		return "FPrintf"
+	case TokenPrintln:
+		return "Println"
+	case TokenSPrint:
+		return "SPrint"
+	case TokenSPrintln:
+		return "SPrintln"
+	case TokenSPrintf:
+		return "SPrintf"
+	case TokenFatalf:
+		return "Fatalf"
+	case TokenFatalln:
+		return "Fatalln"
+	case TokenLogf:
+		return "Logf"
+	case TokenLogln:
+		return "Logln"
+	case TokenLParen:
+		return "("
+	case TokenRParen:
+		return ")"
+	case TokenComma:
+		return ","
 	default:
 		return "unknown"
 	}
