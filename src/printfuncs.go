@@ -7,24 +7,24 @@ import (
 
 // PrintFunction represents a print function that can be called in Lotus code
 type PrintFunction struct {
-	Name       string
-	NumArgs    int // -1 for variadic
-	ArgTypes   []TokenType
-	CodeGen    func(*CodeGenerator, []ASTNode) // Code generation function
+	Name     string
+	NumArgs  int // -1 for variadic
+	ArgTypes []TokenType
+	CodeGen  func(*CodeGenerator, []ASTNode) // Code generation function
 }
 
 // RegisteredPrintFunctions maps function names to their implementations
 var RegisteredPrintFunctions = map[string]*PrintFunction{
-	"printf":    {Name: "printf", NumArgs: -1, CodeGen: generatePrintfCode},
-	"println":   {Name: "println", NumArgs: -1, CodeGen: generatePrintlnCode},
-	"fprintf":   {Name: "fprintf", NumArgs: -1, CodeGen: generateFprintfCode},
-	"sprint":    {Name: "sprint", NumArgs: -1, CodeGen: generateSprintCode},
-	"sprintf":   {Name: "sprintf", NumArgs: -1, CodeGen: generateSprintfCode},
-	"sprintln":  {Name: "sprintln", NumArgs: -1, CodeGen: generateSprintlnCode},
-	"fatalf":    {Name: "fatalf", NumArgs: -1, CodeGen: generateFatalfCode},
-	"fatalln":   {Name: "fatalln", NumArgs: -1, CodeGen: generateFatallnCode},
-	"logf":      {Name: "logf", NumArgs: -1, CodeGen: generateLogfCode},
-	"logln":     {Name: "logln", NumArgs: -1, CodeGen: generateLoglnCode},
+	"printf":   {Name: "printf", NumArgs: -1, CodeGen: generatePrintfCode},
+	"println":  {Name: "println", NumArgs: -1, CodeGen: generatePrintlnCode},
+	"fprintf":  {Name: "fprintf", NumArgs: -1, CodeGen: generateFprintfCode},
+	"sprint":   {Name: "sprint", NumArgs: -1, CodeGen: generateSprintCode},
+	"sprintf":  {Name: "sprintf", NumArgs: -1, CodeGen: generateSprintfCode},
+	"sprintln": {Name: "sprintln", NumArgs: -1, CodeGen: generateSprintlnCode},
+	"fatalf":   {Name: "fatalf", NumArgs: -1, CodeGen: generateFatalfCode},
+	"fatalln":  {Name: "fatalln", NumArgs: -1, CodeGen: generateFatallnCode},
+	"logf":     {Name: "logf", NumArgs: -1, CodeGen: generateLogfCode},
+	"logln":    {Name: "logln", NumArgs: -1, CodeGen: generateLoglnCode},
 }
 
 // generatePrintfCode generates assembly for printf(str) - outputs to stdout via write() syscall
@@ -45,8 +45,8 @@ func generatePrintfCode(cg *CodeGenerator, args []ASTNode) {
 		// write() syscall: rax=1, rdi=fd(1), rsi=buf, rdx=count
 		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%rsi\n", label))
 		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
-		cg.textSection.WriteString("    movq $1, %rdi\n")       // stdout fd
-		cg.textSection.WriteString("    movq $1, %rax\n")       // write syscall
+		cg.textSection.WriteString("    movq $1, %rdi\n") // stdout fd
+		cg.textSection.WriteString("    movq $1, %rax\n") // write syscall
 		cg.textSection.WriteString("    syscall\n")
 		return
 	}
@@ -63,8 +63,8 @@ func generatePrintfCode(cg *CodeGenerator, args []ASTNode) {
 				length = len
 			}
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
-			cg.textSection.WriteString("    movq $1, %rdi\n")               // stdout fd
-			cg.textSection.WriteString("    movq $1, %rax\n")               // write syscall
+			cg.textSection.WriteString("    movq $1, %rdi\n") // stdout fd
+			cg.textSection.WriteString("    movq $1, %rax\n") // write syscall
 			cg.textSection.WriteString("    syscall\n")
 		}
 	}
@@ -74,7 +74,7 @@ func generatePrintfCode(cg *CodeGenerator, args []ASTNode) {
 func generatePrintlnCode(cg *CodeGenerator, args []ASTNode) {
 	// Print the content
 	generatePrintfCode(cg, args)
-	
+
 	// Add newline
 	cg.textSection.WriteString("    # Println - add newline\n")
 	label := fmt.Sprintf(".newline%d", cg.stringCount)

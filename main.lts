@@ -1,8 +1,0 @@
-int first = 3;
-string second = "first";
-
-PrintInt(first);
-Print
-
-
-ret 0;

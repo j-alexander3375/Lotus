@@ -29,13 +29,13 @@ func escapeAssemblyString(s string) string {
 
 // CodeGenerator handles AST to assembly conversion
 type CodeGenerator struct {
-	dataSection  strings.Builder
-	textSection  strings.Builder
-	variables    map[string]Variable
+	dataSection   strings.Builder
+	textSection   strings.Builder
+	variables     map[string]Variable
 	stringLengths map[string]int // maps variable name to string length
-	stackOffset  int
-	stringCount  int
-	exitCode     int
+	stackOffset   int
+	stringCount   int
+	exitCode      int
 }
 
 // NewCodeGenerator creates a new code generator
