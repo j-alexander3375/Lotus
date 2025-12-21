@@ -55,6 +55,21 @@ const (
 	TokenExclaim   // !
 	TokenLBrace    // {
 	TokenRBrace    // }
+	TokenPipe      // |
+	TokenCaret     // ^
+	TokenTilde     // ~
+	TokenAnd       // &&
+	TokenOr        // ||
+	TokenLShift    // <<
+	TokenRShift    // >>
+	TokenPlusPlus  // ++
+	TokenMinusMinus // --
+	TokenPlusEq    // +=
+	TokenMinusEq   // -=
+	TokenStarEq    // *=
+	TokenSlashEq   // /=
+	TokenPercentEq // %=
+	TokenQuestion  // ?
 	TokenIf        // if
 	TokenElse      // else
 	TokenWhile     // while

@@ -80,6 +80,8 @@ func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 		cg.generateFunctionCall(s)
 	case *Assignment:
 		cg.generateAssignment(s)
+	case *CompoundAssignment:
+		cg.generateCompoundAssignment(s)
 	case *IfStatement:
 		cg.generateIfStatement(s)
 	case *WhileLoop:

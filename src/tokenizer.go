@@ -183,39 +183,84 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenExclaim, Value: ""})
 			}
 		} else if c == '<' {
-			// Check for <=
+			// Check for <= or <<
 			if i+1 < len(runes) && runes[i+1] == '=' {
 				tokens = append(tokens, Token{Type: TokenLessEq, Value: ""})
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '<' {
+				tokens = append(tokens, Token{Type: TokenLShift, Value: ""})
 				i++
 			} else {
 				tokens = append(tokens, Token{Type: TokenLess, Value: ""})
 			}
 		} else if c == '>' {
-			// Check for >=
+			// Check for >= or >>
 			if i+1 < len(runes) && runes[i+1] == '=' {
 				tokens = append(tokens, Token{Type: TokenGreaterEq, Value: ""})
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '>' {
+				tokens = append(tokens, Token{Type: TokenRShift, Value: ""})
 				i++
 			} else {
 				tokens = append(tokens, Token{Type: TokenGreater, Value: ""})
 			}
 		} else if c == '+' {
-			tokens = append(tokens, Token{Type: TokenPlus, Value: ""})
+			// Check for ++ or +=
+			if i+1 < len(runes) && runes[i+1] == '+' {
+				tokens = append(tokens, Token{Type: TokenPlusPlus, Value: ""})
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenPlusEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenPlus, Value: ""})
+			}
 		} else if c == '-' {
-			// Check for ->
-			if i+1 < len(runes) && runes[i+1] == '>' {
+			// Check for --, ->, or -=
+			if i+1 < len(runes) && runes[i+1] == '-' {
+				tokens = append(tokens, Token{Type: TokenMinusMinus, Value: ""})
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '>' {
 				tokens = append(tokens, Token{Type: TokenArrow, Value: ""})
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenMinusEq, Value: ""})
 				i++
 			} else {
 				tokens = append(tokens, Token{Type: TokenMinus, Value: ""})
 			}
 		} else if c == '*' {
-			tokens = append(tokens, Token{Type: TokenStar, Value: ""})
+			// Check for *=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenStarEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenStar, Value: ""})
+			}
 		} else if c == '/' {
-			tokens = append(tokens, Token{Type: TokenSlash, Value: ""})
+			// Check for /=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenSlashEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenSlash, Value: ""})
+			}
 		} else if c == '%' {
-			tokens = append(tokens, Token{Type: TokenPercent, Value: ""})
+			// Check for %=
+			if i+1 < len(runes) && runes[i+1] == '=' {
+				tokens = append(tokens, Token{Type: TokenPercentEq, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenPercent, Value: ""})
+			}
 		} else if c == '&' {
-			tokens = append(tokens, Token{Type: TokenAmpersand, Value: ""})
+			// Check for &&
+			if i+1 < len(runes) && runes[i+1] == '&' {
+				tokens = append(tokens, Token{Type: TokenAnd, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenAmpersand, Value: ""})
+			}
 		} else if c == '[' {
 			tokens = append(tokens, Token{Type: TokenLBracket, Value: ""})
 		} else if c == ']' {
@@ -234,6 +279,20 @@ func Tokenize(input string) []Token {
 			tokens = append(tokens, Token{Type: TokenRBrace, Value: ""})
 		} else if c == ',' {
 			tokens = append(tokens, Token{Type: TokenComma, Value: ""})
+		} else if c == '|' {
+			// Check for ||
+			if i+1 < len(runes) && runes[i+1] == '|' {
+				tokens = append(tokens, Token{Type: TokenOr, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenPipe, Value: ""})
+			}
+		} else if c == '^' {
+			tokens = append(tokens, Token{Type: TokenCaret, Value: ""})
+		} else if c == '~' {
+			tokens = append(tokens, Token{Type: TokenTilde, Value: ""})
+		} else if c == '?' {
+			tokens = append(tokens, Token{Type: TokenQuestion, Value: ""})
 		} else {
 			fmt.Fprintf(os.Stderr, "Unable to parse %c\n", c)
 			return []Token{}
@@ -375,6 +434,36 @@ func TokenValue(t Token) string {
 		return ":"
 	case TokenArrow:
 		return "->"
+	case TokenPipe:
+		return "|"
+	case TokenCaret:
+		return "^"
+	case TokenTilde:
+		return "~"
+	case TokenAnd:
+		return "&&"
+	case TokenOr:
+		return "||"
+	case TokenLShift:
+		return "<<"
+	case TokenRShift:
+		return ">>"
+	case TokenPlusPlus:
+		return "++"
+	case TokenMinusMinus:
+		return "--"
+	case TokenPlusEq:
+		return "+="
+	case TokenMinusEq:
+		return "-="
+	case TokenStarEq:
+		return "*="
+	case TokenSlashEq:
+		return "/="
+	case TokenPercentEq:
+		return "%="
+	case TokenQuestion:
+		return "?"
 	case TokenIf:
 		return "if"
 	case TokenElse:
