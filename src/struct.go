@@ -46,10 +46,10 @@ func (cg *CodeGenerator) generateStructDefinition(def *StructDefinition) {
 		fieldSize := getTypeSizeFromToken(def.Fields[i].Type)
 		offset += fieldSize
 	}
-	
+
 	// Register struct in global registry
 	StructRegistry[def.Name] = def
-	
+
 	// No assembly generation needed for type definition
 }
 
@@ -60,19 +60,19 @@ func (cg *CodeGenerator) generateStructLiteral(lit *StructLiteral) {
 		fmt.Printf("Error: struct type '%s' not defined\n", lit.StructName)
 		return
 	}
-	
+
 	// Calculate total struct size
 	totalSize := 0
 	for _, field := range structDef.Fields {
 		fieldSize := getTypeSizeFromToken(field.Type)
 		totalSize += fieldSize
 	}
-	
+
 	// Allocate memory for struct on heap
 	cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdi\n", totalSize))
 	cg.textSection.WriteString("    call malloc@PLT\n")
 	cg.textSection.WriteString("    pushq %rax\n") // Save struct pointer
-	
+
 	// Initialize each field
 	for fieldName, valueExpr := range lit.Fields {
 		// Find field definition
@@ -83,18 +83,18 @@ func (cg *CodeGenerator) generateStructLiteral(lit *StructLiteral) {
 				break
 			}
 		}
-		
+
 		if fieldDef == nil {
 			fmt.Printf("Error: field '%s' not found in struct '%s'\n", fieldName, lit.StructName)
 			continue
 		}
-		
+
 		// Evaluate field value
 		cg.generateExpressionToReg(valueExpr, "rcx")
-		
+
 		// Get struct pointer
 		cg.textSection.WriteString("    movq (%rsp), %rax\n")
-		
+
 		// Store value at field offset
 		fieldSize := getTypeSizeFromToken(fieldDef.Type)
 		switch fieldSize {
@@ -108,7 +108,7 @@ func (cg *CodeGenerator) generateStructLiteral(lit *StructLiteral) {
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rcx, %d(%%rax)\n", fieldDef.Offset))
 		}
 	}
-	
+
 	// Pop struct pointer back to rax
 	cg.textSection.WriteString("    popq %rax\n")
 }
@@ -117,7 +117,7 @@ func (cg *CodeGenerator) generateStructLiteral(lit *StructLiteral) {
 func (cg *CodeGenerator) generateFieldAccess(access *FieldAccess) {
 	// Evaluate object to get struct pointer
 	cg.generateExpressionToReg(access.Object, "rax")
-	
+
 	// If using -> operator, rax already contains pointer
 	// If using . operator, need to get address
 	if !access.IsPointer {
@@ -129,15 +129,15 @@ func (cg *CodeGenerator) generateFieldAccess(access *FieldAccess) {
 			}
 		}
 	}
-	
+
 	// Get struct type from object
 	// For now, we'll need to track this in the type system
 	// Simplified: assume we know the struct type
-	
+
 	// Find field offset (this requires type information)
 	// For demonstration, we'll use a placeholder
 	fieldOffset := 0 // Would need to look this up from struct definition
-	
+
 	// Load field value
 	cg.textSection.WriteString(fmt.Sprintf("    movq %d(%%rax), %%rax\n", fieldOffset))
 }
@@ -148,12 +148,12 @@ func getFieldOffset(structName, fieldName string) (int, bool) {
 	if !exists {
 		return 0, false
 	}
-	
+
 	for _, field := range structDef.Fields {
 		if field.Name == fieldName {
 			return field.Offset, true
 		}
 	}
-	
+
 	return 0, false
 }

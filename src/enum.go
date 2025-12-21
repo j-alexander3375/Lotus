@@ -37,10 +37,10 @@ func (cg *CodeGenerator) generateEnumDefinition(def *EnumDefinition) {
 		}
 		nextValue = def.Values[i].Value + 1
 	}
-	
+
 	// Register enum in global registry
 	EnumRegistry[def.Name] = def
-	
+
 	// Enums compile to constants, no runtime code needed
 }
 
@@ -51,7 +51,7 @@ func (cg *CodeGenerator) generateEnumLiteral(lit *EnumLiteral) {
 		fmt.Printf("Error: enum type '%s' not defined\n", lit.EnumName)
 		return
 	}
-	
+
 	// Find the enum value
 	for _, val := range enumDef.Values {
 		if val.Name == lit.ValueName {
@@ -60,7 +60,7 @@ func (cg *CodeGenerator) generateEnumLiteral(lit *EnumLiteral) {
 			return
 		}
 	}
-	
+
 	fmt.Printf("Error: enum value '%s' not found in enum '%s'\n", lit.ValueName, lit.EnumName)
 }
 
@@ -70,13 +70,13 @@ func getEnumValue(enumName, valueName string) (int, bool) {
 	if !exists {
 		return 0, false
 	}
-	
+
 	for _, val := range enumDef.Values {
 		if val.Name == valueName {
 			return val.Value, true
 		}
 	}
-	
+
 	return 0, false
 }
 
