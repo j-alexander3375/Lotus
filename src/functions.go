@@ -44,11 +44,15 @@ func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition)
 	cg.textSection.WriteString("    pushq %rbp\n")
 	cg.textSection.WriteString("    movq %rsp, %rbp\n")
 
-	// Save current variable state and create new scope
+	// Save current state and create new scope
 	savedVars := cg.variables
 	cg.variables = make(map[string]Variable)
 	savedStackOffset := cg.stackOffset
 	cg.stackOffset = 0
+	savedInFunction := cg.inFunction
+	savedReturnLbl := cg.currentFunctionReturnLbl
+	cg.inFunction = true
+	cg.currentFunctionReturnLbl = returnLabel
 
 	// Set up parameters (System V AMD64 ABI: rdi, rsi, rdx, rcx, r8, r9)
 	paramRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
@@ -72,12 +76,22 @@ func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition)
 	// Function epilogue
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", returnLabel))
 	cg.textSection.WriteString("    # Function epilogue\n")
-	cg.textSection.WriteString("    popq %rbp\n")
-	cg.textSection.WriteString("    ret\n")
+	if funcDef.Name == "main" {
+		// Exit directly from main using return value in rax
+		cg.textSection.WriteString("    # Exit from main\n")
+		cg.textSection.WriteString("    movq %rax, %rdi\n")
+		cg.textSection.WriteString("    movq $60, %rax\n")
+		cg.textSection.WriteString("    syscall\n")
+	} else {
+		cg.textSection.WriteString("    popq %rbp\n")
+		cg.textSection.WriteString("    ret\n")
+	}
 
 	// Restore variable scope
 	cg.variables = savedVars
 	cg.stackOffset = savedStackOffset
+	cg.inFunction = savedInFunction
+	cg.currentFunctionReturnLbl = savedReturnLbl
 }
 
 // generateUserFunctionCall generates assembly for calling a user-defined function

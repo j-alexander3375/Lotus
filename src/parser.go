@@ -83,10 +83,20 @@ func (p *Parser) Parse() ([]ASTNode, error) {
 // parseStatement parses a single statement
 func (p *Parser) parseStatement() (ASTNode, error) {
 	switch p.current().Type {
+	case TokenFn:
+		return p.parseFunctionDefinition()
 	case TokenUse:
 		return p.parseImportStatement()
 	case TokenRet:
 		return p.parseReturnStatement()
+	case TokenReturn:
+		return p.parseReturnStatement()
+	case TokenIf:
+		return p.parseIfStatement()
+	case TokenWhile:
+		return p.parseWhileLoop()
+	case TokenFor:
+		return p.parseForLoop()
 	case TokenConst:
 		return p.parseConstantDeclaration()
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
@@ -96,31 +106,221 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 	case TokenPrintString, TokenPrintf, TokenFPrintf, TokenPrintln, TokenSPrint, TokenSPrintf, TokenSPrintln, TokenFatalf, TokenFatalln, TokenLogf, TokenLogln:
 		return p.parseFunctionCall()
 	case TokenIdentifier:
-		// Could be a function call or variable reference
+		// Could be a function call or assignment or variable reference
 		name := p.current().Value
 		p.advance()
-		if p.current().Type == TokenLParen {
-			p.pos-- // Back up to re-parse as function call
+		switch p.current().Type {
+		case TokenLParen:
+			// Back up to re-parse as function call
+			p.pos--
 			return p.parseFunctionCall()
+		case TokenAssign:
+			// Simple assignment: identifier = expression
+			p.advance()
+			value, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			return &Assignment{Target: &Identifier{Name: name}, Value: value}, nil
+		case TokenPlusEq, TokenMinusEq, TokenStarEq, TokenSlashEq, TokenPercentEq:
+			// Compound assignment: identifier op= expression
+			op := p.current().Type
+			p.advance()
+			value, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			return &CompoundAssignment{Target: &Identifier{Name: name}, Operator: op, Value: value}, nil
+		default:
+			// Bare identifier expression
+			return &Identifier{Name: name}, nil
 		}
-		// Otherwise it's just an identifier (not currently used)
-		return &Identifier{Name: name}, nil
 	default:
 		return nil, fmt.Errorf("unexpected token type %d at position %d", p.current().Type, p.pos)
 	}
 }
 
-// parseReturnStatement parses a return statement
-func (p *Parser) parseReturnStatement() (*ReturnStatement, error) {
-	if err := p.expect(TokenRet); err != nil {
+// parseBlock parses a sequence of statements enclosed in braces { ... }
+func (p *Parser) parseBlock() ([]ASTNode, error) {
+	if err := p.expect(TokenLBrace); err != nil {
 		return nil, err
 	}
 
-	var value ASTNode
-	if p.current().Type == TokenInt {
-		val, _ := parseIntToken(p.current().Value)
-		value = &IntLiteral{Value: val}
+	var body []ASTNode
+	for p.current().Type != TokenRBrace && p.current().Type != TokenEOF {
+		if p.current().Type == TokenNewline {
+			p.advance()
+			continue
+		}
+		stmt, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+		if p.current().Type == TokenSemi {
+			p.advance()
+		}
+	}
+
+	if err := p.expect(TokenRBrace); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+// parseIfStatement parses an if/else statement: if <expr> { ... } [else { ... } | else if ...]
+func (p *Parser) parseIfStatement() (*IfStatement, error) {
+	if err := p.expect(TokenIf); err != nil {
+		return nil, err
+	}
+
+	// Condition (no parentheses required)
+	cond, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	// Then block
+	thenBody, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	var elseBody []ASTNode
+	// Optional else
+	if p.current().Type == TokenElse {
 		p.advance()
+		// Support else-if chaining
+		if p.current().Type == TokenIf {
+			nested, err := p.parseIfStatement()
+			if err != nil {
+				return nil, err
+			}
+			elseBody = []ASTNode{nested}
+		} else {
+			body, err := p.parseBlock()
+			if err != nil {
+				return nil, err
+			}
+			elseBody = body
+		}
+	}
+
+	return &IfStatement{Condition: cond, ThenBody: thenBody, ElseBody: elseBody}, nil
+}
+
+// parseWhileLoop parses a while loop: while <expr> { ... }
+func (p *Parser) parseWhileLoop() (*WhileLoop, error) {
+	if err := p.expect(TokenWhile); err != nil {
+		return nil, err
+	}
+
+	cond, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &WhileLoop{Condition: cond, Body: body}, nil
+}
+
+// parseForLoop parses a C-style for loop:
+// for (init; cond; post) { ... }
+// Parentheses are optional: for init; cond; post { ... }
+func (p *Parser) parseForLoop() (*ForLoop, error) {
+	if err := p.expect(TokenFor); err != nil {
+		return nil, err
+	}
+
+	hasParen := false
+	if p.current().Type == TokenLParen {
+		hasParen = true
+		p.advance()
+	}
+
+	// Init (optional)
+	var init ASTNode
+	if p.current().Type != TokenSemi {
+		var err error
+		init, err = p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := p.expect(TokenSemi); err != nil {
+		return nil, err
+	}
+
+	// Condition (optional)
+	var cond ASTNode
+	if p.current().Type != TokenSemi {
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		cond = expr
+	}
+	if err := p.expect(TokenSemi); err != nil {
+		return nil, err
+	}
+
+	// Update (optional)
+	var update ASTNode
+	if hasParen {
+		if p.current().Type != TokenRParen {
+			var err error
+			update, err = p.parseStatement()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+	} else {
+		if p.current().Type != TokenLBrace {
+			var err error
+			update, err = p.parseStatement()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ForLoop{Init: init, Condition: cond, Update: update, Body: body}, nil
+}
+
+// parseReturnStatement parses a return statement
+func (p *Parser) parseReturnStatement() (*ReturnStatement, error) {
+	// Support both 'ret' and 'return'
+	if p.current().Type == TokenRet || p.current().Type == TokenReturn {
+		p.advance()
+	} else {
+		return nil, fmt.Errorf("expected return, got token type %d", p.current().Type)
+	}
+
+	// Return value can be any expression (optional)
+	var value ASTNode
+	// If next token looks like start of an expression, parse it
+	switch p.current().Type {
+	case TokenInt, TokenString, TokenBool, TokenFloat, TokenIdentifier, TokenLParen,
+		TokenMinus, TokenExclaim, TokenAmpersand, TokenStar:
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		value = expr
 	}
 
 	return &ReturnStatement{Value: value}, nil
@@ -406,6 +606,12 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 	case TokenIdentifier:
 		name := p.current().Value
 		p.advance()
+		// If followed by '(', treat as a function call in expression context
+		if p.current().Type == TokenLParen {
+			// Step back to re-parse as a function call
+			p.pos--
+			return p.parseFunctionCall()
+		}
 		return &Identifier{Name: name}, nil
 	case TokenLParen:
 		p.advance()
@@ -433,4 +639,94 @@ func parseFloatToken(s string) (int64, error) {
 	var val float64
 	_, err := fmt.Sscanf(s, "%f", &val)
 	return int64(val * 1000), err
+}
+
+// parseFunctionDefinition parses a C-style function declaration prefixed with 'fn'
+// Syntax: fn <return_type> <name>(<param_type> <param_name>, ...) { <body> }
+func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
+	// 'fn'
+	if err := p.expect(TokenFn); err != nil {
+		return nil, err
+	}
+
+	// Return type
+	if !isTypeToken(p.current().Type) {
+		return nil, fmt.Errorf("expected return type after 'fn', got token type %d", p.current().Type)
+	}
+	retType := p.current().Type
+	p.advance()
+
+	// Function name
+	if p.current().Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected function name, got token type %d", p.current().Type)
+	}
+	name := p.current().Value
+	p.advance()
+
+	// Parameters
+	if err := p.expect(TokenLParen); err != nil {
+		return nil, err
+	}
+
+	var params []FunctionParam
+	for p.current().Type != TokenRParen {
+		// Parameter type
+		if !isTypeToken(p.current().Type) {
+			return nil, fmt.Errorf("expected parameter type, got token type %d", p.current().Type)
+		}
+		pType := p.current().Type
+		p.advance()
+
+		// Parameter name
+		if p.current().Type != TokenIdentifier {
+			return nil, fmt.Errorf("expected parameter name, got token type %d", p.current().Type)
+		}
+		pName := p.current().Value
+		p.advance()
+
+		params = append(params, FunctionParam{Name: pName, Type: pType})
+
+		if p.current().Type == TokenComma {
+			p.advance()
+		}
+	}
+
+	if err := p.expect(TokenRParen); err != nil {
+		return nil, err
+	}
+
+	// Function body
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, err
+	}
+
+	var body []ASTNode
+	for p.current().Type != TokenRBrace && p.current().Type != TokenEOF {
+		// Skip newlines inside body
+		if p.current().Type == TokenNewline {
+			p.advance()
+			continue
+		}
+		stmt, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+		if p.current().Type == TokenSemi {
+			p.advance()
+		}
+	}
+
+	if err := p.expect(TokenRBrace); err != nil {
+		return nil, err
+	}
+
+	return &FunctionDefinition{
+		Name:       name,
+		Parameters: params,
+		ReturnType: retType,
+		Body:       body,
+	}, nil
 }

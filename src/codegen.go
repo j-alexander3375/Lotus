@@ -58,21 +58,27 @@ type CodeGenerator struct {
 
 	// Diagnostic and error reporting
 	diagnostics *DiagnosticManager
+
+	// Function generation context
+	inFunction               bool   // true when generating inside a function body
+	currentFunctionReturnLbl string // label to jump to for function returns
 }
 
 // NewCodeGenerator creates and initializes a new code generator instance.
 // All state is initialized to default values with empty maps and zero counters.
 func NewCodeGenerator() *CodeGenerator {
 	return &CodeGenerator{
-		variables:     make(map[string]Variable),
-		constants:     make(map[string]Variable),
-		stringLengths: make(map[string]int),
-		stackOffset:   0,
-		imports:       NewImportContext(),
-		stringCount:   0,
-		labelCount:    0,
-		exitCode:      0,
-		diagnostics:   NewDiagnosticManager(),
+		variables:                make(map[string]Variable),
+		constants:                make(map[string]Variable),
+		stringLengths:            make(map[string]int),
+		stackOffset:              0,
+		imports:                  NewImportContext(),
+		stringCount:              0,
+		labelCount:               0,
+		exitCode:                 0,
+		diagnostics:              NewDiagnosticManager(),
+		inFunction:               false,
+		currentFunctionReturnLbl: "",
 	}
 }
 
@@ -263,6 +269,24 @@ func (cg *CodeGenerator) generateConstantDeclaration(decl *ConstantDeclaration) 
 // generateReturnStatement processes a return statement and sets the exit code.
 // Currently only handles integer literals; more complex expressions will be supported later.
 func (cg *CodeGenerator) generateReturnStatement(ret *ReturnStatement) {
+	if cg.inFunction {
+		// Evaluate return expression into RAX if provided
+		if ret.Value != nil {
+			cg.generateExpressionToReg(ret.Value, "rax")
+		} else {
+			// Default return value 0
+			cg.textSection.WriteString("    xorq %rax, %rax\n")
+		}
+		// Jump to function epilogue
+		if cg.currentFunctionReturnLbl != "" {
+			cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", cg.currentFunctionReturnLbl))
+		} else {
+			cg.textSection.WriteString("    ret\n")
+		}
+		return
+	}
+
+	// Top-level program return sets exit code (supports int literal only)
 	if lit, ok := ret.Value.(*IntLiteral); ok {
 		cg.exitCode = lit.Value
 	}
@@ -300,27 +324,30 @@ func (cg *CodeGenerator) buildFinalAssembly() string {
 	b.WriteString(TextSectionDirective + "\n")
 	b.WriteString(EntryPointLabel + ":\n")
 
-	// Function prologue
-	b.WriteString("    # Set up stack frame\n")
-	b.WriteString("    pushq %rbp\n")
-	b.WriteString("    movq %rsp, %rbp\n")
+	// Program prologue (minimal)
+	b.WriteString("    # Program start\n")
 
 	// Allocate stack space if needed (aligned to 16 bytes)
-	if cg.stackOffset > 0 {
-		alignedSize := (cg.stackOffset + DefaultStackAlignment - 1) &^ (DefaultStackAlignment - 1)
-		b.WriteString(fmt.Sprintf("    subq $%d, %%rsp  # Allocate stack space for variables\n", alignedSize))
-	}
 	b.WriteString("\n")
 
-	// Main program code
+	// Call user-defined main if present
+	if _, exists := UserDefinedFunctions["main"]; exists {
+		b.WriteString("    # Call user-defined main\n")
+		b.WriteString("    call .main\n")
+		b.WriteString("\n")
+	}
+
+	// Program code (function bodies and statements)
 	b.WriteString(cg.textSection.String())
 	b.WriteString("\n")
 
-	// Program epilogue - exit syscall
-	b.WriteString("    # Exit program\n")
-	b.WriteString(fmt.Sprintf("    movq $%d, %%rax  # syscall: exit\n", SyscallExit))
-	b.WriteString(fmt.Sprintf("    movq $%d, %%rdi  # exit code\n", cg.exitCode))
-	b.WriteString("    syscall\n")
+	// Program epilogue - exit syscall (only when no user-defined main)
+	if _, exists := UserDefinedFunctions["main"]; !exists {
+		b.WriteString("    # Exit program\n")
+		b.WriteString(fmt.Sprintf("    movq $%d, %%rax  # syscall: exit\n", SyscallExit))
+		b.WriteString(fmt.Sprintf("    movq $%d, %%rdi  # exit code\n", cg.exitCode))
+		b.WriteString("    syscall\n")
+	}
 
 	return b.String()
 }

@@ -24,8 +24,8 @@ const (
 	// TextSectionDirective is the assembly directive for the text/code section
 	TextSectionDirective = ".text"
 
-	// GlobalDirective is the assembly directive for global symbols
-	GlobalDirective = ".global"
+	// GlobalDirective is the assembly directive for global symbols (GNU as)
+	GlobalDirective = ".globl"
 
 	// EntryPointLabel is the standard entry point for x86-64 programs
 	EntryPointLabel = "_start"

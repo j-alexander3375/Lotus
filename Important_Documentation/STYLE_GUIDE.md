@@ -65,14 +65,14 @@ use "helpers";
 // math.lts - GOOD: Single purpose
 use "io";
 
-fn abs(x: int) -> int {
+fn int abs(int x) {
     if x < 0 {
         ret -x;
     }
     ret x;
 }
 
-fn max(a: int, b: int) -> int {
+fn int max(int a, int b) {
     if a > b { ret a; }
     ret b;
 }
@@ -97,7 +97,7 @@ fn format_string(s: string) -> string { /* ... */ }
 
 | Element | Style | Example |
 |---------|-------|---------|
-| Functions | `snake_case` | `fn calculate_fibonacci(n: int)` |
+| Functions | `snake_case` | `fn int calculate_fibonacci(int n)` |
 | Constants | `UPPER_SNAKE_CASE` | `const int MAX_VECTOR_SIZE = 1000;` |
 | Structs | `snake_case` | `struct vector { /* ... */ }` |
 | Enums | `snake_case` | `enum result { ok, error }` |
@@ -116,7 +116,7 @@ fn format_string(s: string) -> string { /* ... */ }
 
 **Functions: `snake_case`**
 ```lotus
-fn calculate_fibonacci(n: int) -> int {
+fn int calculate_fibonacci(int n) {
     int result = 0;
     int prev = 0;
     int curr = 1;
@@ -130,9 +130,10 @@ fn calculate_fibonacci(n: int) -> int {
     ret result;
 }
 
-fn main() {
+fn int main() {
     int fib_value = calculate_fibonacci(10);
     println("Result: %d", fib_value);
+    ret 0;
 }
 ```
 
@@ -217,7 +218,7 @@ bool result = check(data);
 **Use 4 spaces for indentation** (not tabs)
 
 ```lotus
-fn process_data(input: string) -> bool {
+fn bool process_data(string input) {
     use "io";
     use "string";
     
@@ -243,16 +244,16 @@ fn process_data(input: string) -> bool {
 
 ```lotus
 // Good: Clear, readable
-fn calculate_complex_value(
-    first_parameter: int,
-    second_parameter: int,
-    third_parameter: int
-) -> int {
-    first_parameter + second_parameter + third_parameter
+fn int calculate_complex_value(
+    int first_parameter,
+    int second_parameter,
+    int third_parameter
+) {
+    return first_parameter + second_parameter + third_parameter;
 }
 
 // Avoid: Line too long
-fn calculate_complex_value(first_parameter: int, second_parameter: int, third_parameter: int) -> int { first_parameter + second_parameter + third_parameter }
+fn int calculate_complex_value(int first_parameter, int second_parameter, int third_parameter) { return first_parameter + second_parameter + third_parameter; }
 ```
 
 ### Brace Placement
@@ -261,20 +262,20 @@ fn calculate_complex_value(first_parameter: int, second_parameter: int, third_pa
 
 ```lotus
 // Good
-fn calculate(x: int) -> int {
+fn int calculate(int x) {
     if x > 0 {
-        x * 2
+        ret x * 2;
     } else {
-        0
+        ret 0;
     }
 }
 
 // Avoid
-fn calculate(x: int) -> int
+fn int calculate(int x)
 {
     if x > 0
     {
-        x * 2
+        return x * 2;
     }
 }
 ```
@@ -295,11 +296,11 @@ const int MAX_SIZE = 100;
 // String operations
 // ============================================================================
 
-fn reverse_string(s: string) -> string {
+fn string reverse_string(string s) {
     // Implementation
 }
 
-fn concatenate_strings(s1: string, s2: string) -> string {
+fn string concatenate_strings(string s1, string s2) {
     // Implementation
 }
 
@@ -307,7 +308,7 @@ fn concatenate_strings(s1: string, s2: string) -> string {
 // Memory utilities
 // ============================================================================
 
-fn allocate_aligned(size: int, alignment: int) -> *int {
+fn *int allocate_aligned(int size, int alignment) {
     // Implementation
 }
 ```
@@ -319,10 +320,10 @@ fn allocate_aligned(size: int, alignment: int) -> *int {
 ### Inline Comments
 
 ```lotus
-fn fibonacci(n: int) -> int {
+fn int fibonacci(int n) {
     // Base cases for Fibonacci sequence
     if n <= 1 {
-        ret n;
+        return n;
     }
     
     // Use iterative approach for better performance
@@ -336,7 +337,7 @@ fn fibonacci(n: int) -> int {
         n = n - 1;
     }
     
-    ret curr;
+    return curr;
 }
 ```
 
@@ -353,9 +354,9 @@ fn fibonacci(n: int) -> int {
 /// 
 /// Example:
 ///   int result = abs(-42);  // Returns 42
-fn abs(x: int) -> int {
-    if x < 0 { ret -x; }
-    ret x;
+fn int abs(int x) {
+    if x < 0 { return -x; }
+    return x;
 }
 ```
 
@@ -386,7 +387,7 @@ use "io";
 
 ```lotus
 // Good: Clear types everywhere
-fn process_list(items: *int, count: int) -> int {
+fn int process_list(*int items, int count) {
     int total = 0;
     int index = 0;
     
@@ -412,11 +413,11 @@ fn process_list(items, count) {
 
 ```lotus
 // Good: Clear when dealing with pointers
-fn allocate_and_initialize(size: int) -> *int {
+fn *int allocate_and_initialize(int size) {
     int* ptr = malloc(size * sizeof(int));
     
     if ptr == null {
-        ret null;  // Signal allocation failure
+        return null;  // Signal allocation failure
     }
     
     // Initialize the allocated memory
@@ -426,7 +427,7 @@ fn allocate_and_initialize(size: int) -> *int {
         i = i + 1;
     }
     
-    ret ptr;
+    return ptr;
 }
 
 // Avoid: Unclear pointer semantics
@@ -445,16 +446,16 @@ fn allocate_and_initialize(size) {
 
 ```lotus
 // Good: Explicit null checking
-fn safe_get_value(items: *int, index: int) -> int {
+fn int safe_get_value(*int items, int index) {
     if items == null {
-        ret -1;  // Error indicator
+        return -1;  // Error indicator
     }
     
     if index < 0 {
-        ret -1;  // Invalid index
+        return -1;  // Invalid index
     }
 
-    ret items[index];
+    return items[index];
 }
 
 // Future: Use Result type
@@ -497,7 +498,7 @@ int result = (value > MAX ? HANDLE_LARGE : (value > NORMAL ? HANDLE_NORMAL : HAN
 
 ```lotus
 // Good: Explicit iteration
-fn sum_array(items: *int, count: int) -> int {
+fn int sum_array(*int items, int count) {
     int total = 0;
     int i = 0;
     
@@ -510,7 +511,7 @@ fn sum_array(items: *int, count: int) -> int {
 }
 
 // Also acceptable: For-loop (when available)
-fn sum_array_for(items: *int, count: int) -> int {
+fn int sum_array_for(*int items, int count) {
     int total = 0;
     
     for i in 0..count {
@@ -527,35 +528,35 @@ fn sum_array_for(items: *int, count: int) -> int {
 
 ```lotus
 // Good: Flat control flow
-fn validate_input(name: string, age: int) -> bool {
+fn bool validate_input(string name, int age) {
     if name == null || len(name) == 0 {
-        println("Error: Name cannot be empty");
-        ret false;
+        Println("Error: Name cannot be empty");
+        return false;
     }
     
     if age < 0 || age > 150 {
-        println("Error: Age must be 0-150");
-        ret false;
+        Println("Error: Age must be 0-150");
+        return false;
     }
     
     // Main logic here
     process_user(name, age);
-    ret true;
+    return true;
 }
 
 // Avoid: Deeply nested conditions
-fn validate_input(name: string, age: int) -> bool {
+fn bool validate_input(string name, int age) {
     if name != null && len(name) > 0 {
         if age >= 0 && age <= 150 {
             process_user(name, age);
-            ret true;
+            return true;
         } else {
-            println("Error: Age invalid");
-            ret false;
+            Println("Error: Age invalid");
+            return false;
         }
     } else {
-        println("Error: Name empty");
-        ret false;
+        Println("Error: Name empty");
+        return false;
     }
 }
 ```
@@ -570,10 +571,10 @@ fn validate_input(name: string, age: int) -> bool {
 
 ```lotus
 // Good: Clear what goes in and comes out
-fn calculate_average(
-    values: *int,
-    count: int
-) -> int {
+fn int calculate_average(
+    *int values,
+    int count
+) {
     if count == 0 {
         ret 0;
     }
@@ -605,7 +606,7 @@ fn calc(v, n) {
 
 ```lotus
 // Good: Single return
-fn find_max(values: *int, count: int) -> int {
+fn int find_max(*int values, int count) {
     if count == 0 {
         ret -1;
     }
@@ -624,7 +625,7 @@ fn find_max(values: *int, count: int) -> int {
 }
 
 // Acceptable: Multiple returns for error handling
-fn allocate_memory(size: int) -> *int {
+fn *int allocate_memory(int size) {
     if size <= 0 {
         ret null;
     }
@@ -701,11 +702,11 @@ use "module_a";  // Creates circular dependency!
 
 ```lotus
 // Good: Clear ownership transfer
-fn create_and_populate_array(size: int) -> *int {
+fn *int create_and_populate_array(int size) {
     int* array = malloc(size * sizeof(int));
     
     if array == null {
-        ret null;  // Failed to allocate
+        return null;  // Failed to allocate
     }
     
     // Initialize
@@ -718,7 +719,7 @@ fn create_and_populate_array(size: int) -> *int {
     ret array;  // Ownership transferred to caller
 }
 
-fn main() {
+fn int main() {
     use "io";
     use "mem";
     
@@ -727,6 +728,7 @@ fn main() {
     // Use the array...
     
     free(my_array);  // Caller is responsible for cleanup
+    ret 0;
 }
 ```
 
@@ -734,14 +736,14 @@ fn main() {
 
 ```lotus
 // Pattern: Allocate-Use-Free
-fn process_file_data(filename: string) {
+fn void process_file_data(string filename) {
     use "mem";
     
     int* buffer = malloc(1024);
     
     if buffer == null {
-        println("Error: Failed to allocate buffer");
-        ret;
+        Println("Error: Failed to allocate buffer");
+        return;
     }
     
     // Use buffer...
@@ -751,20 +753,20 @@ fn process_file_data(filename: string) {
 }
 
 // Pattern: Guard to ensure cleanup
-fn safe_operation(size: int) -> bool {
+fn bool safe_operation(int size) {
     use "mem";
     
     int* temp = malloc(size);
     
     if temp == null {
-        ret false;  // Failed early
+        return false;  // Failed early
     }
     
     // Do work...
     bool result = do_work(temp);
     
     free(temp);
-    ret result;
+    return result;
 }
 ```
 
@@ -776,7 +778,7 @@ fn safe_operation(size: int) -> bool {
 
 ```lotus
 // Good: Explicit null handling
-fn divide(a: int, b: int) -> *int {
+fn *int divide(int a, int b) {
     if b == 0 {
         println("Error: Division by zero");
         ret null;
@@ -793,7 +795,7 @@ fn divide(a: int, b: int) -> *int {
     ret result;
 }
 
-fn main() {
+fn int main() {
     use "io";
     
     int* answer = divide(10, 2);
@@ -804,6 +806,7 @@ fn main() {
     } else {
         println("Operation failed");
     }
+    ret 0;
 }
 ```
 
@@ -849,7 +852,7 @@ struct point {
     y: int,
 }
 
-fn distance(p1: point, p2: point) -> int {
+fn int distance(point p1, point p2) {
     int dx = p2.x - p1.x;
     int dy = p2.y - p1.y;
     
@@ -857,11 +860,12 @@ fn distance(p1: point, p2: point) -> int {
     ret dx + dy;
 }
 
-fn main() {
+fn int main() {
     point p1 = { x: 0, y: 0 };
     point p2 = { x: 3, y: 4 };
     
     printf("Distance: %d\n", distance(p1, p2));
+    ret 0;
 }
 ```
 
@@ -925,11 +929,12 @@ const int BUFFER_SIZE = 1024;
 const string APP_NAME = "Lotus Compiler";
 const bool RELEASE_BUILD = true;
 
-fn main() {
+fn int main() {
     use "io";
     
     printf("Buffer size: %d\n", BUFFER_SIZE);
     printf("Application: %s\n", APP_NAME);
+    ret 0;
 }
 ```
 
@@ -960,23 +965,23 @@ fn min(a: int, b: int) -> int {
     ret b;
 }
 
-fn max(a: int, b: int) -> int {
+fn int min(int a, int b) {
     if a > b { ret a; }
-    ret b;
+    return b;
 }
 
-// Larger function - let compiler decide
+fn int max(int a, int b) {
 fn calculate_complex_statistics(data: *int, count: int) -> int {
-    // Multiple operations - may or may not be inlined
+    return b;
     int sum = 0;
     int i = 0;
-    
+fn int calculate_complex_statistics(*int data, int count) {
     while i < count {
         sum = sum + data[i];
         i = i + 1;
     }
     
-    ret sum / count;
+    return sum / count;
 }
 ```
 
@@ -984,7 +989,7 @@ fn calculate_complex_statistics(data: *int, count: int) -> int {
 
 ```lotus
 // Good: Stack allocation for known, small sizes
-fn process_small_set() {
+fn void process_small_set() {
     int small_array[10];  // Stack allocated
     int i = 0;
     
@@ -995,11 +1000,11 @@ fn process_small_set() {
 }
 
 // Heap allocation for dynamic/large sizes
-fn process_large_set(size: int) {
+fn void process_large_set(int size) {
     int* large_array = malloc(size * sizeof(int));
     
     if large_array == null {
-        ret;
+        return;
     }
     
     // Use array...
@@ -1016,7 +1021,7 @@ fn process_large_set(size: int) {
 
 ```lotus
 // Good: Functional, testable
-fn validate_email(email: string) -> bool {
+fn bool validate_email(string email) {
     if email == null || len(email) == 0 {
         ret false;
     }
@@ -1025,29 +1030,29 @@ fn validate_email(email: string) -> bool {
     bool has_at = contains_char(email, '@');
     bool has_dot = contains_char(email, '.');
     
-    ret has_at && has_dot;
+    return has_at && has_dot;
 }
 
-fn contains_char(s: string, c: string) -> bool {
+fn bool contains_char(string s, string c) {
     int i = 0;
     while i < len(s) {
         if s[i] == c[0] {
-            ret true;
+            return true;
         }
         i = i + 1;
     }
-    ret false;
+    return false;
 }
 
 // Test function
-fn test_validate_email() {
+fn void test_validate_email() {
     use "io";
     
     ASSERT(validate_email("test@example.com") == true);
     ASSERT(validate_email("invalid") == false);
     ASSERT(VALIDATE_EMAIL("") == false);
     
-    PRINTLN("All email validation tests passed!");
+    Println("All email validation tests passed!");
 }
 ```
 
