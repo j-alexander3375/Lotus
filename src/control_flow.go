@@ -199,30 +199,30 @@ func (cg *CodeGenerator) generateLogicalOp(logOp *LogicalOp) {
 	if logOp.Operator == TokenAnd {
 		// Short-circuit AND: if left is false, result is false
 		endLabel := cg.getLabel("and_end")
-		
+
 		// Evaluate left
 		cg.generateExpressionToReg(logOp.Left, "rax")
 		cg.textSection.WriteString("    testq %rax, %rax\n")
 		cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", endLabel))
-		
+
 		// Left is true, evaluate right
 		cg.generateExpressionToReg(logOp.Right, "rax")
-		
+
 		cg.textSection.WriteString(fmt.Sprintf("%s:\n", endLabel))
 	} else if logOp.Operator == TokenOr {
 		// Short-circuit OR: if left is true, result is true
 		trueLabel := cg.getLabel("or_true")
 		endLabel := cg.getLabel("or_end")
-		
+
 		// Evaluate left
 		cg.generateExpressionToReg(logOp.Left, "rax")
 		cg.textSection.WriteString("    testq %rax, %rax\n")
 		cg.textSection.WriteString(fmt.Sprintf("    jnz %s\n", trueLabel))
-		
+
 		// Left is false, evaluate right
 		cg.generateExpressionToReg(logOp.Right, "rax")
 		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", endLabel))
-		
+
 		cg.textSection.WriteString(fmt.Sprintf("%s:\n", trueLabel))
 		cg.textSection.WriteString("    movq $1, %rax\n")
 		cg.textSection.WriteString(fmt.Sprintf("%s:\n", endLabel))
@@ -233,20 +233,20 @@ func (cg *CodeGenerator) generateLogicalOp(logOp *LogicalOp) {
 func (cg *CodeGenerator) generateTernaryOp(ternary *TernaryOp) {
 	falseLabel := cg.getLabel("ternary_false")
 	endLabel := cg.getLabel("ternary_end")
-	
+
 	// Evaluate condition
 	cg.generateExpressionToReg(ternary.Condition, "rax")
 	cg.textSection.WriteString("    testq %rax, %rax\n")
 	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", falseLabel))
-	
+
 	// True branch
 	cg.generateExpressionToReg(ternary.TrueExpr, "rax")
 	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", endLabel))
-	
+
 	// False branch
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", falseLabel))
 	cg.generateExpressionToReg(ternary.FalseExpr, "rax")
-	
+
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", endLabel))
 }
 

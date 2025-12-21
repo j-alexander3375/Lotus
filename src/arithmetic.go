@@ -30,7 +30,7 @@ func (b *BitwiseOp) astNode() {}
 
 // IncrementOp represents increment/decrement (++, --)
 type IncrementOp struct {
-	Operand ASTNode
+	Operand  ASTNode
 	IsPrefix bool      // true for ++x, false for x++
 	Operator TokenType // TokenPlusPlus, TokenMinusMinus
 }

@@ -56,17 +56,17 @@ func (cg *CodeGenerator) generateCompoundAssignment(compAssign *CompoundAssignme
 		if v, exists := cg.variables[id.Name]; exists {
 			// Load current value into rax
 			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rax\n", v.Offset))
-			
+
 			// Save current value
 			cg.textSection.WriteString("    pushq %rax\n")
-			
+
 			// Evaluate right side into rax
 			cg.generateExpressionToReg(compAssign.Value, "rax")
-			
+
 			// Pop left value to rcx
 			cg.textSection.WriteString("    movq %rax, %rcx\n")
 			cg.textSection.WriteString("    popq %rax\n")
-			
+
 			// Perform operation
 			switch compAssign.Operator {
 			case TokenPlusEq:
@@ -83,7 +83,7 @@ func (cg *CodeGenerator) generateCompoundAssignment(compAssign *CompoundAssignme
 				cg.textSection.WriteString("    idivq %rcx\n")
 				cg.textSection.WriteString("    movq %rdx, %rax\n")
 			}
-			
+
 			// Store result back
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, -%d(%%rbp)\n", v.Offset))
 		}
