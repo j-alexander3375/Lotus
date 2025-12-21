@@ -517,4 +517,4 @@ Lotus is designed for extensibility. Contributions welcome in:
 ## License
 
 MIT License - See LICENSE file for details
-```
+
