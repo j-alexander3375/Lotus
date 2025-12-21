@@ -12,6 +12,7 @@ type CompilerOptions struct {
 	Verbose     bool
 	TokenDump   bool
 	PrintAsm    bool
+	Run         bool
 	Trimpath    string
 	ShowVersion bool
 	IncludeDirs []string
@@ -29,6 +30,7 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	fs.BoolVar(&opts.TokenDump, "td", false, "print tokens and exit")
 	fs.BoolVar(&opts.TokenDump, "token-dump", false, "print tokens and exit")
 	fs.BoolVar(&opts.PrintAsm, "S", false, "emit assembly to -o path (or a.s)")
+	fs.BoolVar(&opts.Run, "run", false, "build and run the compiled binary")
 	fs.StringVar(&opts.Trimpath, "trimpath", "", "remove `prefix` from recorded file paths")
 	fs.BoolVar(&opts.ShowVersion, "version", false, "print compiler version and exit")
 

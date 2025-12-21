@@ -35,7 +35,9 @@ type CodeGenerator struct {
 	stringLengths map[string]int // maps variable name to string length
 	stackOffset   int
 	stringCount   int
+	labelCount    int
 	exitCode      int
+	diagnostics   *DiagnosticManager
 }
 
 // NewCodeGenerator creates a new code generator
@@ -45,7 +47,9 @@ func NewCodeGenerator() *CodeGenerator {
 		stringLengths: make(map[string]int),
 		stackOffset:   0,
 		stringCount:   0,
+		labelCount:    0,
 		exitCode:      0,
+		diagnostics:   NewDiagnosticManager(),
 	}
 }
 
@@ -102,6 +106,10 @@ func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 		cg.generateMallocCall(s)
 	case *FreeCall:
 		cg.generateFreeCall(s)
+	case *TryStatement:
+		cg.generateTryStatement(s)
+	case *ThrowStatement:
+		cg.generateThrowStatement(s)
 	}
 }
 
@@ -115,9 +123,10 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 	}
 
 	switch decl.Type {
-	case TokenTypeInt:
+	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
+		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64:
 		if lit, ok := decl.Value.(*IntLiteral); ok {
-			cg.textSection.WriteString(fmt.Sprintf("    # int %s = %d\n", decl.Name, lit.Value))
+			cg.textSection.WriteString(fmt.Sprintf("    # int-type %s = %d\n", decl.Name, lit.Value))
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", lit.Value, cg.stackOffset))
 		}
 	case TokenTypeFloat:

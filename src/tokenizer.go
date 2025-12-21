@@ -115,6 +115,16 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenFor, Value: ""})
 			case "fn":
 				tokens = append(tokens, Token{Type: TokenFn, Value: ""})
+			case "try":
+				tokens = append(tokens, Token{Type: TokenTry, Value: ""})
+			case "catch":
+				tokens = append(tokens, Token{Type: TokenCatch, Value: ""})
+			case "finally":
+				tokens = append(tokens, Token{Type: TokenFinally, Value: ""})
+			case "throw":
+				tokens = append(tokens, Token{Type: TokenThrow, Value: ""})
+			case "null":
+				tokens = append(tokens, Token{Type: TokenNull, Value: ""})
 			case "Printf":
 				tokens = append(tokens, Token{Type: TokenPrintf, Value: ""})
 			case "FPrintf":
@@ -238,8 +248,19 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenStar, Value: ""})
 			}
 		} else if c == '/' {
-			// Check for /=
-			if i+1 < len(runes) && runes[i+1] == '=' {
+			// Check for // comment
+			if i+1 < len(runes) && runes[i+1] == '/' {
+				// Skip until end of line
+				i += 2
+				for i < len(runes) && runes[i] != '\n' {
+					i++
+				}
+				// Don't skip the newline itself, let it be processed
+				if i < len(runes) {
+					i--
+				}
+			} else if i+1 < len(runes) && runes[i+1] == '=' {
+				// Check for /=
 				tokens = append(tokens, Token{Type: TokenSlashEq, Value: ""})
 				i++
 			} else {

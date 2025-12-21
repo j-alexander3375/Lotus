@@ -58,7 +58,16 @@ func (c *Compiler) CompileFile(inputPath string) error {
 	}
 
 	// Default: build binary
-	return c.buildBinary(asm)
+	if err := c.buildBinary(asm); err != nil {
+		return err
+	}
+
+	// Handle run mode
+	if c.Options.Run {
+		return c.runBinary()
+	}
+
+	return nil
 }
 
 // writeAssembly writes assembly output to file
@@ -106,6 +115,28 @@ func (c *Compiler) buildBinary(asm string) error {
 
 	if c.Options.Verbose {
 		log.Printf("Wrote binary to %s", c.Options.OutPath)
+	}
+
+	return nil
+}
+
+// runBinary executes the compiled binary
+func (c *Compiler) runBinary() error {
+	if c.Options.Verbose {
+		log.Printf("Running: %s", c.Options.OutPath)
+	}
+
+	cmd := exec.Command("./" + c.Options.OutPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Program exited with non-zero status
+			return fmt.Errorf("program exited with code %d", exitErr.ExitCode())
+		}
+		return fmt.Errorf("failed to run binary: %w", err)
 	}
 
 	return nil

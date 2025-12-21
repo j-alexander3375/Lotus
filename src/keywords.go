@@ -88,6 +88,11 @@ const (
 	TokenDot        // .
 	TokenColon      // :
 	TokenArrow      // ->
+	TokenTry        // try
+	TokenCatch      // catch
+	TokenFinally    // finally
+	TokenThrow      // throw
+	TokenNull       // null
 	TokenUnknown
 )
 
