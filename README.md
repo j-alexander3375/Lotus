@@ -518,27 +518,3 @@ Lotus is designed for extensibility. Contributions welcome in:
 
 MIT License - See LICENSE file for details
 ```
-
-## Future Extensions
-
-Easy to add:
-1. **New AST nodes** - Create node types in appropriate module, add to parser, add codegen
-2. **New operators** - Add to arithmetic/control_flow, update tokenizer/keywords
-3. **New print functions** - Add generator to printfuncs.go RegisteredPrintFunctions
-4. **Data structures** - Create arrays.go, structs.go modules
-5. **Memory** - Create memory.go for heap allocation
-
-## Design Principles
-
-1. **Separation of Concerns** - Each module handles one language feature
-2. **Extensibility** - Easy to add new features without modifying existing code
-3. **Modularity** - Independent compilation units that can be tested separately
-4. **Assembly-First** - Direct generation of efficient x86-64 code
-5. **System ABI Compliance** - Follows System V AMD64 calling conventions
-
-## Performance
-
-- Direct syscalls (no libc overhead for core functions)
-- x86-64 optimized code generation
-- Single-pass compilation
-- No intermediate representations beyond AST
