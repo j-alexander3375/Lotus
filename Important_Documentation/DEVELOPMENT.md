@@ -1,8 +1,51 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: Major Refactoring & Constant Declarations ✅
+## Latest Phase: Stdlib, Imports, and Lotus Syntax Refresh ✅
 
-### Recent Accomplishments (December 2025)
+### Current Accomplishments (December 2025 - Phase 3)
+
+1. **Import System Implementation**
+    - Added `use` and `as` keywords for module imports (string-based)
+    - Rust-inspired import syntax:
+       - `use "module"` - Import module
+       - `use "module::function"` - Specific function
+       - `use "module::*"` - Explicit wildcard
+       - `use "module" as alias` - Aliased imports
+    - `ImportStatement` AST node plus parse/codegen support
+
+2. **Standard Library Module System**
+   - Created `stdlib.go` - Module definitions and registration
+   - Implemented `ImportContext` for tracking imports
+   - `StandardLibrary` map with registered modules
+   - `StdlibModule` and `StdlibFunction` types for organization
+
+3. **Stdlib Modules Created**
+   - **io** - printf, println, fprintf, sprintf, sprint, sprintln
+   - **mem** - malloc, free, sizeof
+   - **math** - abs, min, max, sqrt, pow
+   - **str** - len, concat, compare, copy
+
+4. **Import System Features**
+   - Module lookup and validation
+   - Function availability tracking
+   - Compile-time import resolution
+   - Error reporting for unknown modules/functions
+   - Assembly comments documenting imports
+
+5. **Testing & Validation**
+   - Imports: `test_imports_basic.lts`, `test_imports_specific.lts`, `test_imports_wildcard.lts`, `test_imports_alias.lts`, `test_imports_multiple.lts`, `test_imports_comprehensive.lts`
+   - Showcase/printf: `test_showcase.lts`, `test_final.lts`
+   - Arithmetic/types/data structures: `test_arithmetic.lts`, `test_types_minimal.lts`, `test_data_structures.lts`, etc.
+   - All tests passing ✅
+
+6. **Documentation**
+   - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
+   - Updated `README.md` with import examples and module descriptions
+   - Added stdlib section showing all available modules
+
+## Earlier Phase: Major Refactoring & Constant Declarations ✅
+
+### Recent Accomplishments (December 2025 - Phase 2)
 
 1. **Major Code Refactoring**
    - Created `ast.go` - Centralized AST node definitions
@@ -52,48 +95,40 @@
 ### Current Capabilities
 
 **Lexical Analysis:**
-- Tokenizes 30+ token types including all type keywords
-- Recognizes print function keywords (Printf, PrintString, Println, etc.)
-- Proper handling of string literals, integers, floats, booleans
-- Supports operators (=, ;) and delimiters ((, ), ,)
+- Tokenizes 100+ token types including all type keywords
+- Recognizes lowercase stdlib functions (printf/println/logf/etc.)
+- Proper handling of string literals, integers, floats, booleans, pointers, keywords for try/catch/finally/throw/null
+- Multi-char operators and delimiters
 
 **Parsing:**
-- Parses variable declarations with type inference
-- Parses assignment expressions
-- Parses return statements with exit codes
-- Parses function calls with multiple arguments
-- Proper newline and whitespace handling
+- Type-first variable declarations (e.g., `int x = 1;`)
+- Function definitions with parameters/returns (`fn`), `ret` keyword
+- Struct/enum/class definitions
+- Control flow: if/else, while, for
+- Try/catch/finally and throw
+- Module imports via `use`/`as`
 
 **Code Generation:**
-- x86-64 GNU assembly (AT&T syntax)
-- Proper stack frame setup (push rbp, mov rsp rbp)
-- 8-byte variable allocation with negative rbp offsets
-- 16-byte stack alignment for syscalls
-- String literals in `.data` section with proper RIP-relative addressing
-- Correct syscall exit (syscall with rax=60, rdi=exit_code)
+- x86-64 GNU assembly (AT&T)
+- Stack frames, 16-byte alignment, RIP-relative data
+- Function calls honoring System V ABI
+- Stdlib hooks for printf/println/malloc/free
 
 **Compilation:**
-- Successful Go build: `go build -o lotus`
-- Direct-to-binary compilation via GCC
-- Assembly-only compilation with `-S` flag
-- Token dumping with `-td` flag for debugging
+- Go build: `go build -o lotus src/*.go`
+- Assembly-only: `./lotus -S input.lts`
+- Binary: `./lotus input.lts`
+- Token dump: `./lotus -td input.lts`
 
-### Test Results
+### Test Snapshots
 
 ```
-✓ test_simple.lts (int x = 42; ret 0;)
-  - Compiles to binary
-  - Executes with correct exit code
-  
-✓ test_comprehensive.lts (multiple variable types)
-  - 3 variables of different types allocated correctly
-  - Assembly shows proper stack layout
-  - Binary compiles and runs
-  
-✓ test_print_hello.lts (PrintString("hello"); ret 0;)
-  - Function call recognized
-  - String literal processed
-  - Assembly framework generated
+✓ test_showcase.lts      (printf/println demo)
+✓ test_final.lts         (printf with vars/strings)
+✓ test_imports_*         (basic/specific/wildcard/alias/multiple)
+✓ test_arithmetic.lts    (arith & bitwise)
+✓ test_data_structures.lts (struct/enum/class basics)
+✓ test_error_handling.lts (try/catch/finally/throw/null)
 ```
 
 ### Architecture
@@ -112,25 +147,23 @@ Input (.lts file)
 
 ### Next Phases (Planned)
 
-1. **Print Function Implementation** (High Priority)
-   - Wire PrintString/Printf/Println to actual `write()` syscalls
-   - Implement libc linking for formatted output
-   - Handle multiple arguments in print functions
+1. **Optimization & Codegen**
+   - Register allocation and peephole optimizations
+   - Constant folding/propagation
+   - Dead code elimination
 
-2. **Control Flow** (Medium Priority)
-   - if/else statements
-   - while loops
-   - for loops
+2. **Type System Enhancements**
+   - Generics and type inference improvements
+   - Union/option types
 
-3. **Operators & Expressions** (Medium Priority)
-   - Arithmetic operators (+, -, *, /)
-   - Comparison operators (==, !=, <, >, <=, >=)
-   - Logical operators (&&, ||, !)
+3. **Stdlib Growth**
+   - File I/O and basic networking
+   - Expanded string utilities
 
-4. **Function Definitions** (Medium Priority)
-   - User-defined functions beyond print functions
-   - Function parameters and return values
-   - Call stack management
+4. **Tooling**
+   - Language server
+   - Debug/trace hooks
+   - Package/module manager
 
 ### Current File Structure
 
@@ -188,21 +221,15 @@ cd src && go build -o ../lotus
 ### Language Features Implemented
 
 **Core Features:**
-- ✅ Variable declarations with type inference
-- ✅ Constant declarations (immutable)
-- ✅ All integer types (int8-int64, uint8-uint64)
-- ✅ String and boolean types
-- ✅ Arithmetic operations (+, -, *, /, %)
-- ✅ Bitwise operations (&, |, ^, <<, >>)
-- ✅ Logical operations (&&, ||, !)
-- ✅ Comparison operators (==, !=, <, <=, >, >=)
+- ✅ Type-first variable declarations (`int x = 1;`)
+- ✅ Constants (`const`), ints/bools/strings, pointer types
+- ✅ Arithmetic + bitwise + logical + comparisons
 - ✅ Control flow (if/else, while, for)
-- ✅ User-defined functions
-- ✅ Arrays and dynamic memory
-- ✅ Structs, enums, and classes
-- ✅ Exception handling (try/catch/finally)
-- ✅ Print functions (printf, println, etc.)
-- ✅ Memory management (malloc/free/sizeof)
+- ✅ Functions with `fn` and `ret`
+- ✅ Arrays, pointers, struct/enum/class definitions
+- ✅ Exception handling (try/catch/finally/throw/null)
+- ✅ Import system with `use`/`as` and stdlib modules (io, mem, math, str)
+- ✅ Stdlib printf/println/logf and malloc/free/sizeof
 
 ### Example Constant Usage
 

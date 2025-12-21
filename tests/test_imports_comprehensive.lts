@@ -1,0 +1,37 @@
+// comprehensive_imports_demo.lts
+// Demonstrates all import features in Lotus standard library
+
+use "io";
+use "mem";
+use "math";
+use "str";
+
+fn main() {
+    println("=== Lotus Standard Library Import Demo ===");
+    println("");
+    
+    // IO module demo
+    println("--- IO Module ---");
+    printf("Printf with formatting: %d\n", 42);
+    
+    // Math module demo
+    println("--- Math Module ---");
+    a: int = 15;
+    b: int = 10;
+    max_val: int = max(a, b);
+    printf("Max of %d and %d is: %d\n", a, b, max_val);
+    
+    // Memory module demo
+    println("--- Memory Module ---");
+    size: int = sizeof(int);
+    printf("Size of int: %d bytes\n", size);
+    
+    // String module demo
+    println("--- String Module ---");
+    message: string = "Lotus";
+    len_val: int = len(message);
+    printf("Length of '%s': %d\n", message, len_val);
+    
+    println("");
+    println("=== All modules working correctly! ===");
+}

@@ -1,0 +1,6 @@
+// Test specific function import
+use "io::printf";
+
+fn main() {
+    printf("Testing specific import: %d\n", 42);
+}

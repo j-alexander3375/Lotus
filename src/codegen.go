@@ -46,6 +46,9 @@ type CodeGenerator struct {
 	stringLengths map[string]int      // Maps variable names to string lengths
 	stackOffset   int                 // Current stack offset from rbp
 
+	// Module and import tracking
+	imports *ImportContext // Tracks imported modules and functions
+
 	// Counters for unique label generation
 	stringCount int // Counter for .str labels
 	labelCount  int // Counter for control flow labels
@@ -65,6 +68,7 @@ func NewCodeGenerator() *CodeGenerator {
 		constants:     make(map[string]Variable),
 		stringLengths: make(map[string]int),
 		stackOffset:   0,
+		imports:       NewImportContext(),
 		stringCount:   0,
 		labelCount:    0,
 		exitCode:      0,
@@ -98,6 +102,8 @@ func GenerateAssembly(tokens []Token) string {
 // This is the main router for statement-level code generation.
 func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 	switch s := stmt.(type) {
+	case *ImportStatement:
+		cg.generateImportStatement(s)
 	case *VariableDeclaration:
 		cg.generateVariableDeclaration(s)
 	case *ConstantDeclaration:
@@ -182,6 +188,18 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 			cg.stringLengths[decl.Name] = len(lit.Value)
 		}
 	}
+}
+
+// generateImportStatement processes an import/use statement
+// This function loads and registers imported modules and functions
+func (cg *CodeGenerator) generateImportStatement(stmt *ImportStatement) {
+	if err := cg.imports.ProcessImport(stmt); err != nil {
+		cg.diagnostics.AddError(fmt.Sprintf("Import error: %v", err), "", 0, 0, "")
+		return
+	}
+
+	// Record import in assembly comments for debugging
+	cg.textSection.WriteString(fmt.Sprintf("    # use \"%s\"\n", stmt.Module))
 }
 
 // generateConstantDeclaration generates code for a constant declaration.

@@ -1,0 +1,9 @@
+// Test multiple imports
+use "io";
+use "mem";
+use "math";
+use "str";
+
+fn main() {
+    println("All standard library modules imported");
+}

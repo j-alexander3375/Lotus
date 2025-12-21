@@ -17,6 +17,8 @@ const (
 	TokenWhile            // while
 	TokenFor              // for
 	TokenFn               // fn
+	TokenUse              // use (imports)
+	TokenAs               // as (aliasing)
 
 	// Literals
 	TokenInt        // integer literal

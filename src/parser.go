@@ -83,6 +83,8 @@ func (p *Parser) Parse() ([]ASTNode, error) {
 // parseStatement parses a single statement
 func (p *Parser) parseStatement() (ASTNode, error) {
 	switch p.current().Type {
+	case TokenUse:
+		return p.parseImportStatement()
 	case TokenRet:
 		return p.parseReturnStatement()
 	case TokenConst:
@@ -187,6 +189,58 @@ func (p *Parser) parseConstantDeclaration() (*ConstantDeclaration, error) {
 		Type:  constType,
 		Value: value,
 	}, nil
+}
+
+// parseImportStatement parses a use/import statement
+// Syntax: use "module"
+//
+//	use "module::function"
+//	use "module::*"
+//	use "module" as alias
+func (p *Parser) parseImportStatement() (*ImportStatement, error) {
+	if err := p.expect(TokenUse); err != nil {
+		return nil, err
+	}
+
+	// Module name must be a string
+	if p.current().Type != TokenString {
+		return nil, fmt.Errorf("expected module name (string) after 'use', got token type %d", p.current().Type)
+	}
+	moduleName := p.current().Value
+	p.advance()
+
+	stmt := &ImportStatement{
+		Module: moduleName,
+		Items:  []string{},
+	}
+
+	// Check for specific imports (::function or ::*)
+	if p.current().Type == TokenColon && p.peek().Type == TokenColon {
+		p.advance() // consume first :
+		p.advance() // consume second :
+
+		if p.current().Type == TokenStar {
+			// Wildcard import: use "module::*"
+			stmt.IsWildcard = true
+			p.advance()
+		} else if p.current().Type == TokenIdentifier {
+			// Specific import: use "module::function"
+			stmt.Items = append(stmt.Items, p.current().Value)
+			p.advance()
+		}
+	}
+
+	// Check for alias: as identifier
+	if p.current().Type == TokenAs {
+		p.advance()
+		if p.current().Type != TokenIdentifier {
+			return nil, fmt.Errorf("expected identifier after 'as', got token type %d", p.current().Type)
+		}
+		stmt.Alias = p.current().Value
+		p.advance()
+	}
+
+	return stmt, nil
 }
 
 // isTypeToken checks if a token type represents a data type

@@ -1,0 +1,7 @@
+// Test wildcard import
+use "io::*";
+
+fn main() {
+    println("Wildcard import test");
+    printf("Value: %d\n", 100);
+}

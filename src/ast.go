@@ -40,6 +40,26 @@ type ConstantDeclaration struct {
 func (c *ConstantDeclaration) astNode() {}
 
 // ============================================================================
+// Import/Module Nodes
+// ============================================================================
+
+// ImportStatement represents a use/import statement
+// Examples:
+//
+//	use "io" - imports all io functions
+//	use "math::sqrt" - imports specific function
+//	use "math::*" - wildcard import
+//	use "io" as io_module - aliased import
+type ImportStatement struct {
+	Module     string   // e.g., "io", "math", "std::collections"
+	Items      []string // Specific items to import, nil for all
+	Alias      string   // Optional alias name
+	IsWildcard bool     // true if use "module::*"
+}
+
+func (i *ImportStatement) astNode() {}
+
+// ============================================================================
 // Literal Expression Nodes
 // ============================================================================
 

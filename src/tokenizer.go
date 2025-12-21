@@ -117,6 +117,10 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenFor, Value: ""})
 			case "fn":
 				tokens = append(tokens, Token{Type: TokenFn, Value: ""})
+			case "use":
+				tokens = append(tokens, Token{Type: TokenUse, Value: ""})
+			case "as":
+				tokens = append(tokens, Token{Type: TokenAs, Value: ""})
 			case "try":
 				tokens = append(tokens, Token{Type: TokenTry, Value: ""})
 			case "catch":
