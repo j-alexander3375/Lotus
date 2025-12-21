@@ -1,18 +1,31 @@
 package main
 
+// keywords.go - Token type definitions and lexical token structure
+// This file defines all token types used by the lexer and parser.
+
+// TokenType represents the type of a lexical token
 type TokenType int
 
+// Token type constants - organized by category
 const (
-	TokenRet TokenType = iota
-	TokenInt           // integer literal
-	TokenSemi
-	TokenEOF
-	TokenString // string literal
-	TokenBool   // bool literal
-	TokenNewline
-	TokenAssign
+	// Keywords and control flow
+	TokenRet    TokenType = iota
+	TokenReturn           // return
+	TokenConst            // const
+	TokenIf               // if
+	TokenElse             // else
+	TokenWhile            // while
+	TokenFor              // for
+	TokenFn               // fn
+
+	// Literals
+	TokenInt        // integer literal
+	TokenString     // string literal
+	TokenBool       // bool literal
 	TokenFloat      // float literal
 	TokenIdentifier // variable name
+
+	// Type keywords - integers
 	TokenTypeInt    // type keyword: int
 	TokenTypeInt8   // type keyword: int8
 	TokenTypeInt16  // type keyword: int16
@@ -23,9 +36,13 @@ const (
 	TokenTypeUint16 // type keyword: uint16
 	TokenTypeUint32 // type keyword: uint32
 	TokenTypeUint64 // type keyword: uint64
+
+	// Type keywords - other
 	TokenTypeString // type keyword: string
 	TokenTypeBool   // type keyword: bool
 	TokenTypeFloat  // type keyword: float
+
+	// Built-in print functions
 	TokenPrintString
 	TokenPrintf
 	TokenFPrintf
@@ -37,73 +54,89 @@ const (
 	TokenFatalln
 	TokenLogf
 	TokenLogln
-	TokenLParen     // (
-	TokenRParen     // )
-	TokenComma      // ,
-	TokenPlus       // +
-	TokenMinus      // -
-	TokenStar       // *
-	TokenSlash      // /
-	TokenPercent    // %
-	TokenEqual      // ==
-	TokenNotEqual   // !=
-	TokenLess       // <
-	TokenLessEq     // <=
-	TokenGreater    // >
-	TokenGreaterEq  // >=
-	TokenAmpersand  // &
-	TokenExclaim    // !
-	TokenLBrace     // {
-	TokenRBrace     // }
-	TokenPipe       // |
-	TokenCaret      // ^
-	TokenTilde      // ~
-	TokenAnd        // &&
-	TokenOr         // ||
-	TokenLShift     // <<
-	TokenRShift     // >>
+
+	// Operators - arithmetic
+	TokenPlus    // +
+	TokenMinus   // -
+	TokenStar    // *
+	TokenSlash   // /
+	TokenPercent // %
+
+	// Operators - comparison
+	TokenEqual     // ==
+	TokenNotEqual  // !=
+	TokenLess      // <
+	TokenLessEq    // <=
+	TokenGreater   // >
+	TokenGreaterEq // >=
+
+	// Operators - logical
+	TokenAmpersand // &
+	TokenExclaim   // !
+	TokenPipe      // |
+	TokenCaret     // ^
+	TokenTilde     // ~
+	TokenAnd       // &&
+	TokenOr        // ||
+
+	// Operators - bitwise
+	TokenLShift // <<
+	TokenRShift // >>
+
+	// Operators - increment/decrement
 	TokenPlusPlus   // ++
 	TokenMinusMinus // --
-	TokenPlusEq     // +=
-	TokenMinusEq    // -=
-	TokenStarEq     // *=
-	TokenSlashEq    // /=
-	TokenPercentEq  // %=
-	TokenQuestion   // ?
-	TokenIf         // if
-	TokenElse       // else
-	TokenWhile      // while
-	TokenFor        // for
-	TokenFn         // fn
-	TokenReturn     // return
-	TokenStruct     // struct
-	TokenEnum       // enum
-	TokenClass      // class
-	TokenNew        // new
-	TokenMalloc     // malloc
-	TokenFree       // free
-	TokenSizeof     // sizeof
-	TokenLBracket   // [
-	TokenRBracket   // ]
-	TokenDot        // .
-	TokenColon      // :
-	TokenArrow      // ->
-	TokenTry        // try
-	TokenCatch      // catch
-	TokenFinally    // finally
-	TokenThrow      // throw
-	TokenNull       // null
+
+	// Operators - compound assignment
+	TokenPlusEq    // +=
+	TokenMinusEq   // -=
+	TokenStarEq    // *=
+	TokenSlashEq   // /=
+	TokenPercentEq // %=
+
+	// Delimiters
+	TokenLParen   // (
+	TokenRParen   // )
+	TokenLBrace   // {
+	TokenRBrace   // }
+	TokenLBracket // [
+	TokenRBracket // ]
+
+	// Punctuation
+	TokenComma    // ,
+	TokenSemi     // ;
+	TokenDot      // .
+	TokenColon    // :
+	TokenArrow    // ->
+	TokenQuestion // ?
+	TokenNewline  // newline
+	TokenAssign   // =
+
+	// Data structures
+	TokenStruct // struct
+	TokenEnum   // enum
+	TokenClass  // class
+
+	// Memory management
+	TokenNew    // new
+	TokenMalloc // malloc
+	TokenFree   // free
+	TokenSizeof // sizeof
+
+	// Error handling
+	TokenTry     // try
+	TokenCatch   // catch
+	TokenFinally // finally
+	TokenThrow   // throw
+	TokenNull    // null
+
+	// Special tokens
+	TokenEOF
 	TokenUnknown
 )
 
+// Token represents a lexical token with its type and value
 type Token struct {
-	Type  TokenType
-	Value string
-}
-
-// Variable represents a variable in the symbol table
-type Variable struct {
-	Name   string
-	Type   TokenType
-	Offset int // stack offset from rbp
+	Type  TokenType // The token type
+	Value string    // The raw string value from source code
 }

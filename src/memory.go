@@ -2,118 +2,110 @@ package main
 
 import "fmt"
 
-// MallocCall represents a memory allocation call
+// memory.go - Memory management and sizeof operations
+// This file handles dynamic memory allocation (malloc/free) and sizeof expressions.
+
+// MallocCall represents a memory allocation call: malloc(size)
 type MallocCall struct {
-	Size ASTNode // size in bytes to allocate
+	Size ASTNode // Size in bytes to allocate
 }
 
 func (m *MallocCall) astNode() {}
 
-// FreeCall represents a memory deallocation call
+// FreeCall represents a memory deallocation call: free(ptr)
 type FreeCall struct {
-	Pointer ASTNode // pointer to free
+	Pointer ASTNode // Pointer to memory to free
 }
 
 func (f *FreeCall) astNode() {}
 
-// SizeofExpr represents a sizeof expression
+// SizeofExpr represents a sizeof expression: sizeof(type)
 type SizeofExpr struct {
-	TypeOrExpr ASTNode // type or expression to get size of
+	TypeOrExpr ASTNode // Type or expression to get size of
 }
 
 func (s *SizeofExpr) astNode() {}
 
-// generateMallocCall generates assembly for malloc call
+// generateMallocCall generates assembly for dynamic memory allocation.
+// Calls the system malloc() function via PLT (Procedure Linkage Table).
 func (cg *CodeGenerator) generateMallocCall(malloc *MallocCall) {
-	// Evaluate size into rdi (first argument for malloc)
+	// Evaluate size expression and place result in rdi (first argument)
 	cg.generateExpressionToReg(malloc.Size, "rdi")
 
-	// Align stack to 16 bytes before call
+	// Align stack to 16 bytes before call (System V ABI requirement)
 	cg.textSection.WriteString("    pushq %rbp\n")
 	cg.textSection.WriteString("    movq %rsp, %rbp\n")
 	cg.textSection.WriteString("    andq $-16, %rsp\n")
 
-	// Call malloc (system library function)
+	// Call malloc from C standard library
 	cg.textSection.WriteString("    call malloc@PLT\n")
 
-	// Restore stack
+	// Restore stack pointer
 	cg.textSection.WriteString("    movq %rbp, %rsp\n")
 	cg.textSection.WriteString("    popq %rbp\n")
 
-	// Result is in rax (pointer to allocated memory)
+	// Result pointer is in rax
 }
 
-// generateFreeCall generates assembly for free call
+// generateFreeCall generates assembly for memory deallocation.
+// Calls the system free() function via PLT.
 func (cg *CodeGenerator) generateFreeCall(free *FreeCall) {
-	// Evaluate pointer into rdi (first argument for free)
+	// Evaluate pointer expression and place result in rdi (first argument)
 	cg.generateExpressionToReg(free.Pointer, "rdi")
 
-	// Align stack to 16 bytes before call
+	// Align stack to 16 bytes before call (System V ABI requirement)
 	cg.textSection.WriteString("    pushq %rbp\n")
 	cg.textSection.WriteString("    movq %rsp, %rbp\n")
 	cg.textSection.WriteString("    andq $-16, %rsp\n")
 
-	// Call free (system library function)
+	// Call free from C standard library
 	cg.textSection.WriteString("    call free@PLT\n")
 
-	// Restore stack
+	// Restore stack pointer
 	cg.textSection.WriteString("    movq %rbp, %rsp\n")
 	cg.textSection.WriteString("    popq %rbp\n")
 }
 
-// generateSizeofExpr generates assembly for sizeof expression
+// generateSizeofExpr generates assembly for sizeof expression.
+// Evaluates to a compile-time constant representing the size in bytes.
 func (cg *CodeGenerator) generateSizeofExpr(sizeof *SizeofExpr) {
 	// Determine size based on type
 	size := cg.getSizeOfType(sizeof.TypeOrExpr)
-	cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rax\n", size))
+	cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rax  # sizeof result\n", size))
 }
 
-// getSizeOfType returns the size in bytes of a type
+// getSizeOfType returns the size in bytes of a type from an AST node
 func (cg *CodeGenerator) getSizeOfType(node ASTNode) int {
 	switch t := node.(type) {
 	case *Identifier:
-		// Check if it's a type name
-		typeName := t.Name
-		return cg.getTypeSize(typeName)
+		// Identifier might be a type name
+		return cg.getTypeSize(t.Name)
 	default:
-		// Default to pointer size (8 bytes on x86-64)
-		return 8
+		// Default to pointer size for unknown types
+		return PointerSize
 	}
 }
 
-// getTypeSize returns the size of a type by name
+// getTypeSize returns the size of a type by its string name
 func (cg *CodeGenerator) getTypeSize(typeName string) int {
 	switch typeName {
 	case "int8", "uint8", "bool":
-		return 1
+		return Int8Size
 	case "int16", "uint16":
-		return 2
+		return Int16Size
 	case "int32", "uint32", "float":
-		return 4
-	case "int64", "uint64", "int", "uint":
-		return 8
-	case "string": // pointer to string data
-		return 8
+		return Int32Size
+	case "int64", "uint64", "int", "uint", "string":
+		return Int64Size
 	default:
-		// For user-defined types, would need type registry
-		return 8
+		// For user-defined types (structs, classes), would query type registry
+		return PointerSize
 	}
 }
 
-// getTypeSizeFromToken returns the size of a type from TokenType
+// getTypeSizeFromToken returns the size in bytes of a type from its TokenType.
+// This is used during code generation for type-specific operations.
 func getTypeSizeFromToken(tokenType TokenType) int {
-	switch tokenType {
-	case TokenTypeInt8, TokenTypeUint8, TokenTypeBool:
-		return 1
-	case TokenTypeInt16, TokenTypeUint16:
-		return 2
-	case TokenTypeInt32, TokenTypeUint32, TokenTypeFloat:
-		return 4
-	case TokenTypeInt64, TokenTypeUint64, TokenTypeInt, TokenTypeUint:
-		return 8
-	case TokenTypeString:
-		return 8 // pointer
-	default:
-		return 8
-	}
+	// Use the centralized type size utility
+	return GetTypeSize(tokenType)
 }

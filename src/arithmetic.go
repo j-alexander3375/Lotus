@@ -159,8 +159,19 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 	case *IntLiteral:
 		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%%s\n", e.Value, reg))
 	case *Identifier:
+		// Check if it's a variable first
 		if v, exists := cg.variables[e.Name]; exists {
 			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%%s\n", v.Offset, reg))
+		} else if c, exists := cg.constants[e.Name]; exists {
+			// It's a constant - load from data section
+			label := fmt.Sprintf(".const_%s", c.Name)
+			if c.Type == TokenTypeString {
+				// String constants: load address
+				cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%%s\n", label, reg))
+			} else {
+				// Numeric/bool constants: load value
+				cg.textSection.WriteString(fmt.Sprintf("    movq %s(%%rip), %%%s\n", label, reg))
+			}
 		}
 	case *BinaryOp:
 		cg.generateBinaryOp(e)

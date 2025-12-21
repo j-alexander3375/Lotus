@@ -2,65 +2,11 @@ package main
 
 import "fmt"
 
-// ASTNode represents a node in the abstract syntax tree
-type ASTNode interface {
-	astNode()
-}
+// parser.go - Recursive descent parser for Lotus language
+// This file implements syntactic analysis, converting a token stream into an AST.
 
-// Statement nodes
-type ReturnStatement struct {
-	Value ASTNode
-}
-
-func (r *ReturnStatement) astNode() {}
-
-type VariableDeclaration struct {
-	Name  string
-	Type  TokenType
-	Value ASTNode
-}
-
-func (v *VariableDeclaration) astNode() {}
-
-type FunctionCall struct {
-	Name string
-	Args []ASTNode
-}
-
-func (f *FunctionCall) astNode() {}
-
-// Expression nodes
-type IntLiteral struct {
-	Value int
-}
-
-func (i *IntLiteral) astNode() {}
-
-type StringLiteral struct {
-	Value string
-}
-
-func (s *StringLiteral) astNode() {}
-
-type BoolLiteral struct {
-	Value bool
-}
-
-func (b *BoolLiteral) astNode() {}
-
-type FloatLiteral struct {
-	Value int64 // stored as int * 1000
-}
-
-func (f *FloatLiteral) astNode() {}
-
-type Identifier struct {
-	Name string
-}
-
-func (id *Identifier) astNode() {}
-
-// Parser holds parsing state
+// Parser holds the state for parsing a token stream
+// It maintains the current position and provides methods for lookahead and navigation.
 type Parser struct {
 	tokens []Token
 	pos    int
@@ -139,6 +85,8 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 	switch p.current().Type {
 	case TokenRet:
 		return p.parseReturnStatement()
+	case TokenConst:
+		return p.parseConstantDeclaration()
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
 		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
 		TokenTypeString, TokenTypeBool, TokenTypeFloat:
@@ -201,6 +149,56 @@ func (p *Parser) parseVariableDeclaration() (*VariableDeclaration, error) {
 		Type:  varType,
 		Value: value,
 	}, nil
+}
+
+// parseConstantDeclaration parses a constant declaration: const int MAX = 100;
+func (p *Parser) parseConstantDeclaration() (*ConstantDeclaration, error) {
+	if err := p.expect(TokenConst); err != nil {
+		return nil, err
+	}
+
+	// Type is required for constants
+	if !isTypeToken(p.current().Type) {
+		return nil, fmt.Errorf("expected type after 'const', got token type %d", p.current().Type)
+	}
+	constType := p.current().Type
+	p.advance()
+
+	// Constant name
+	if p.current().Type != TokenIdentifier {
+		return nil, fmt.Errorf("expected identifier for constant name, got token type %d", p.current().Type)
+	}
+	constName := p.current().Value
+	p.advance()
+
+	// Assignment operator
+	if err := p.expect(TokenAssign); err != nil {
+		return nil, err
+	}
+
+	// Constant value (must be a literal or compile-time constant expression)
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConstantDeclaration{
+		Name:  constName,
+		Type:  constType,
+		Value: value,
+	}, nil
+}
+
+// isTypeToken checks if a token type represents a data type
+func isTypeToken(t TokenType) bool {
+	switch t {
+	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
+		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
+		TokenTypeString, TokenTypeBool, TokenTypeFloat:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseFunctionCall parses a function call

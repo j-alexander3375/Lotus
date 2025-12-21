@@ -5,7 +5,12 @@ import (
 	"strings"
 )
 
-// escapeAssemblyString escapes a string for use in assembly code
+// codegen.go - Assembly code generation from AST
+// This file contains the main CodeGenerator struct and orchestrates
+// the conversion from Abstract Syntax Tree to x86-64 GNU assembly.
+
+// escapeAssemblyString escapes special characters in a string for assembly output
+// It handles common escape sequences like newlines, tabs, quotes, and backslashes.
 func escapeAssemblyString(s string) string {
 	result := strings.Builder{}
 	for _, ch := range s {
@@ -27,23 +32,37 @@ func escapeAssemblyString(s string) string {
 	return result.String()
 }
 
-// CodeGenerator handles AST to assembly conversion
+// CodeGenerator orchestrates the conversion of AST nodes to x86-64 assembly.
+// It maintains state including variable symbol tables, string constants,
+// and manages label generation for control flow structures.
 type CodeGenerator struct {
-	dataSection   strings.Builder
-	textSection   strings.Builder
-	variables     map[string]Variable
-	stringLengths map[string]int // maps variable name to string length
-	stackOffset   int
-	stringCount   int
-	labelCount    int
-	exitCode      int
-	diagnostics   *DiagnosticManager
+	// Assembly section builders
+	dataSection strings.Builder // Accumulates .data section (constants, strings)
+	textSection strings.Builder // Accumulates .text section (executable code)
+
+	// Symbol table and state
+	variables     map[string]Variable // Maps variable names to their metadata
+	constants     map[string]Variable // Maps constant names to their metadata (immutable)
+	stringLengths map[string]int      // Maps variable names to string lengths
+	stackOffset   int                 // Current stack offset from rbp
+
+	// Counters for unique label generation
+	stringCount int // Counter for .str labels
+	labelCount  int // Counter for control flow labels
+
+	// Program exit state
+	exitCode int // Exit code from return statement
+
+	// Diagnostic and error reporting
+	diagnostics *DiagnosticManager
 }
 
-// NewCodeGenerator creates a new code generator
+// NewCodeGenerator creates and initializes a new code generator instance.
+// All state is initialized to default values with empty maps and zero counters.
 func NewCodeGenerator() *CodeGenerator {
 	return &CodeGenerator{
 		variables:     make(map[string]Variable),
+		constants:     make(map[string]Variable),
 		stringLengths: make(map[string]int),
 		stackOffset:   0,
 		stringCount:   0,
@@ -53,18 +72,20 @@ func NewCodeGenerator() *CodeGenerator {
 	}
 }
 
-// GenerateAssembly generates x86-64 GNU assembly from tokens
+// GenerateAssembly is the main entry point for assembly generation.
+// It takes a token stream, parses it into an AST, and generates x86-64 assembly.
+// Returns the complete assembly program as a string.
 func GenerateAssembly(tokens []Token) string {
-	// Parse tokens to AST
+	// Phase 1: Parse tokens to AST
 	parser := NewParser(tokens)
 	statements, err := parser.Parse()
 	if err != nil {
 		return fmt.Sprintf("# Parse error: %v\n", err)
 	}
 
-	// Generate code from AST
+	// Phase 2: Generate code from AST
 	gen := NewCodeGenerator()
-	gen.dataSection.WriteString(".section .data\n")
+	gen.dataSection.WriteString(DataSectionDirective + "\n")
 
 	for _, stmt := range statements {
 		gen.generateStatement(stmt)
@@ -73,11 +94,14 @@ func GenerateAssembly(tokens []Token) string {
 	return gen.buildFinalAssembly()
 }
 
-// generateStatement generates code for a statement
+// generateStatement dispatches AST nodes to their appropriate code generation methods.
+// This is the main router for statement-level code generation.
 func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 	switch s := stmt.(type) {
 	case *VariableDeclaration:
 		cg.generateVariableDeclaration(s)
+	case *ConstantDeclaration:
+		cg.generateConstantDeclaration(s)
 	case *ReturnStatement:
 		cg.generateReturnStatement(s)
 	case *FunctionCall:
@@ -113,9 +137,11 @@ func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 	}
 }
 
-// generateVariableDeclaration generates code for a variable declaration
+// generateVariableDeclaration allocates stack space and generates code for variable initialization.
+// Handles all primitive types including integers, floats, booleans, and strings.
 func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) {
-	cg.stackOffset += 8
+	// Allocate stack space (always 8 bytes for alignment)
+	cg.stackOffset += PointerSize
 	cg.variables[decl.Name] = Variable{
 		Name:   decl.Name,
 		Type:   decl.Type,
@@ -145,7 +171,7 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 		}
 	case TokenTypeString:
 		if lit, ok := decl.Value.(*StringLiteral); ok {
-			label := fmt.Sprintf(".str%d", cg.stringCount)
+			label := fmt.Sprintf("%s%d", StringLabelPrefix, cg.stringCount)
 			cg.stringCount++
 			escapedStr := escapeAssemblyString(lit.Value)
 			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, escapedStr))
@@ -158,14 +184,74 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 	}
 }
 
-// generateReturnStatement generates code for a return statement
+// generateConstantDeclaration generates code for a constant declaration.
+// Constants are stored in the data section for numeric/bool types, or as labels for strings.
+// They can be referenced like variables but cannot be modified.
+func (cg *CodeGenerator) generateConstantDeclaration(decl *ConstantDeclaration) {
+	switch decl.Type {
+	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
+		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64:
+		if lit, ok := decl.Value.(*IntLiteral); ok {
+			// Generate a label for the constant in data section
+			label := fmt.Sprintf(".const_%s", decl.Name)
+			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .quad %d\n", label, lit.Value))
+
+			// Store constant metadata for later reference
+			cg.constants[decl.Name] = Variable{
+				Name:   decl.Name,
+				Type:   decl.Type,
+				Offset: -1, // Constants don't use stack offsets
+			}
+
+			cg.textSection.WriteString(fmt.Sprintf("    # const int-type %s = %d\n", decl.Name, lit.Value))
+		}
+	case TokenTypeBool:
+		if lit, ok := decl.Value.(*BoolLiteral); ok {
+			boolVal := 0
+			if lit.Value {
+				boolVal = 1
+			}
+			// Generate a label for the constant in data section
+			label := fmt.Sprintf(".const_%s", decl.Name)
+			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .quad %d\n", label, boolVal))
+
+			cg.constants[decl.Name] = Variable{
+				Name:   decl.Name,
+				Type:   decl.Type,
+				Offset: -1,
+			}
+
+			cg.textSection.WriteString(fmt.Sprintf("    # const bool %s = %v\n", decl.Name, lit.Value))
+		}
+	case TokenTypeString:
+		if lit, ok := decl.Value.(*StringLiteral); ok {
+			// String constants are already stored as labels
+			label := fmt.Sprintf(".const_%s", decl.Name)
+			escapedStr := escapeAssemblyString(lit.Value)
+			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .asciz \"%s\"\n", label, escapedStr))
+
+			cg.constants[decl.Name] = Variable{
+				Name:   decl.Name,
+				Type:   decl.Type,
+				Offset: -1,
+			}
+			cg.stringLengths[decl.Name] = len(lit.Value)
+
+			cg.textSection.WriteString(fmt.Sprintf("    # const string %s = \"%s\"\n", decl.Name, escapedStr))
+		}
+	}
+}
+
+// generateReturnStatement processes a return statement and sets the exit code.
+// Currently only handles integer literals; more complex expressions will be supported later.
 func (cg *CodeGenerator) generateReturnStatement(ret *ReturnStatement) {
 	if lit, ok := ret.Value.(*IntLiteral); ok {
 		cg.exitCode = lit.Value
 	}
 }
 
-// generateFunctionCall generates code for a function call
+// generateFunctionCall dispatches function calls to user-defined or built-in functions.
+// First checks for user-defined functions, then for registered print functions.
 func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 	// Check if it's a user-defined function first
 	if cg.generateUserFunctionCall(call) {
@@ -182,27 +268,40 @@ func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 	cg.textSection.WriteString(fmt.Sprintf("    # Unknown function call: %s\n", call.Name))
 }
 
-// buildFinalAssembly builds the final assembly program
+// buildFinalAssembly constructs the complete assembly program with proper sections and entry point.
+// It combines the data section, text section, and generates the program prologue and epilogue.
 func (cg *CodeGenerator) buildFinalAssembly() string {
 	var b strings.Builder
 
+	// Data section with constants and strings
 	b.WriteString(cg.dataSection.String())
 	b.WriteString("\n")
-	b.WriteString(".global _start\n")
-	b.WriteString(".text\n")
-	b.WriteString("_start:\n")
+
+	// Text section with code
+	b.WriteString(fmt.Sprintf("%s %s\n", GlobalDirective, EntryPointLabel))
+	b.WriteString(TextSectionDirective + "\n")
+	b.WriteString(EntryPointLabel + ":\n")
+
+	// Function prologue
 	b.WriteString("    # Set up stack frame\n")
 	b.WriteString("    pushq %rbp\n")
 	b.WriteString("    movq %rsp, %rbp\n")
+
+	// Allocate stack space if needed (aligned to 16 bytes)
 	if cg.stackOffset > 0 {
-		b.WriteString(fmt.Sprintf("    subq $%d, %%rsp  # Allocate stack space for variables\n", (cg.stackOffset+15)&^15))
+		alignedSize := (cg.stackOffset + DefaultStackAlignment - 1) &^ (DefaultStackAlignment - 1)
+		b.WriteString(fmt.Sprintf("    subq $%d, %%rsp  # Allocate stack space for variables\n", alignedSize))
 	}
 	b.WriteString("\n")
+
+	// Main program code
 	b.WriteString(cg.textSection.String())
 	b.WriteString("\n")
-	b.WriteString("    # Exit\n")
-	b.WriteString("    movq $60, %rax\n")
-	b.WriteString(fmt.Sprintf("    movq $%d, %%rdi\n", cg.exitCode))
+
+	// Program epilogue - exit syscall
+	b.WriteString("    # Exit program\n")
+	b.WriteString(fmt.Sprintf("    movq $%d, %%rax  # syscall: exit\n", SyscallExit))
+	b.WriteString(fmt.Sprintf("    movq $%d, %%rdi  # exit code\n", cg.exitCode))
 	b.WriteString("    syscall\n")
 
 	return b.String()

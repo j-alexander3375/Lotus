@@ -4,37 +4,38 @@ import (
 	"fmt"
 )
 
+// error_handling.go - Exception handling and null safety
+// This file implements try/catch/finally blocks and null literal support.
+
 // TryStatement represents a try-catch-finally block
 type TryStatement struct {
-	TryBlock     []ASTNode
-	CatchClauses []*CatchClause
-	FinallyBlock []ASTNode
+	TryBlock     []ASTNode      // Statements in the try block
+	CatchClauses []*CatchClause // One or more catch blocks
+	FinallyBlock []ASTNode      // Optional finally block
 }
 
 func (t *TryStatement) astNode() {}
 
 // CatchClause represents a catch block with optional exception type
 type CatchClause struct {
-	ExceptionType string // Type of exception to catch (empty for catch-all)
-	ExceptionVar  string // Variable name to store the exception
-	Body          []ASTNode
+	ExceptionType string    // Type of exception to catch (empty for catch-all)
+	ExceptionVar  string    // Variable name to store the exception
+	Body          []ASTNode // Statements in the catch block
 }
 
 func (c *CatchClause) astNode() {}
 
 // ThrowStatement represents throwing an exception
 type ThrowStatement struct {
-	Exception ASTNode // Expression to throw
+	Exception ASTNode // Expression to throw as exception
 }
 
 func (t *ThrowStatement) astNode() {}
 
-// NullLiteral represents a null value
-type NullLiteral struct{}
+// Note: NullLiteral is defined in ast.go
 
-func (n *NullLiteral) astNode() {}
-
-// generateTryStatement generates code for try-catch-finally
+// generateTryStatement generates code for try-catch-finally blocks.
+// Uses label-based control flow for exception handling.
 func (cg *CodeGenerator) generateTryStatement(stmt *TryStatement) {
 	tryLabel := fmt.Sprintf(".try_%d", cg.labelCount)
 	catchLabel := fmt.Sprintf(".catch_%d", cg.labelCount)

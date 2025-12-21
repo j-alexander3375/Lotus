@@ -8,13 +8,18 @@ Lotus is a powerful systems programming language compiler that generates optimiz
 ### Core Modules
 ```
 src/
-├── main.go              # Entry point and CLI
-├── compiler.go          # Compilation pipeline
+├── main.go              # Entry point and CLI orchestration
+├── compiler.go          # Compilation pipeline management
 ├── flags.go             # Command-line argument parsing
-├── keywords.go          # Token type definitions (70+ tokens)
+├── constants.go         # Compiler constants and configuration
+│
+├── keywords.go          # Token type definitions (100+ tokens)
 ├── tokenizer.go         # Lexical analysis with multi-char operators
-├── parser.go            # Recursive descent parser with operator precedence
+├── parser.go            # Recursive descent parser with precedence
+├── ast.go               # Central AST node definitions
+├── types.go             # Type system utilities and helpers
 ├── codegen.go           # Code generation orchestrator
+├── diagnostics.go       # Error and warning reporting
 │
 ├── printfuncs.go        # Print function implementations
 │                         # - printf, println, fprintf, sprintf
@@ -78,6 +83,14 @@ src/
 - `bool` - Boolean values (true/false)
 - `float` - Floating-point numbers
 
+**Constants:**
+```lotus
+const int MAX_VALUE = 1000;
+const string APP_NAME = "Lotus";
+const bool DEBUG = true;
+```
+Constants are immutable, stored in the data section, and accessed via labels.
+
 **Complex Types:**
 - Arrays: `int[]`, dynamic sizing
 - Structs: User-defined composite types
@@ -135,6 +148,23 @@ if (flag1 || flag2) { }
 // Ternary operator
 int max = (a > b) ? a : b;
 string status = (active) ? "on" : "off";
+```
+
+### Constants
+```lotus
+// Declare constants (immutable values)
+const int MAX_BUFFER = 4096;
+const string APP_VERSION = "1.0.0";
+const bool DEBUG = true;
+
+// Use constants in expressions
+int buffer_size = MAX_BUFFER;
+if (DEBUG) {
+  println("Debug mode enabled");
+}
+
+// Constants are stored in data section for efficiency
+// They cannot be modified after declaration
 ```
 
 ### Control Flow (control_flow.go)

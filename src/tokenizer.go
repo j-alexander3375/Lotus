@@ -63,6 +63,8 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenRet, Value: ""})
 			case "return":
 				tokens = append(tokens, Token{Type: TokenReturn, Value: ""})
+			case "const":
+				tokens = append(tokens, Token{Type: TokenConst, Value: ""})
 			case "true", "false":
 				tokens = append(tokens, Token{Type: TokenBool, Value: word})
 			case "int":
