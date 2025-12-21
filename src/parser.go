@@ -139,7 +139,9 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 	switch p.current().Type {
 	case TokenRet:
 		return p.parseReturnStatement()
-	case TokenTypeInt, TokenTypeString, TokenTypeBool, TokenTypeFloat:
+	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
+		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
+		TokenTypeString, TokenTypeBool, TokenTypeFloat:
 		return p.parseVariableDeclaration()
 	case TokenPrintString, TokenPrintf, TokenFPrintf, TokenPrintln, TokenSPrint, TokenSPrintf, TokenSPrintln, TokenFatalf, TokenFatalln, TokenLogf, TokenLogln:
 		return p.parseFunctionCall()

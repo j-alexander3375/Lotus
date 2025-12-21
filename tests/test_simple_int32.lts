@@ -1,0 +1,4 @@
+printf("Testing int32 type\n");
+int32 x = 42;
+printf("Value stored\n");
+ret 0;
