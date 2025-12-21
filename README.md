@@ -18,10 +18,10 @@ Lotus is a systems programming language with a few deliberate twists: module imp
 use "io";
 use "math";
 
-fn main() {
-    int max_val = max(10, 20);
-    printf("Maximum: %d\\n", max_val);
-    ret 0;
+fn int main() {
+  int max_val = max(10, 20);
+  printf("Maximum: %d\n", max_val);
+  ret 0;
 }
 ```
 
@@ -96,29 +96,32 @@ int length = len("Hello");
 ## Language Notes
 
 - Naming: snake_case for functions/structs/enums; constants stay UPPER_SNAKE_CASE; variables in snake_case.
-- Returns: prefer ret expr; over bare expressions.
-- Declarations: type-first by default (int count = 42;). Pointers use postfix * (int* buffer).
-- Modules: import via use "module"; and alias with as (use "io::printf" as io_print;).
-- Ownership: allocate with malloc, release with free; document lifetimes when transferring ownership.
+- Returns: prefer `ret expr;` and `fn int main() { ... ret 0; }` for entrypoints.
+- Declarations: type-first by default (`int count = 42;`). Pointers use postfix `*` (`int* buffer`).
+- Functions: C-style signatures with `fn <return_type> name(<type> <name>, ...)`.
+- Control flow: `if/else`, `while`, and `for (init; cond; update)` blocks require braces.
+- Modules: import via `use "module";` and alias with `as` (`use "io::printf" as io_print;`).
+- Ownership: allocate with `malloc`, release with `free`; document lifetimes when transferring ownership.
 
 ## Sample Patterns
 
 **Function with explicit ret**
 ```lotus
-fn add(a: int, b: int) -> int {
-    ret a + b;
+fn int add(int a, int b) {
+  ret a + b;
 }
 ```
 
 **Looping and conditionals**
 ```lotus
-fn countdown(start: int) {
-    int n = start;
-    while n > 0 {
-    printf("%d...\\n", n);
-        n = n - 1;
-    }
-    println("liftoff!");
+fn int countdown(int start) {
+  int n = start;
+  while n > 0 {
+    printf("%d...\n", n);
+    n = n - 1;
+  }
+  println("liftoff!");
+  ret 0;
 }
 ```
 
@@ -168,8 +171,11 @@ Assembler/Linker → Binary (ELF)
 
 ```bash
 # Build compiler
-fish -c 'go build -o lotus src/*.go'
+go build -o lotus ./src
 
-# Compile Lotus source
+# Compile Lotus source to a.out (default)
 ./lotus program.lts
+
+# Emit assembly instead of a binary
+./lotus -S -o program.s program.lts
 ```
