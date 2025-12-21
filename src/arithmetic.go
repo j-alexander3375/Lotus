@@ -91,5 +91,50 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 		if reg != "rax" {
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
 		}
+	case *ArrayAccess:
+		cg.generateArrayAccess(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *ArrayLiteral:
+		cg.generateArrayLiteral(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *FieldAccess:
+		cg.generateFieldAccess(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *StructLiteral:
+		cg.generateStructLiteral(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *ClassLiteral:
+		cg.generateClassLiteral(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *EnumLiteral:
+		cg.generateEnumLiteral(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *MallocCall:
+		cg.generateMallocCall(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *SizeofExpr:
+		cg.generateSizeofExpr(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
+	case *MethodCall:
+		cg.generateMethodCall(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
 	}
 }

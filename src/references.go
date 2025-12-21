@@ -24,14 +24,6 @@ type Assignment struct {
 
 func (a *Assignment) astNode() {}
 
-// ArrayAccess represents accessing an array element
-type ArrayAccess struct {
-	Array ASTNode
-	Index ASTNode
-}
-
-func (a *ArrayAccess) astNode() {}
-
 // generateAssignment generates assembly for variable assignment
 func (cg *CodeGenerator) generateAssignment(assign *Assignment) {
 	if id, ok := assign.Target.(*Identifier); ok {

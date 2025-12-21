@@ -67,12 +67,44 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenBool, Value: word})
 			case "int":
 				tokens = append(tokens, Token{Type: TokenTypeInt, Value: ""})
+			case "int8":
+				tokens = append(tokens, Token{Type: TokenTypeInt8, Value: ""})
+			case "int16":
+				tokens = append(tokens, Token{Type: TokenTypeInt16, Value: ""})
+			case "int32":
+				tokens = append(tokens, Token{Type: TokenTypeInt32, Value: ""})
+			case "int64":
+				tokens = append(tokens, Token{Type: TokenTypeInt64, Value: ""})
+			case "uint":
+				tokens = append(tokens, Token{Type: TokenTypeUint, Value: ""})
+			case "uint8":
+				tokens = append(tokens, Token{Type: TokenTypeUint8, Value: ""})
+			case "uint16":
+				tokens = append(tokens, Token{Type: TokenTypeUint16, Value: ""})
+			case "uint32":
+				tokens = append(tokens, Token{Type: TokenTypeUint32, Value: ""})
+			case "uint64":
+				tokens = append(tokens, Token{Type: TokenTypeUint64, Value: ""})
 			case "string":
 				tokens = append(tokens, Token{Type: TokenTypeString, Value: ""})
 			case "bool":
 				tokens = append(tokens, Token{Type: TokenTypeBool, Value: ""})
 			case "float":
 				tokens = append(tokens, Token{Type: TokenTypeFloat, Value: ""})
+			case "struct":
+				tokens = append(tokens, Token{Type: TokenStruct, Value: ""})
+			case "enum":
+				tokens = append(tokens, Token{Type: TokenEnum, Value: ""})
+			case "class":
+				tokens = append(tokens, Token{Type: TokenClass, Value: ""})
+			case "new":
+				tokens = append(tokens, Token{Type: TokenNew, Value: ""})
+			case "malloc":
+				tokens = append(tokens, Token{Type: TokenMalloc, Value: ""})
+			case "free":
+				tokens = append(tokens, Token{Type: TokenFree, Value: ""})
+			case "sizeof":
+				tokens = append(tokens, Token{Type: TokenSizeof, Value: ""})
 			case "if":
 				tokens = append(tokens, Token{Type: TokenIf, Value: ""})
 			case "else":
@@ -169,7 +201,13 @@ func Tokenize(input string) []Token {
 		} else if c == '+' {
 			tokens = append(tokens, Token{Type: TokenPlus, Value: ""})
 		} else if c == '-' {
-			tokens = append(tokens, Token{Type: TokenMinus, Value: ""})
+			// Check for ->
+			if i+1 < len(runes) && runes[i+1] == '>' {
+				tokens = append(tokens, Token{Type: TokenArrow, Value: ""})
+				i++
+			} else {
+				tokens = append(tokens, Token{Type: TokenMinus, Value: ""})
+			}
 		} else if c == '*' {
 			tokens = append(tokens, Token{Type: TokenStar, Value: ""})
 		} else if c == '/' {
@@ -178,6 +216,14 @@ func Tokenize(input string) []Token {
 			tokens = append(tokens, Token{Type: TokenPercent, Value: ""})
 		} else if c == '&' {
 			tokens = append(tokens, Token{Type: TokenAmpersand, Value: ""})
+		} else if c == '[' {
+			tokens = append(tokens, Token{Type: TokenLBracket, Value: ""})
+		} else if c == ']' {
+			tokens = append(tokens, Token{Type: TokenRBracket, Value: ""})
+		} else if c == '.' {
+			tokens = append(tokens, Token{Type: TokenDot, Value: ""})
+		} else if c == ':' {
+			tokens = append(tokens, Token{Type: TokenColon, Value: ""})
 		} else if c == '(' {
 			tokens = append(tokens, Token{Type: TokenLParen, Value: ""})
 		} else if c == ')' {
@@ -225,12 +271,44 @@ func TokenValue(t Token) string {
 		return t.Value
 	case TokenTypeInt:
 		return "int"
+	case TokenTypeInt8:
+		return "int8"
+	case TokenTypeInt16:
+		return "int16"
+	case TokenTypeInt32:
+		return "int32"
+	case TokenTypeInt64:
+		return "int64"
+	case TokenTypeUint:
+		return "uint"
+	case TokenTypeUint8:
+		return "uint8"
+	case TokenTypeUint16:
+		return "uint16"
+	case TokenTypeUint32:
+		return "uint32"
+	case TokenTypeUint64:
+		return "uint64"
 	case TokenTypeString:
 		return "string"
 	case TokenTypeBool:
 		return "bool"
 	case TokenTypeFloat:
 		return "float"
+	case TokenStruct:
+		return "struct"
+	case TokenEnum:
+		return "enum"
+	case TokenClass:
+		return "class"
+	case TokenNew:
+		return "new"
+	case TokenMalloc:
+		return "malloc"
+	case TokenFree:
+		return "free"
+	case TokenSizeof:
+		return "sizeof"
 	case TokenPrintf:
 		return "Printf"
 	case TokenFPrintf:
@@ -287,6 +365,16 @@ func TokenValue(t Token) string {
 		return "{"
 	case TokenRBrace:
 		return "}"
+	case TokenLBracket:
+		return "["
+	case TokenRBracket:
+		return "]"
+	case TokenDot:
+		return "."
+	case TokenColon:
+		return ":"
+	case TokenArrow:
+		return "->"
 	case TokenIf:
 		return "if"
 	case TokenElse:

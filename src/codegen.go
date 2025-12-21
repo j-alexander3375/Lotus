@@ -88,6 +88,18 @@ func (cg *CodeGenerator) generateStatement(stmt ASTNode) {
 		cg.generateForLoop(s)
 	case *FunctionDefinition:
 		cg.generateFunctionDefinition(s)
+	case *StructDefinition:
+		cg.generateStructDefinition(s)
+	case *EnumDefinition:
+		cg.generateEnumDefinition(s)
+	case *ClassDefinition:
+		cg.generateClassDefinition(s)
+	case *ArrayDeclaration:
+		cg.generateArrayDeclaration(s)
+	case *MallocCall:
+		cg.generateMallocCall(s)
+	case *FreeCall:
+		cg.generateFreeCall(s)
 	}
 }
 
