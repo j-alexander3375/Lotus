@@ -259,15 +259,57 @@ func (ic *ImportContext) ProcessImport(stmt *ImportStatement) error {
 // ============================================================================
 
 func generateMathAbs(cg *CodeGenerator, args []ASTNode) {
-	// TODO: Implement abs(x) - absolute value
+	if len(args) != 1 {
+		return
+	}
+	// abs(x): if x < 0 then -x else x
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    movq %rax, %rbx\n")
+	cg.textSection.WriteString("    sarq $63, %rbx\n")
+	cg.textSection.WriteString("    xorq %rbx, %rax\n")
+	cg.textSection.WriteString("    subq %rbx, %rax\n")
 }
 
 func generateMathMin(cg *CodeGenerator, args []ASTNode) {
-	// TODO: Implement min(a, b)
+	if len(args) != 2 {
+		return
+	}
+	labelGT := cg.getLabel("min_gt")
+	labelEnd := cg.getLabel("min_end")
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.generateExpressionToReg(args[1], "rax")
+	cg.textSection.WriteString("    movq %rax, %rcx\n")
+	cg.textSection.WriteString("    popq %rax\n")
+	cg.textSection.WriteString("    cmpq %rcx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelGT))
+	// rcx smaller
+	cg.textSection.WriteString("    movq %rcx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelEnd))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelGT))
+	// rax already min
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
 }
 
 func generateMathMax(cg *CodeGenerator, args []ASTNode) {
-	// TODO: Implement max(a, b)
+	if len(args) != 2 {
+		return
+	}
+	labelLT := cg.getLabel("max_lt")
+	labelEnd := cg.getLabel("max_end")
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.generateExpressionToReg(args[1], "rax")
+	cg.textSection.WriteString("    movq %rax, %rcx\n")
+	cg.textSection.WriteString("    popq %rax\n")
+	cg.textSection.WriteString("    cmpq %rcx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", labelLT))
+	// rcx larger
+	cg.textSection.WriteString("    movq %rcx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelEnd))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelLT))
+	// rax already max
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
 }
 
 func generateMathSqrt(cg *CodeGenerator, args []ASTNode) {
@@ -279,7 +321,21 @@ func generateMathPow(cg *CodeGenerator, args []ASTNode) {
 }
 
 func generateStringLen(cg *CodeGenerator, args []ASTNode) {
-	// TODO: Implement len(str)
+	if len(args) != 1 {
+		return
+	}
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rax\n", len(v.Value)))
+	case *Identifier:
+		if l, ok := cg.stringLengths[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rax\n", l))
+			return
+		}
+		cg.textSection.WriteString("    movq $0, %rax\n")
+	default:
+		cg.textSection.WriteString("    movq $0, %rax\n")
+	}
 }
 
 func generateStringConcat(cg *CodeGenerator, args []ASTNode) {

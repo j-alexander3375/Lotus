@@ -248,6 +248,11 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 		if reg != "rax" {
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
 		}
+	case *FunctionCall:
+		cg.generateFunctionCall(e)
+		if reg != "rax" {
+			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, %%%s\n", reg))
+		}
 	case *NullLiteral:
 		cg.generateNullLiteral(e)
 		if reg != "rax" {

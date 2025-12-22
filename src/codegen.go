@@ -166,11 +166,13 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 		if lit, ok := decl.Value.(*IntLiteral); ok {
 			cg.textSection.WriteString(fmt.Sprintf("    # int-type %s = %d\n", decl.Name, lit.Value))
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", lit.Value, cg.stackOffset))
+			return
 		}
 	case TokenTypeFloat:
 		if lit, ok := decl.Value.(*FloatLiteral); ok {
 			cg.textSection.WriteString(fmt.Sprintf("    # float %s\n", decl.Name))
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", lit.Value, cg.stackOffset))
+			return
 		}
 	case TokenTypeBool:
 		if lit, ok := decl.Value.(*BoolLiteral); ok {
@@ -180,6 +182,7 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 			}
 			cg.textSection.WriteString(fmt.Sprintf("    # bool %s = %v\n", decl.Name, lit.Value))
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", boolVal, cg.stackOffset))
+			return
 		}
 	case TokenTypeString:
 		if lit, ok := decl.Value.(*StringLiteral); ok {
@@ -192,8 +195,14 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 			cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, -%d(%%rbp)\n", cg.stackOffset))
 			// Track the string length for this variable
 			cg.stringLengths[decl.Name] = len(lit.Value)
+			return
 		}
 	}
+
+	// Fallback: evaluate expression into rax and store
+	cg.textSection.WriteString(fmt.Sprintf("    # %s = <expr>\n", decl.Name))
+	cg.generateExpressionToReg(decl.Value, "rax")
+	cg.textSection.WriteString(fmt.Sprintf("    movq %%rax, -%d(%%rbp)\n", cg.stackOffset))
 }
 
 // generateImportStatement processes an import/use statement
@@ -298,6 +307,14 @@ func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 	// Check if it's a user-defined function first
 	if cg.generateUserFunctionCall(call) {
 		return
+	}
+
+	// Check imported stdlib functions
+	if cg.imports != nil {
+		if fn, ok := cg.imports.ImportedFunctions[call.Name]; ok && fn != nil {
+			fn.CodeGen(cg, call.Args)
+			return
+		}
 	}
 
 	// Check if it's a registered print function

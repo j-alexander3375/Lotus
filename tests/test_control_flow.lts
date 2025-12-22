@@ -1,0 +1,41 @@
+use "io";
+
+fn int branch(int x) {
+    if x > 0 {
+        println("pos");
+    } else {
+        println("nonpos");
+    }
+    ret 0;
+}
+
+fn int loop_sum(int n) {
+    int acc = 0;
+    int i = 0;
+    while i < n {
+        acc = acc + i;
+        i = i + 1;
+    }
+    println("sum_done");
+    ret acc;
+}
+
+fn int loop_for(int n) {
+    int acc = 0;
+    for (int j = 0; j < n; j = j + 1) {
+        acc = acc + 2;
+    }
+    println("for_done");
+    ret acc;
+}
+
+fn int main() {
+    branch(1);
+    branch(0);
+
+    loop_sum(4);      // 0+1+2+3 = 6
+    loop_for(3);      // 3 iterations * 2 = 6
+
+    println("done");
+    ret 0;
+}

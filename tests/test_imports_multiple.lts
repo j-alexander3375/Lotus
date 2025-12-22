@@ -4,6 +4,7 @@ use "mem";
 use "math";
 use "str";
 
-fn main() {
+fn int main() {
     println("All standard library modules imported");
+    ret 0;
 }

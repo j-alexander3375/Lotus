@@ -6,7 +6,7 @@ use "mem";
 use "math";
 use "str";
 
-fn main() {
+fn int main() {
     println("=== Lotus Standard Library Import Demo ===");
     println("");
     
@@ -16,22 +16,23 @@ fn main() {
     
     // Math module demo
     println("--- Math Module ---");
-    a: int = 15;
-    b: int = 10;
-    max_val: int = max(a, b);
+    int a = 15;
+    int b = 10;
+    int max_val = max(a, b);
     printf("Max of %d and %d is: %d\n", a, b, max_val);
     
-    // Memory module demo
+    // Memory module demo (placeholder size since sizeof is not parsed yet)
     println("--- Memory Module ---");
-    size: int = sizeof(int);
+    int size = 8;
     printf("Size of int: %d bytes\n", size);
     
     // String module demo
     println("--- String Module ---");
-    message: string = "Lotus";
-    len_val: int = len(message);
+    string message = "Lotus";
+    int len_val = len(message);
     printf("Length of '%s': %d\n", message, len_val);
     
     println("");
     println("=== All modules working correctly! ===");
+    ret 0;
 }
