@@ -1,0 +1,10 @@
+*.s
+*.o
+lotus
+a.out
+*.lts.bak
+*.backup
+
+# Ignore build directories
+out/
+build/

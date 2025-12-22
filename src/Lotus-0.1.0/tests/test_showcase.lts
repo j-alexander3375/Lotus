@@ -1,0 +1,21 @@
+printf("=== Lotus Print Functions Showcase ===\n");
+printf("\n");
+
+printf("1. Basic printf output:\n");
+printf("   Direct string literal printing\n");
+
+printf("\n2. Printf with variable:\n");
+string greeting = "Hello from Lotus!";
+printf(greeting);
+printf("\n");
+
+printf("\n3. Using println:\n");
+println("This uses println for automatic newline");
+
+printf("\n4. Multiple printf calls:\n");
+printf("Line 1\n");
+printf("Line 2\n");
+printf("Line 3\n");
+
+printf("\n=== All Tests Completed ===\n");
+ret 0;

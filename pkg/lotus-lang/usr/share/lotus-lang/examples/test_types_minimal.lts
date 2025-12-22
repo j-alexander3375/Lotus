@@ -1,0 +1,8 @@
+printf("Testing all types one by one\n");
+int8 a = 10;
+printf("int8 works\n");
+int16 b = 20;
+printf("int16 works\n");
+int64 d = 40;
+printf("int64 works\n");
+ret 0;

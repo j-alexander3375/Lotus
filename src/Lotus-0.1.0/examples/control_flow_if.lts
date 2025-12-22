@@ -1,0 +1,10 @@
+fn int add(int a, int b) { ret a + b; }
+
+fn int main() {
+    if add(7, 5) == 12 {
+        println("ok");
+    } else {
+        println("fail");
+    }
+    ret 0;
+}

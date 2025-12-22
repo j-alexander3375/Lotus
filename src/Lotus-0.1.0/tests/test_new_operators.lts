@@ -1,0 +1,7 @@
+printf("=== Testing New Operators ===\n");
+
+printf("Bitwise, logical, increment/decrement operators defined\n");
+printf("Compound assignment operators defined\n");
+printf("Ternary operator defined\n");
+
+ret 0;

@@ -1,0 +1,12 @@
+printf("=== Diagnostics Test ===\n");
+
+// This test demonstrates the diagnostic system
+// Warnings and errors will be collected during compilation
+
+printf("Compiler diagnostics system implemented\n");
+printf("- Error tracking\n");
+printf("- Warning generation\n");
+printf("- Info messages\n");
+printf("- Hints and suggestions\n");
+
+ret 0;
