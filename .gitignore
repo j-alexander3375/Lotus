@@ -8,3 +8,5 @@ a.out
 # Ignore build directories
 out/
 build/
+tests/
+examples/
