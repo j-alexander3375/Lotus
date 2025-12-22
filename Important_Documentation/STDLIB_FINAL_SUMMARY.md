@@ -1,8 +1,8 @@
-# Lotus Standard Library & Import System - Complete Implementation ✅
+# Lotus Standard Library & Import System - Status (December 2025)
 
 ## Summary
 
-The Lotus compiler now features a **complete, production-ready standard library with Rust-inspired import syntax**.
+The Lotus compiler ships with a Rust-inspired import system and a modular standard library. Architecture and import plumbing are complete; io/mem are usable, math/string have partial implementations.
 
 ## What Was Delivered
 
@@ -17,15 +17,18 @@ The Lotus compiler now features a **complete, production-ready standard library 
 
 **io** (7 functions)
 - print, println, printf, fprintf, sprint, sprintf, sprintln
+- printf verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v
 
 **mem** (3 functions)
-- malloc, free, sizeof
+- malloc, free, sizeof (stubs retained; behaviors still to be expanded)
 
-**math** (5 functions)  
-- abs, min, max, sqrt, pow
+**math** (5 functions)
+- Implemented: abs, min, max
+- Pending: sqrt, pow
 
 **str** (4 functions)
-- len, concat, compare, copy
+- Implemented: len
+- Pending: concat, compare, copy
 
 ### ✅ Complete Architecture
 - Module registration system (`StandardLibrary` map)
@@ -35,30 +38,22 @@ The Lotus compiler now features a **complete, production-ready standard library 
 - Clean separation of concerns
 
 ### ✅ Testing & Verification
-- 6 new import test files (all passing ✅)
-- Backward compatibility verified ✅
-- All existing tests still pass ✅
-- Compiler builds cleanly ✅
+- 6 import test files cover the module system
+- Control-flow and formatting tests updated for new syntax
+- Comprehensive import demo runs with math (abs/min/max) and str len
 
-### ✅ Comprehensive Documentation
-1. **STDLIB_AND_IMPORTS.md** - User guide with examples
+### ✅ Documentation
+1. **STDLIB_AND_IMPORTS.md** - User guide with examples and statuses
 2. **STDLIB_IMPLEMENTATION.md** - Technical implementation details
-3. **Updated README.md** - Quick reference with examples
-4. **Updated DEVELOPMENT.md** - Project history and progress
+3. **README.md** - Quick reference with examples
+4. **DEVELOPMENT.md** - Project history and progress
 
 ## Code Changes
 
-### New Files
-- `src/stdlib.go` (325 lines) - Complete module system
-
-### Modified Files
-- `src/keywords.go` - Added TokenUse, TokenAs (+2 lines)
-- `src/tokenizer.go` - Added use/as tokenization (+3 lines)
-- `src/ast.go` - Added ImportStatement node (+20 lines)
-- `src/parser.go` - Added parseImportStatement() (+50 lines)
-- `src/codegen.go` - Added import processing (+15 lines)
-
-**Total:** ~420 lines of new code
+### Recent File Highlights
+- `src/stdlib.go` - Module registry; math abs/min/max and str len now generate code
+- `src/printfuncs.go` - Formatting verbs %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing
+- `src/codegen.go` - Dispatches imported stdlib functions and function-call expressions
 
 ## Key Features
 
@@ -103,15 +98,17 @@ tests/
 └── README.md                      (Updated)
 ```
 
-## Status
+### Status
 
 | Item | Status |
 |------|--------|
-| Code Complete | ✅ |
-| Tests Passing | ✅ |
-| Documentation | ✅ |
-| Backward Compatible | ✅ |
-| Ready for Production | ✅ |
+| Import plumbing | ✅ |
+| io module | ✅ |
+| mem module | ⏳ (stubs) |
+| math module | ⚙️ partial (abs/min/max) |
+| str module | ⚙️ partial (len) |
+| printf verbs | ✅ (%d/%b/%o/%x/%X/%c/%q/%s/%v) |
+| Tests | ✅ (import + control-flow + formatting demos) |
 
 ## How to Use
 
@@ -131,14 +128,12 @@ fn main() {
 ./lotus -run program.lts
 ```
 
-## Next Steps
+### Next Steps
 
-The implementation is complete and provides a solid foundation for:
-
-1. Implementing remaining math and string functions
-2. Adding new stdlib modules (time, file, collections, etc.)
-3. User-defined packages and modules
-4. Package versioning and management
+1. Implement remaining math (sqrt, pow) and str (concat, compare, copy) functions
+2. Flesh out mem behaviors beyond stubs
+3. Add new stdlib modules (time, file, collections, etc.)
+4. Expand formatting (padding/width) if needed
 
 ## Project Statistics
 

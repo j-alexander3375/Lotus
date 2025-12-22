@@ -130,7 +130,7 @@ type ImportStatement struct {
 | sqrt | 1 | Square root |
 | pow | 2 | Power (base^exp) |
 
-**Status**: ⏳ Stub implementations (ready for completion)
+**Status**: ✅ abs/min/max implemented; ⏳ sqrt/pow pending
 
 ### str Module - 4 Functions
 
@@ -141,7 +141,7 @@ type ImportStatement struct {
 | compare | 2 | String comparison |
 | copy | 2 | String copying |
 
-**Status**: ⏳ Stub implementations (ready for completion)
+**Status**: ✅ len implemented; ⏳ concat/compare/copy pending
 
 ## Import Processing Flow
 

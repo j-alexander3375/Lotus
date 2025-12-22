@@ -111,6 +111,7 @@ fn format_string(s: string) -> string { /* ... */ }
 - Prefer `ret expr;` over implicit returns.
 - Bindings are type-first by default: `int count = 0;` instead of `let count: int`.
 - Imports stay string-based (`use "io::printf";`) to keep module boundaries explicit.
+- Formatting verbs supported today: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v. Keep format strings literal when possible for predictable output.
 
 ### Detailed Identifiers
 

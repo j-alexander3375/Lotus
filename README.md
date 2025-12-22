@@ -30,6 +30,7 @@ fn int main() {
 - Type-first bindings and explicit ret for a distinct Lotus feel
 - String-based imports with use "module"; and Rust-like aliasing
 - Standard library modules for I/O, memory, math, and strings
+- Printf-style formatting verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v
 - Structs, enums, and classes with snake_case identifiers
 - Error handling via try/catch/finally and throw
 - Direct x86-64 GNU assembly output (System V AMD64 ABI)
@@ -73,6 +74,8 @@ printf("Hello, %s\\n", "Lotus");
 println("Auto newline included");
 ```
 
+Supported printf verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v (ints, chars, strings, quoted strings)
+
 **mem**
 ```lotus
 use "mem";
@@ -86,12 +89,14 @@ use "math";
 int top = max(10, 20);
 int root = sqrt(16);
 ```
+Implemented: abs, min, max. Pending: sqrt, pow.
 
 **str**
 ```lotus
 use "str";
 int length = len("Hello");
 ```
+Implemented: len. Pending: concat, compare, copy.
 
 ## Language Notes
 

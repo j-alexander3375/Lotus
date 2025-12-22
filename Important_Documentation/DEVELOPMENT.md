@@ -1,6 +1,6 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: Stdlib, Imports, and Lotus Syntax Refresh ✅
+## Latest Phase: Stdlib, Formatting, and Lotus Syntax Refresh ✅
 
 ### Current Accomplishments (December 2025 - Phase 3)
 
@@ -36,7 +36,14 @@
    - Imports: `test_imports_basic.lts`, `test_imports_specific.lts`, `test_imports_wildcard.lts`, `test_imports_alias.lts`, `test_imports_multiple.lts`, `test_imports_comprehensive.lts`
    - Showcase/printf: `test_showcase.lts`, `test_final.lts`
    - Arithmetic/types/data structures: `test_arithmetic.lts`, `test_types_minimal.lts`, `test_data_structures.lts`, etc.
-   - All tests passing ✅
+   - All current tests passing ✅
+
+6. **Formatting & Stdlib Updates**
+   - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
+   - math: abs/min/max implemented in assembly
+   - str: len implemented with tracked literal lengths
+   - Function calls now dispatch to imported stdlib functions from codegen
+   - Comprehensive import demo shows correct max/len output
 
 6. **Documentation**
    - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
@@ -147,20 +154,24 @@ Input (.lts file)
 
 ### Next Phases (Planned)
 
-1. **Optimization & Codegen**
+1. **Stdlib Completion**
+   - Implement math sqrt/pow
+   - Implement str concat/compare/copy
+   - Flesh out mem behaviors
+
+2. **Formatting Enhancements**
+   - Width/padding flags for printf-like output
+
+3. **Optimization & Codegen**
    - Register allocation and peephole optimizations
    - Constant folding/propagation
    - Dead code elimination
 
-2. **Type System Enhancements**
+4. **Type System Enhancements**
    - Generics and type inference improvements
    - Union/option types
 
-3. **Stdlib Growth**
-   - File I/O and basic networking
-   - Expanded string utilities
-
-4. **Tooling**
+5. **Tooling**
    - Language server
    - Debug/trace hooks
    - Package/module manager

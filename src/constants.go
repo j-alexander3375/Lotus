@@ -4,7 +4,7 @@ package main
 
 const (
 	// CompilerVersion is the current version of the Lotus compiler
-	CompilerVersion = "0.3.0"
+	CompilerVersion = "0.3.2 beta"
 
 	// DefaultStackAlignment is the default stack alignment in bytes (16-byte alignment for x86-64)
 	DefaultStackAlignment = 16

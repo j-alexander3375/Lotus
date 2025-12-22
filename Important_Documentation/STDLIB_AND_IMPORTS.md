@@ -87,6 +87,8 @@ Functions for formatted and unformatted output:
 - **`sprintf(format, args...)`** - Format to string with format string
 - **`sprintln(args...)`** - Format to string with newline (variadic)
 
+Supported printf verbs: %%, %d, %b, %o, %x/%X, %c (byte), %q (quoted strings), %s, %v.
+
 Example:
 ```lotus
 use "io";
@@ -126,6 +128,8 @@ Numerical operations and calculations:
 - **`sqrt(x)`** - Square root
 - **`pow(base, exp)`** - Power (base^exp)
 
+Status: abs/min/max implemented; sqrt/pow pending.
+
 Example:
 ```lotus
 use "math";
@@ -146,6 +150,8 @@ String operations and analysis:
 - **`concat(s1, s2, ...)`** - Concatenate strings (variadic)
 - **`compare(s1, s2)`** - Compare strings (returns 0 if equal)
 - **`copy(src, dst)`** - Copy string from source to destination
+
+Status: len implemented; concat/compare/copy pending.
 
 Example:
 ```lotus
