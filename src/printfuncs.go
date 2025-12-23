@@ -81,21 +81,153 @@ func generatePrintfCode(cg *CodeGenerator, args []ASTNode) {
 		return
 	}
 
-	// Handle identifier (variable reference) as string pointer
+	// Handle identifier (variable reference)
 	if id, ok := args[0].(*Identifier); ok {
 		if v, exists := cg.variables[id.Name]; exists {
-			cg.textSection.WriteString("    # Printf with variable\n")
-			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", v.Offset))
-			length := 100
-			if l, ok := cg.stringLengths[id.Name]; ok {
-				length = l
+			if v.Type == TokenTypeString {
+				// Print string variable
+				cg.textSection.WriteString("    # Printf with string variable\n")
+				cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", v.Offset))
+				length := 100
+				if l, ok := cg.stringLengths[id.Name]; ok {
+					length = l
+				}
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
+				cg.textSection.WriteString("    movq $1, %rdi\n")
+				cg.textSection.WriteString("    movq $1, %rax\n")
+				cg.textSection.WriteString("    syscall\n")
+			} else if isIntegerType(v.Type) {
+				// Print integer variable - convert to string first
+				emitPrintInteger(cg, v)
+			} else {
+				// For other types, generate a comment
+				cg.textSection.WriteString(fmt.Sprintf("    # Printf with %v variable (not yet supported)\n", v.Type))
 			}
-			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
-			cg.textSection.WriteString("    movq $1, %rdi\n")
-			cg.textSection.WriteString("    movq $1, %rax\n")
-			cg.textSection.WriteString("    syscall\n")
 		}
 	}
+}
+
+// isIntegerType checks if a token type is an integer type
+func isIntegerType(t TokenType) bool {
+	switch t {
+	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
+		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64:
+		return true
+	default:
+		return false
+	}
+}
+
+// emitPrintInteger generates code to print an integer variable
+// This converts the integer to a decimal string and prints it
+func emitPrintInteger(cg *CodeGenerator, v Variable) {
+	cg.textSection.WriteString("    # Printf with integer variable - convert to string\n")
+
+	// We'll use a buffer on the stack to store the converted number
+	// Use offset 256 - 32 = 224 to avoid colliding with variables
+	bufferOffset := 224 // Use a fixed safe location in the allocated stack
+
+	cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rax\n", v.Offset))    // Load integer into rax
+	cg.textSection.WriteString(fmt.Sprintf("    leaq -%d(%%rbp), %%r9\n", bufferOffset)) // r9 = buffer start
+
+	// Handle negative numbers
+	cg.textSection.WriteString("    movq $0, %rcx\n") // total length
+	cg.textSection.WriteString("    cmpq $0, %rax\n")
+	labelPositive := cg.getLabel("int_positive")
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", labelPositive))
+
+	// Negative number - write minus sign at buffer start
+	cg.textSection.WriteString("    movb $45, (%r9)\n") // '-' character (ASCII 45)
+	cg.textSection.WriteString("    movq $1, %rcx\n")   // Mark that we have a minus sign
+	cg.textSection.WriteString("    negq %rax\n")       // Make positive
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelPositive))
+
+	// Now convert positive number to string
+	// Buffer position for digits: after minus sign (if any)
+	cg.textSection.WriteString("    movq %r9, %rsi\n")  // rsi = buffer start
+	cg.textSection.WriteString("    addq %rcx, %rsi\n") // rsi = buffer start + minus sign length
+	cg.textSection.WriteString("    movq %rsi, %r10\n") // r10 = digit start
+	cg.textSection.WriteString("    movq $0, %r8\n")    // r8 = digit count
+
+	// If number is 0, handle specially
+	labelCheckZero := cg.getLabel("int_check_zero")
+	labelNotZero := cg.getLabel("int_not_zero")
+	cg.textSection.WriteString("    cmpq $0, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jne %s\n", labelNotZero))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelCheckZero))
+	cg.textSection.WriteString("    movb $48, (%rsi)\n") // '0' character
+	cg.textSection.WriteString("    movq $1, %r8\n")     // digit count = 1
+	labelSkipConvert := cg.getLabel("int_skip_convert")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelSkipConvert))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelNotZero))
+
+	// Convert to string (digits stored in reverse)
+	labelDigitLoop := cg.getLabel("int_digit_loop")
+	labelDigitLoopEnd := cg.getLabel("int_digit_loop_end")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDigitLoop))
+	cg.textSection.WriteString("    cmpq $0, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", labelDigitLoopEnd))
+
+	cg.textSection.WriteString("    movq $10, %rbx\n")
+	cg.textSection.WriteString("    cqo\n")
+	cg.textSection.WriteString("    idivq %rbx\n")       // rax = rax / 10, rdx = rax % 10
+	cg.textSection.WriteString("    addb $48, %dl\n")    // convert to ASCII
+	cg.textSection.WriteString("    movb %dl, (%rsi)\n") // store digit
+	cg.textSection.WriteString("    addq $1, %rsi\n")    // move buffer pointer
+	cg.textSection.WriteString("    addq $1, %r8\n")     // increment digit count
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDigitLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDigitLoopEnd))
+
+	// Now reverse the digits in place
+	// r10 = start of digits, rsi = end of digits (past last digit)
+	// We need to reverse from r10 to rsi-1
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelSkipConvert))
+
+	labelReverseStart := cg.getLabel("int_reverse_start")
+	labelReverseEnd := cg.getLabel("int_reverse_end")
+	labelReverseLoop := cg.getLabel("int_reverse_loop")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelReverseStart))
+
+	// Only reverse if we have more than 1 digit
+	cg.textSection.WriteString("    cmpq $1, %r8\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelReverseEnd))
+
+	// rdi = start of digits (in r10)
+	// rsi = end of digits (in rsi - 1, but rsi was modified in the loop)
+	// Recalculate: end = start + digit_count - 1
+	cg.textSection.WriteString("    movq %r10, %rdi\n") // rdi = digit start
+	cg.textSection.WriteString("    movq %r10, %rsi\n") // rsi = digit start
+	cg.textSection.WriteString("    addq %r8, %rsi\n")  // rsi = digit start + digit count
+	cg.textSection.WriteString("    subq $1, %rsi\n")   // rsi = last digit position
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelReverseLoop))
+	cg.textSection.WriteString("    cmpq %rsi, %rdi\n") // if rdi >= rsi, we're done
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", labelReverseEnd))
+
+	// Swap bytes at rdi and rsi
+	cg.textSection.WriteString("    movb (%rdi), %al\n")
+	cg.textSection.WriteString("    movb (%rsi), %bl\n")
+	cg.textSection.WriteString("    movb %bl, (%rdi)\n")
+	cg.textSection.WriteString("    movb %al, (%rsi)\n")
+	cg.textSection.WriteString("    addq $1, %rdi\n")
+	cg.textSection.WriteString("    subq $1, %rsi\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelReverseLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelReverseEnd))
+
+	// Print the converted string
+	// Total length = minus sign length (in rcx) + digit count (in r8)
+	cg.textSection.WriteString("    movq %r9, %rsi\n")  // buffer start
+	cg.textSection.WriteString("    addq %r8, %rcx\n")  // rcx = total length (minus + digits)
+	cg.textSection.WriteString("    movq %rcx, %rdx\n") // length
+	cg.textSection.WriteString("    movq $1, %rdi\n")   // stdout fd
+	cg.textSection.WriteString("    movq $1, %rax\n")   // write syscall
+	cg.textSection.WriteString("    syscall\n")
 }
 
 // generatePrintlnCode generates assembly for println(str) - outputs to stdout with newline
@@ -315,15 +447,48 @@ func emitPrintString(cg *CodeGenerator, expr ASTNode) {
 		if varInfo, ok := cg.variables[v.Name]; ok {
 			cg.textSection.WriteString("    # print string variable\n")
 			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", varInfo.Offset))
-			ln := 100
 			if l, ok := cg.stringLengths[v.Name]; ok {
-				ln = l
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", l))
+			} else {
+				// Compute length at runtime by scanning to NUL
+				lLoop := cg.getLabel("slen_loop")
+				lEnd := cg.getLabel("slen_end")
+				cg.textSection.WriteString("    movq %rsi, %rbx\n")
+				cg.textSection.WriteString("    movq $0, %rdx\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+				cg.textSection.WriteString("    testq %rax, %rax\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    inc %rdx\n")
+				cg.textSection.WriteString("    inc %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 			}
-			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", ln))
 			cg.textSection.WriteString("    movq $1, %rdi\n")
 			cg.textSection.WriteString("    movq $1, %rax\n")
 			cg.textSection.WriteString("    syscall\n")
 		}
+	case *FunctionCall:
+		// Evaluate the function call to get result in rax
+		cg.generateFunctionCall(v)
+		// Result is in rax; treat it as a string pointer and compute length
+		cg.textSection.WriteString("    # print function result string\n")
+		cg.textSection.WriteString("    movq %rax, %rsi\n")
+		lLoop := cg.getLabel("slen_loopc")
+		lEnd := cg.getLabel("slen_endc")
+		cg.textSection.WriteString("    movq %rsi, %rbx\n")
+		cg.textSection.WriteString("    movq $0, %rdx\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+		cg.textSection.WriteString("    testq %rax, %rax\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    inc %rdx\n")
+		cg.textSection.WriteString("    inc %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+		cg.textSection.WriteString("    movq $1, %rdi\n")
+		cg.textSection.WriteString("    movq $1, %rax\n")
+		cg.textSection.WriteString("    syscall\n")
 	default:
 		// Unsupported expression kind; no-op
 	}
@@ -342,11 +507,22 @@ func emitPrintStringQuoted(cg *CodeGenerator, expr ASTNode) {
 			lq, lqlen := emitStringLiteral(cg, "\"")
 			emitWriteLiteral(cg, lq, lqlen)
 			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rsi\n", varInfo.Offset))
-			ln := 100
 			if l, ok := cg.stringLengths[v.Name]; ok {
-				ln = l
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", l))
+			} else {
+				lLoop := cg.getLabel("slen_loopq")
+				lEnd := cg.getLabel("slen_endq")
+				cg.textSection.WriteString("    movq %rsi, %rbx\n")
+				cg.textSection.WriteString("    movq $0, %rdx\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+				cg.textSection.WriteString("    testq %rax, %rax\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    inc %rdx\n")
+				cg.textSection.WriteString("    inc %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 			}
-			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", ln))
 			cg.textSection.WriteString("    movq $1, %rdi\n")
 			cg.textSection.WriteString("    movq $1, %rax\n")
 			cg.textSection.WriteString("    syscall\n")

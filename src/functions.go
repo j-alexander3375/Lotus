@@ -43,6 +43,7 @@ func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition)
 	cg.textSection.WriteString("    # Function prologue\n")
 	cg.textSection.WriteString("    pushq %rbp\n")
 	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    subq $256, %rsp\n") // Allocate space for local variables
 
 	// Save current state and create new scope
 	savedVars := cg.variables

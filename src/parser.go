@@ -489,7 +489,205 @@ func (p *Parser) parseFunctionCall() (*FunctionCall, error) {
 
 // parseExpression parses an expression with operator precedence
 func (p *Parser) parseExpression() (ASTNode, error) {
-	return p.parseAddSubtract()
+	return p.parseLogicalOr()
+}
+
+// parseLogicalOr handles || operator
+func (p *Parser) parseLogicalOr() (ASTNode, error) {
+	left, err := p.parseLogicalAnd()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenOr {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseLogicalAnd()
+		if err != nil {
+			return nil, err
+		}
+		left = &LogicalOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseLogicalAnd handles && operator
+func (p *Parser) parseLogicalAnd() (ASTNode, error) {
+	left, err := p.parseBitwiseOr()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenAnd {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseBitwiseOr()
+		if err != nil {
+			return nil, err
+		}
+		left = &LogicalOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseBitwiseOr handles | operator
+func (p *Parser) parseBitwiseOr() (ASTNode, error) {
+	left, err := p.parseBitwiseXor()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenPipe {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseBitwiseXor()
+		if err != nil {
+			return nil, err
+		}
+		left = &BitwiseOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseBitwiseXor handles ^ operator
+func (p *Parser) parseBitwiseXor() (ASTNode, error) {
+	left, err := p.parseBitwiseAnd()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenCaret {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseBitwiseAnd()
+		if err != nil {
+			return nil, err
+		}
+		left = &BitwiseOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseBitwiseAnd handles & operator (when used as binary, not address-of)
+func (p *Parser) parseBitwiseAnd() (ASTNode, error) {
+	left, err := p.parseEquality()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenAmpersand && !isUnaryContext(p, left) {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseEquality()
+		if err != nil {
+			return nil, err
+		}
+		left = &BitwiseOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseEquality handles == and != operators
+func (p *Parser) parseEquality() (ASTNode, error) {
+	left, err := p.parseRelational()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenEqual || p.current().Type == TokenNotEqual {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseRelational()
+		if err != nil {
+			return nil, err
+		}
+		left = &Comparison{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseRelational handles <, >, <=, >= operators
+func (p *Parser) parseRelational() (ASTNode, error) {
+	left, err := p.parseShift()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenLess || p.current().Type == TokenLessEq ||
+		p.current().Type == TokenGreater || p.current().Type == TokenGreaterEq {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseShift()
+		if err != nil {
+			return nil, err
+		}
+		left = &Comparison{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
+}
+
+// parseComparison handles comparison operators (now delegates to equality/relational)
+func (p *Parser) parseComparison() (ASTNode, error) {
+	return p.parseEquality()
+}
+
+// parseShift handles << and >> operators
+func (p *Parser) parseShift() (ASTNode, error) {
+	left, err := p.parseAddSubtract()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenLShift || p.current().Type == TokenRShift {
+		op := p.current().Type
+		p.advance()
+		right, err := p.parseAddSubtract()
+		if err != nil {
+			return nil, err
+		}
+		left = &BitwiseOp{
+			Left:     left,
+			Operator: op,
+			Right:    right,
+		}
+	}
+
+	return left, nil
 }
 
 // parseAddSubtract handles + and - operators
@@ -518,7 +716,7 @@ func (p *Parser) parseAddSubtract() (ASTNode, error) {
 
 // parseMultiplyDivide handles * / % operators
 func (p *Parser) parseMultiplyDivide() (ASTNode, error) {
-	left, err := p.parseComparison()
+	left, err := p.parseUnary()
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +724,7 @@ func (p *Parser) parseMultiplyDivide() (ASTNode, error) {
 	for p.current().Type == TokenStar || p.current().Type == TokenSlash || p.current().Type == TokenPercent {
 		op := p.current().Type
 		p.advance()
-		right, err := p.parseComparison()
+		right, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
@@ -540,35 +738,9 @@ func (p *Parser) parseMultiplyDivide() (ASTNode, error) {
 	return left, nil
 }
 
-// parseComparison handles comparison operators
-func (p *Parser) parseComparison() (ASTNode, error) {
-	left, err := p.parseUnary()
-	if err != nil {
-		return nil, err
-	}
-
-	for p.current().Type == TokenEqual || p.current().Type == TokenNotEqual ||
-		p.current().Type == TokenLess || p.current().Type == TokenLessEq ||
-		p.current().Type == TokenGreater || p.current().Type == TokenGreaterEq {
-		op := p.current().Type
-		p.advance()
-		right, err := p.parseUnary()
-		if err != nil {
-			return nil, err
-		}
-		left = &Comparison{
-			Left:     left,
-			Operator: op,
-			Right:    right,
-		}
-	}
-
-	return left, nil
-}
-
-// parseUnary handles unary operators
+// parseUnary handles unary operators including bitwise NOT (~)
 func (p *Parser) parseUnary() (ASTNode, error) {
-	if p.current().Type == TokenMinus || p.current().Type == TokenExclaim || p.current().Type == TokenAmpersand || p.current().Type == TokenStar {
+	if p.current().Type == TokenMinus || p.current().Type == TokenExclaim || p.current().Type == TokenAmpersand || p.current().Type == TokenStar || p.current().Type == TokenTilde {
 		op := p.current().Type
 		p.advance()
 		operand, err := p.parseUnary()
@@ -582,6 +754,17 @@ func (p *Parser) parseUnary() (ASTNode, error) {
 	}
 
 	return p.parsePrimary()
+}
+
+// isUnaryContext checks if & should be treated as unary (address-of) vs binary (bitwise AND)
+// This is a simple heuristic: & is unary if it appears after operators or at statement start
+func isUnaryContext(p *Parser, left ASTNode) bool {
+	// If left is nil or we're at the start, it's unary
+	if left == nil {
+		return true
+	}
+	// For now, assume & after a primary expression is binary
+	return false
 }
 
 // parsePrimary handles primary expressions (literals, identifiers, parentheses)

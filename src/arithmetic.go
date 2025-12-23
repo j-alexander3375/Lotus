@@ -13,7 +13,7 @@ func (b *BinaryOp) astNode() {}
 
 // UnaryOp represents a unary operation expression
 type UnaryOp struct {
-	Operator TokenType // TokenMinus, TokenExclaim, TokenAmpersand, TokenStar
+	Operator TokenType // TokenMinus, TokenExclaim, TokenAmpersand, TokenStar, TokenTilde
 	Operand  ASTNode
 }
 

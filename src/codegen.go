@@ -341,10 +341,10 @@ func (cg *CodeGenerator) buildFinalAssembly() string {
 	b.WriteString(TextSectionDirective + "\n")
 	b.WriteString(EntryPointLabel + ":\n")
 
-	// Program prologue (minimal)
+	// Program prologue
 	b.WriteString("    # Program start\n")
-
-	// Allocate stack space if needed (aligned to 16 bytes)
+	b.WriteString("    movq %rsp, %rbp\n") // Set up base pointer
+	b.WriteString("    subq $256, %rsp\n") // Allocate stack space (256 bytes for locals)
 	b.WriteString("\n")
 
 	// Call user-defined main if present
