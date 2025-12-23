@@ -40,12 +40,13 @@
 
 6. **Formatting & Stdlib Updates**
    - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
-   - math: abs/min/max implemented in assembly
-   - str: len implemented with tracked literal lengths
+   - math: abs/min/max implemented; sqrt/pow pending
+   - str: len implemented; concat/compare/copy pending
+   - mem: malloc/free/sizeof implemented via libc
    - Function calls now dispatch to imported stdlib functions from codegen
    - Comprehensive import demo shows correct max/len output
 
-6. **Documentation**
+7. **Documentation**
    - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
    - Updated `README.md` with import examples and module descriptions
    - Added stdlib section showing all available modules

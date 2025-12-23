@@ -107,6 +107,8 @@ Functions for dynamic memory allocation:
 - **`free(ptr)`** - Deallocate memory
 - **`sizeof(type)`** - Get size of type in bytes
 
+Status: malloc/free/sizeof implemented (via libc).
+
 Example:
 ```lotus
 use "mem";

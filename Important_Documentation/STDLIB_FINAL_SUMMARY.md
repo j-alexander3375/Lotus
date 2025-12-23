@@ -20,7 +20,7 @@ The Lotus compiler ships with a Rust-inspired import system and a modular standa
 - printf verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v
 
 **mem** (3 functions)
-- malloc, free, sizeof (stubs retained; behaviors still to be expanded)
+- malloc, free, sizeof (implemented via libc)
 
 **math** (5 functions)
 - Implemented: abs, min, max
@@ -104,9 +104,9 @@ tests/
 |------|--------|
 | Import plumbing | ✅ |
 | io module | ✅ |
-| mem module | ⏳ (stubs) |
-| math module | ⚙️ partial (abs/min/max) |
-| str module | ⚙️ partial (len) |
+| mem module | ✅ (malloc/free/sizeof) |
+| math module | ⚙️ partial (abs/min/max; sqrt/pow pending) |
+| str module | ⚙️ partial (len; concat/compare/copy pending) |
 | printf verbs | ✅ (%d/%b/%o/%x/%X/%c/%q/%s/%v) |
 | Tests | ✅ (import + control-flow + formatting demos) |
 
@@ -135,28 +135,16 @@ fn main() {
 3. Add new stdlib modules (time, file, collections, etc.)
 4. Expand formatting (padding/width) if needed
 
-## Project Statistics
+## Scope and Next Steps
 
-- **Development Time**: Complete in this session
-- **Lines of Code**: ~420 new lines
-- **Modules**: 4 (io, mem, math, str)
-- **Functions**: 19 total
-- **Test Coverage**: 8 test files
-- **Documentation**: 3 comprehensive guides
-- **Build Time**: <1 second
-- **Runtime Overhead**: 0%
+- Import plumbing and io/mem are ready for use.
+- math/str are partially implemented; remaining functions are planned next.
+- Formatting verbs are in place; width/padding not yet supported.
 
-## Conclusion
-
-The Lotus compiler now has a professional-grade standard library with modern import syntax. The system is:
-
-✅ **Complete** - All planned features implemented
-✅ **Tested** - All tests passing
-✅ **Documented** - Comprehensive guides provided
-✅ **Extensible** - Easy to add new modules
-✅ **Production Ready** - No known issues
-
-**The standard library implementation is ready for use and further development.**
+Focus areas to finish the stdlib:
+1. Implement math sqrt/pow
+2. Implement str concat/compare/copy
+3. Broaden mem utilities if needed
 
 ---
 
