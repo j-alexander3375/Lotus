@@ -1,7 +1,7 @@
 # Maintainer: Joshua Alexander <j-alexander3375@users.noreply.github.com>
 
 pkgname=lotus-lang
-pkgver=0.1.2
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="A systems programming language with Rust-inspired imports, type-first bindings, and x86-64 assembly output"
 arch=('x86_64')
@@ -9,8 +9,8 @@ url="https://github.com/j-alexander3375/Lotus"
 license=('MIT')
 depends=('gcc')
 makedepends=('go>=1.20')
-source=("lotus-lang-${pkgver}.tar.gz::https://github.com/j-alexander3375/Lotus/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('14bb203d2612dbe76754f09a3b7a55f9d962d62afaee3377510b3725cf6c285f')
+source=("lotus-lang-${pkgver}.tar.gz::https://github.com/j-alexander3375/Lotus/archive/refs/tags/${pkgver}.tar.gz")
+sha256sums=('CHANGE_ME_AFTER_TAG_PUSH')
 
 build() {
     cd "${srcdir}/Lotus-${pkgver}"
