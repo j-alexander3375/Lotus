@@ -132,11 +132,11 @@ fn int countdown(int start) {
 
 **Structs and enums**
 ```lotus
-struct point { x: int, y: int }
+struct point { int x, y }
 
 enum status { ok = 0, error = -1 }
 
-fn move_point(p: *point, dx: int, dy: int) {
+fn move_point(*point p, int dx, dy) {
     p->x = p->x + dx;
     p->y = p->y + dy;
 }
