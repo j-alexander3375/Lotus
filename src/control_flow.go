@@ -270,9 +270,18 @@ func (cg *CodeGenerator) generateConditionToReg(cond ASTNode, reg string) {
 
 // Label management
 var labelCounter int = 0
+var generatedLabels = make(map[string]bool)
 
 func (cg *CodeGenerator) getLabel(prefix string) string {
 	label := fmt.Sprintf(".%s_%d", prefix, labelCounter)
 	labelCounter++
 	return label
+}
+
+func (cg *CodeGenerator) hasLabel(label string) bool {
+	return generatedLabels[label]
+}
+
+func (cg *CodeGenerator) markLabel(label string) {
+	generatedLabels[label] = true
 }

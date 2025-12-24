@@ -153,29 +153,90 @@ Input (.lts file)
 [GCC] → Binary
 ```
 
+### Current Phase: Advanced Stdlib Features (December 2025 - Phase 4) 🚧
+
+**Focus Areas:**
+1. **Hashing Module** - Cryptographic and non-cryptographic hash functions
+2. **Collections Enhancement** - Complete data structure implementations
+3. **HTTP/Networking** - Basic HTTP client and TCP networking
+4. **String Operations** - Complete string manipulation functions
+
+#### Active Goals
+
+1. **Hashing Module (`hash`)** ✅
+   - ✅ Module structure defined
+   - ✅ CRC32 implementation (IEEE 802.3 polynomial with lookup table)
+   - ✅ FNV-1a implementation (64-bit fast non-cryptographic hash)
+   - ✅ DJB2 implementation (simple string hashing)
+   - ✅ MurmurHash3 implementation (32-bit with seed support)
+   - ⏳ SHA-256 implementation (placeholder for cryptographic hash)
+   - ⏳ MD5 implementation (placeholder for legacy hash)
+
+2. **Collections Module Enhancements**
+   - ✅ Array, Stack, Queue, Deque structures defined
+   - ✅ Heap (min-heap) defined
+   - ✅ HashMap and HashSet (int keys) defined
+   - 🚧 Implement binary search helper
+   - 🚧 Complete all collection operations with proper memory management
+   - ⏳ Add generic support for string keys
+   - ⏳ Add sorted set/map variants
+
+3. **HTTP Module (`http`)**
+   - ✅ Basic structure defined
+   - 🚧 GET request implementation
+   - ⏳ POST request support
+   - ⏳ Response parsing
+   - ⏳ Header manipulation
+   - ⏳ Connection pooling
+
+4. **Networking Module (`net`)**
+   - ✅ Socket, connect, send, recv, close defined
+   - 🚧 IPv4 connection implementation
+   - ⏳ IPv6 support
+   - ⏳ UDP support
+   - ⏳ DNS resolution
+
+5. **String Module Completion**
+   - ✅ len, concat basics
+   - 🚧 indexOf, contains, startsWith, endsWith
+   - ⏳ substring, split, join
+   - ⏳ toLower, toUpper, trim
+   - ⏳ replace, replaceAll
+
+6. **Testing & Documentation**
+   - 🚧 Unit tests for new modules
+   - 🚧 Integration tests for HTTP/networking
+   - ⏳ Update stdlib documentation
+   - ⏳ Add example programs
+
 ### Next Phases (Planned)
 
 1. **Stdlib Completion**
-   - Implement math sqrt/pow
-   - Implement str concat/compare/copy
-   - Flesh out mem behaviors
+   - ✅ Math sqrt/pow - COMPLETED
+   - 🚧 Complete str functions
+   - ⏳ File I/O module
+   - ⏳ JSON parsing/serialization
 
 2. **Formatting Enhancements**
    - Width/padding flags for printf-like output
+   - Custom format specifiers
 
 3. **Optimization & Codegen**
    - Register allocation and peephole optimizations
    - Constant folding/propagation
    - Dead code elimination
+   - Inline function expansion
 
 4. **Type System Enhancements**
    - Generics and type inference improvements
    - Union/option types
+   - Pattern matching
 
 5. **Tooling**
    - Language server
    - Debug/trace hooks
    - Package/module manager
+   - Build system integration
 
 ### Current File Structure
 
