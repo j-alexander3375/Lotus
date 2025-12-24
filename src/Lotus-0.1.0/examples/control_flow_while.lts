@@ -1,8 +1,0 @@
-fn int main() {
-    int i = 0;
-    while i < 3 {
-        println("loop");
-        i = i + 1;
-    }
-    ret 0;
-}
