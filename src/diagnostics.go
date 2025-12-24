@@ -79,6 +79,22 @@ func (dm *DiagnosticManager) Print() {
 	}
 }
 
+// PrintSummary prints a compact summary without full diagnostics
+func (dm *DiagnosticManager) PrintSummary() {
+	if dm.ErrorCount > 0 || dm.WarnCount > 0 {
+		if dm.ErrorCount > 0 {
+			fmt.Fprintf(os.Stderr, "%d error(s)", dm.ErrorCount)
+		}
+		if dm.WarnCount > 0 {
+			if dm.ErrorCount > 0 {
+				fmt.Fprintf(os.Stderr, ", ")
+			}
+			fmt.Fprintf(os.Stderr, "%d warning(s)", dm.WarnCount)
+		}
+		fmt.Fprintf(os.Stderr, " found\n")
+	}
+}
+
 func (dm *DiagnosticManager) printDiagnostic(diag Diagnostic) {
 	levelStr := ""
 	colorCode := ""
@@ -120,4 +136,28 @@ func (dm *DiagnosticManager) printDiagnostic(diag Diagnostic) {
 			fmt.Fprintf(os.Stderr, "%s%s^%s\n", spaces, colorCode, resetColor)
 		}
 	}
+}
+
+// AddInfo adds an informational diagnostic
+func (dm *DiagnosticManager) AddInfo(message, filePath string, line, column int, context string) {
+	dm.Diagnostics = append(dm.Diagnostics, Diagnostic{
+		Level:    DiagnosticInfo,
+		Message:  message,
+		FilePath: filePath,
+		Line:     line,
+		Column:   column,
+		Context:  context,
+	})
+}
+
+// AddHint adds a hint diagnostic
+func (dm *DiagnosticManager) AddHint(message, filePath string, line, column int, context string) {
+	dm.Diagnostics = append(dm.Diagnostics, Diagnostic{
+		Level:    DiagnosticHint,
+		Message:  message,
+		FilePath: filePath,
+		Line:     line,
+		Column:   column,
+		Context:  context,
+	})
 }

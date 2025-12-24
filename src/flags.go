@@ -19,6 +19,12 @@ type CompilerOptions struct {
 	Trimpath      string   // Remove prefix from recorded file paths (--trimpath)
 	ShowVersion   bool     // Print version and exit (--version)
 	IncludeDirs   []string // Include directories for imports (-I)
+
+	// Tooling enhancements
+	ShowStats  bool // Display compilation statistics (--stats)
+	Quiet      bool // Suppress all non-error output (-q, --quiet)
+	TimingInfo bool // Show detailed phase timing (--timing)
+	ASTDump    bool // Print AST and exit (--ast-dump)
 }
 
 // Version is the current compiler version
@@ -40,6 +46,13 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	fs.BoolVar(&opts.Verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&opts.TokenDump, "td", false, "print tokens and exit")
 	fs.BoolVar(&opts.TokenDump, "token-dump", false, "print tokens and exit")
+	fs.BoolVar(&opts.ASTDump, "ast-dump", false, "print AST and exit")
+
+	// Tooling options
+	fs.BoolVar(&opts.ShowStats, "stats", false, "display compilation statistics")
+	fs.BoolVar(&opts.Quiet, "q", false, "suppress non-error output")
+	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress non-error output")
+	fs.BoolVar(&opts.TimingInfo, "timing", false, "show detailed phase timing")
 
 	// Execution options
 	fs.BoolVar(&opts.RunAfterBuild, "run", false, "build and run the compiled binary")
@@ -66,15 +79,27 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "  lotus -S program.lts           # Generate assembly")
 		fmt.Fprintln(os.Stderr, "  lotus -run program.lts         # Compile and run")
 		fmt.Fprintln(os.Stderr, "  lotus -td program.lts          # Dump tokens")
+		fmt.Fprintln(os.Stderr, "  lotus --stats program.lts      # Show compilation stats")
+		fmt.Fprintln(os.Stderr, "  lotus --timing program.lts     # Show phase timing")
+		fmt.Fprintln(os.Stderr, "  lotus --ast-dump program.lts   # Dump AST structure")
 	}
 
-	// Normalize args to accept --token-dump
+	// Normalize args to accept various flag formats
 	raw := os.Args[1:]
 	norm := make([]string, 0, len(raw))
 	for _, a := range raw {
-		if a == "--token-dump" {
+		switch a {
+		case "--token-dump":
 			norm = append(norm, "-token-dump")
-		} else {
+		case "--ast-dump":
+			norm = append(norm, "-ast-dump")
+		case "--stats":
+			norm = append(norm, "-stats")
+		case "--quiet":
+			norm = append(norm, "-quiet")
+		case "--timing":
+			norm = append(norm, "-timing")
+		default:
 			norm = append(norm, a)
 		}
 	}
