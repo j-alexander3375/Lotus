@@ -4,10 +4,14 @@ lotus
 a.out
 *.lts.bak
 *.backup
+*_test.go
+*.html
+*.py
 
 # Ignore build directories
 out/
 build/
 tests/
+test_suite/
 examples/
 site/

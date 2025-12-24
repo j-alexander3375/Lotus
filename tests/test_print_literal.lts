@@ -1,2 +1,0 @@
-printf("Hello, Lotus!\n");
-ret 0;

@@ -1,4 +1,0 @@
-printf("Testing int8\n");
-int8 x = 10;
-printf("Done\n");
-ret 0;
