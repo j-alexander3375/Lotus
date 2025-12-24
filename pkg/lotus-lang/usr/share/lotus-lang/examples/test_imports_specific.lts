@@ -1,7 +1,0 @@
-// Test specific function import
-use "io::printf";
-
-fn int main() {
-    printf("Testing specific import: %d\n", 42);
-    ret 0;
-}

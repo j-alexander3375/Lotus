@@ -1,8 +1,0 @@
-const int MAX_SIZE = 100;
-const string APP_NAME = "Lotus Test";
-const bool DEBUG_MODE = true;
-
-int x = 42;
-
-println("Testing constants in Lotus");
-ret 0;

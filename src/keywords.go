@@ -120,10 +120,7 @@ const (
 	TokenClass  // class
 
 	// Memory management
-	TokenNew    // new
-	TokenMalloc // malloc
-	TokenFree   // free
-	TokenSizeof // sizeof
+	TokenNew // new
 
 	// Error handling
 	TokenTry     // try

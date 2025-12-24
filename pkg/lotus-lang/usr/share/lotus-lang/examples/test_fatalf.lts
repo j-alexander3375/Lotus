@@ -1,4 +1,0 @@
-printf("Starting test\n");
-fatalf("Fatal error encountered\n");
-printf("This line should not execute\n");
-ret 0;

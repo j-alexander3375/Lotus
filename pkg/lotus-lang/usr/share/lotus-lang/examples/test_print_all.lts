@@ -1,5 +1,0 @@
-printf("Direct string literal\n");
-string greeting = "Variable string\n";
-printf(greeting);
-printf("Number test\n");
-ret 0;

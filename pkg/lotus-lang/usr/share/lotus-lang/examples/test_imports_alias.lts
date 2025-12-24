@@ -1,8 +1,0 @@
-// Test aliased imports
-use "io" as output;
-use "math" as arithmetic;
-
-fn int main() {
-    println("Testing aliased imports");
-    ret 0;
-}

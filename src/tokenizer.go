@@ -101,12 +101,6 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenClass, Value: ""})
 			case "new":
 				tokens = append(tokens, Token{Type: TokenNew, Value: ""})
-			case "malloc":
-				tokens = append(tokens, Token{Type: TokenMalloc, Value: ""})
-			case "free":
-				tokens = append(tokens, Token{Type: TokenFree, Value: ""})
-			case "sizeof":
-				tokens = append(tokens, Token{Type: TokenSizeof, Value: ""})
 			case "if":
 				tokens = append(tokens, Token{Type: TokenIf, Value: ""})
 			case "else":
@@ -389,12 +383,6 @@ func TokenValue(t Token) string {
 		return "class"
 	case TokenNew:
 		return "new"
-	case TokenMalloc:
-		return "malloc"
-	case TokenFree:
-		return "free"
-	case TokenSizeof:
-		return "sizeof"
 	case TokenPrintf:
 		return "Printf"
 	case TokenFPrintf:

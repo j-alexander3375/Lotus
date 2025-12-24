@@ -1,7 +1,0 @@
-// Test basic import syntax
-use "io";
-
-fn int main() {
-    println("Hello from Lotus with imports!");
-    ret 0;
-}

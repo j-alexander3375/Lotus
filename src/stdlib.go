@@ -1406,8 +1406,16 @@ func generateMemMalloc(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 1 {
 		return
 	}
-	// rax=9 (mmap), rdi=NULL, rsi=len, rdx=PROT_READ|PROT_WRITE(3), r10=MAP_PRIVATE|MAP_ANONYMOUS(0x22), r8= -1, r9=0
-	cg.generateExpressionToReg(args[0], "rsi")
+	// Evaluate size first before setting up syscall registers
+	cg.generateExpressionToReg(args[0], "rax")
+
+	// Save current stack pointer and align to 16 bytes for syscall
+	cg.textSection.WriteString("    pushq %rbp\n")
+	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    andq $-16, %rsp\n") // Align stack to 16 bytes
+
+	// Setup mmap syscall: rax=9, rdi=NULL, rsi=len, rdx=PROT_READ|PROT_WRITE(3), r10=MAP_PRIVATE|MAP_ANONYMOUS(0x22), r8=-1, r9=0
+	cg.textSection.WriteString("    movq %rax, %rsi\n") // Move size from rax to rsi
 	cg.textSection.WriteString("    movq $9, %rax\n")
 	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
 	cg.textSection.WriteString("    movq $3, %rdx\n")
@@ -1415,6 +1423,10 @@ func generateMemMalloc(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    movq $-1, %r8\n")
 	cg.textSection.WriteString("    xorq %r9, %r9\n")
 	cg.textSection.WriteString("    syscall\n")
+
+	// Restore stack pointer
+	cg.textSection.WriteString("    movq %rbp, %rsp\n")
+	cg.textSection.WriteString("    popq %rbp\n")
 	// ptr in rax
 }
 
@@ -1431,9 +1443,19 @@ func generateMemMunmap(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 2 {
 		return
 	}
+	// Save and align stack for syscall
+	cg.textSection.WriteString("    pushq %rbp\n")
+	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    andq $-16, %rsp\n")
+
 	cg.generateExpressionToReg(args[0], "rdi")
 	cg.generateExpressionToReg(args[1], "rsi")
-	cg.textSection.WriteString("    movq $11, %rax\n    syscall\n")
+	cg.textSection.WriteString("    movq $11, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	// Restore stack
+	cg.textSection.WriteString("    movq %rbp, %rsp\n")
+	cg.textSection.WriteString("    popq %rbp\n")
 }
 
 // IO module wrapper functions - delegate to printfuncs.go implementations

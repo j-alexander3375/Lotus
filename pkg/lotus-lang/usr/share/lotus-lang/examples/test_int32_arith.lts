@@ -1,6 +1,0 @@
-printf("Testing int32 arithmetic\n");
-int32 x = 100;
-int32 y = 50;
-int32 sum = x + y;
-printf("Done\n");
-ret 0;
