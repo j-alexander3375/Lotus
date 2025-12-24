@@ -1,53 +1,108 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: Stdlib, Formatting, and Lotus Syntax Refresh ✅
+## Latest Phase: Tooling & Diagnostics Enhancements ✅
 
-### Current Accomplishments (December 2025 - Phase 3)
+### Current Accomplishments (December 2025 - Phase 5)
+
+1. **Compilation Statistics Tracking**
+   - Created `stats.go` - Comprehensive compilation metrics system
+   - `CompilationStats` structure tracks all phases:
+     * Timing: Tokenization, Parsing, Codegen, Assembly, Linking
+     * Metrics: Token counts, AST nodes, functions, variables, constants
+     * Output: Assembly lines/bytes, binary size
+   - Human-readable output formatting with automatic unit conversion (B/KB/MB/GB)
+   - Compact and detailed reporting modes
+
+2. **Enhanced Command-Line Flags**
+   - `--stats` - Display detailed compilation statistics
+   - `--timing` - Show phase-by-phase timing information
+   - `--ast-dump` - Print Abstract Syntax Tree structure
+   - `-q, --quiet` - Suppress non-error output
+   - All new flags properly normalized and documented
+
+3. **AST Debugging Utilities**
+   - Created `ast_utils.go` - AST inspection and analysis tools
+   - `DumpAST()` - Hierarchical pretty-printing of AST structure
+   - `CountASTNodes()` - Recursive node counting for metrics
+   - `AnalyzeAST()` - Extract statistics (functions, variables, constants)
+   - Support for all AST node types with proper formatting
+
+4. **Improved Diagnostics**
+   - Enhanced `diagnostics.go` with color-coded output
+   - Added `PrintSummary()` for compact error reporting
+   - New diagnostic levels: `AddInfo()`, `AddHint()`
+   - ANSI color support:  
+     * Red for errors
+     * Yellow for warnings
+     * Cyan for info
+     * Green for hints
+   - Better context display with line numbers and caret positioning
+
+5. **Testing Infrastructure**
+   - Created comprehensive unit tests:
+     * `stats_test.go` - 10 tests for compilation statistics
+     * `diagnostics_test.go` - 7 tests for diagnostic management
+     * `ast_utils_test.go` - 8 tests for AST utilities
+     * `flags_test.go` - 5 tests for flag parsing
+   - Created performance benchmarks:
+     * `benchmarks_test.go` - 14 benchmarks covering all modules
+     * Memory allocation tracking
+     * Performance testing for small, medium, and large ASTs
+
+6. **Code Quality**
+   - All new modules follow existing code style
+   - Comprehensive documentation and comments
+   - Modular design for easy extension
+   - Zero external dependencies
+
+## Previous Phase: Stdlib, Formatting, and Lotus Syntax Refresh ✅
+
+### Accomplishments (December 2025 - Phase 3)
 
 1. **Import System Implementation**
-    - Added `use` and `as` keywords for module imports (string-based)
-    - Rust-inspired import syntax:
-       - `use "module"` - Import module
-       - `use "module::function"` - Specific function
-       - `use "module::*"` - Explicit wildcard
-       - `use "module" as alias` - Aliased imports
-    - `ImportStatement` AST node plus parse/codegen support
+   - Added `use` and `as` keywords for module imports (string-based)
+   - Rust-inspired import syntax:
+      - `use "module"` - Import module
+      - `use "module::function"` - Specific function
+      - `use "module::*"` - Explicit wildcard
+      - `use "module" as alias` - Aliased imports
+   - `ImportStatement` AST node plus parse/codegen support
 
 2. **Standard Library Module System**
-   - Created `stdlib.go` - Module definitions and registration
-   - Implemented `ImportContext` for tracking imports
-   - `StandardLibrary` map with registered modules
-   - `StdlibModule` and `StdlibFunction` types for organization
+  - Created `stdlib.go` - Module definitions and registration
+  - Implemented `ImportContext` for tracking imports
+  - `StandardLibrary` map with registered modules
+  - `StdlibModule` and `StdlibFunction` types for organization
 
 3. **Stdlib Modules Created**
-   - **io** - printf, println, fprintf, sprintf, sprint, sprintln
-   - **mem** - malloc, free, sizeof
-   - **math** - abs, min, max, sqrt, pow
-   - **str** - len, concat, compare, copy
+  - **io** - printf, println, fprintf, sprintf, sprint, sprintln
+  - **mem** - malloc, free, sizeof
+  - **math** - abs, min, max, sqrt, pow
+  - **str** - len, concat, compare, copy
 
 4. **Import System Features**
-   - Module lookup and validation
-   - Function availability tracking
-   - Compile-time import resolution
-   - Error reporting for unknown modules/functions
-   - Assembly comments documenting imports
+  - Module lookup and validation
+  - Function availability tracking
+  - Compile-time import resolution
+  - Error reporting for unknown modules/functions
+  - Assembly comments documenting imports
 
 5. **Testing & Validation**
-   - Imports: `test_imports_basic.lts`, `test_imports_specific.lts`, `test_imports_wildcard.lts`, `test_imports_alias.lts`, `test_imports_multiple.lts`, `test_imports_comprehensive.lts`
-   - Showcase/printf: `test_showcase.lts`, `test_final.lts`
-   - Arithmetic/types/data structures: `test_arithmetic.lts`, `test_types_minimal.lts`, `test_data_structures.lts`, etc.
-   - All current tests passing ✅
+  - Imports: `test_imports_basic.lts`, `test_imports_specific.lts`, `test_imports_wildcard.lts`, `test_imports_alias.lts`, `test_imports_multiple.lts`, `test_imports_comprehensive.lts`
+  - Showcase/printf: `test_showcase.lts`, `test_final.lts`
+  - Arithmetic/types/data structures: `test_arithmetic.lts`, `test_types_minimal.lts`, `test_data_structures.lts`, etc.
+  - All current tests passing ✅
 
 6. **Formatting & Stdlib Updates**
-   - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
-   - math: abs/min/max implemented; sqrt/pow pending
-   - str: len implemented; concat/compare/copy pending
-   - mem: malloc/free/sizeof implemented via libc
-   - Function calls now dispatch to imported stdlib functions from codegen
-   - Comprehensive import demo shows correct max/len output
+  - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
+  - math: abs/min/max implemented; sqrt/pow pending
+  - str: len implemented; concat/compare/copy pending
+  - mem: malloc/free/sizeof implemented via libc
+  - Function calls now dispatch to imported stdlib functions from codegen
+  - Comprehensive import demo shows correct max/len output
 
 7. **Documentation**
-   - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
+  - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
    - Updated `README.md` with import examples and module descriptions
    - Added stdlib section showing all available modules
 
