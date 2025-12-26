@@ -120,7 +120,7 @@ type ImportStatement struct {
 
 **Status**: ✅ Fully implemented via memory.go
 
-### math Module - 5 Functions
+### math Module - 10 Functions
 
 | Function | Args | Description |
 |----------|------|-------------|
@@ -129,10 +129,15 @@ type ImportStatement struct {
 | max | 2 | Maximum of two |
 | sqrt | 1 | Square root |
 | pow | 2 | Power (base^exp) |
+| floor | 1 | Largest integer ≤ x |
+| ceil  | 1 | Smallest integer ≥ x |
+| round | 1 | Round to nearest integer |
+| gcd   | 2 | Greatest common divisor |
+| lcm   | 2 | Least common multiple |
 
-**Status**: ✅ abs/min/max implemented; ⏳ sqrt/pow pending
+**Status**: ✅ abs/min/max/sqrt/pow/floor/ceil/round/gcd/lcm implemented
 
-### str Module - 4 Functions
+### str Module - 8 Functions
 
 | Function | Args | Description |
 |----------|------|-------------|
@@ -140,8 +145,12 @@ type ImportStatement struct {
 | concat | variadic | String concatenation |
 | compare | 2 | String comparison |
 | copy | 2 | String copying |
+| indexOf | 2 | Find substring index (or -1) |
+| contains | 2 | Check substring presence |
+| startsWith | 2 | Prefix check |
+| endsWith | 2 | Suffix check |
 
-**Status**: ✅ len implemented; ⏳ concat/compare/copy pending
+**Status**: ✅ len/concat/compare/copy/indexOf/contains/startsWith/endsWith implemented
 
 ## Import Processing Flow
 

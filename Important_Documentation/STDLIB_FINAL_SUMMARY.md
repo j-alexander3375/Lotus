@@ -2,7 +2,7 @@
 
 ## Summary
 
-The Lotus compiler ships with a Rust-inspired import system and a modular standard library. Architecture and import plumbing are complete; io/mem are usable, math/string have partial implementations.
+The Lotus compiler ships with a Rust-inspired import system and a modular standard library. Architecture and import plumbing are complete; io/mem/math/str/num/hash/collections/net/http are implemented to their current scope.
 
 ## What Was Delivered
 
@@ -13,7 +13,7 @@ The Lotus compiler ships with a Rust-inspired import system and a modular standa
 - `use "module" as alias` - Aliased imports
 - Multiple sequential imports supported
 
-### ✅ Four Standard Library Modules
+### ✅ Standard Library Modules
 
 **io** (7 functions)
 - print, println, printf, fprintf, sprint, sprintf, sprintln
@@ -22,13 +22,26 @@ The Lotus compiler ships with a Rust-inspired import system and a modular standa
 **mem** (3 functions)
 - malloc, free, sizeof (implemented via libc)
 
-**math** (5 functions)
-- Implemented: abs, min, max
-- Pending: sqrt, pow
+**math** (10 functions)
+- Implemented: abs, min, max, sqrt, pow, floor, ceil, round, gcd, lcm
 
-**str** (4 functions)
-- Implemented: len
-- Pending: concat, compare, copy
+**str** (8 functions)
+- Implemented: len, concat, compare, copy, indexOf, contains, startsWith, endsWith
+
+**num** (9 functions)
+- Implemented: toInt8/toUint8/toInt16/toUint16/toInt32/toUint32/toInt64/toUint64/toBool
+
+**hash** (6 functions)
+- Implemented: djb2, fnv1a, crc32, murmur3; placeholders: sha256, md5 (zeroed output buffers)
+
+**collections** (data structures)
+- Implemented: dynamic arrays, stacks, queues, deques, heaps, hashmap, hashset; helper `binary_search_int`
+
+**net** (5 functions)
+- Implemented: socket, connect_ipv4, send, recv, close
+
+**http** (1 function)
+- Implemented: minimal `get` built on net
 
 ### ✅ Complete Architecture
 - Module registration system (`StandardLibrary` map)
@@ -105,8 +118,13 @@ tests/
 | Import plumbing | ✅ |
 | io module | ✅ |
 | mem module | ✅ (malloc/free/sizeof) |
-| math module | ⚙️ partial (abs/min/max; sqrt/pow pending) |
-| str module | ⚙️ partial (len; concat/compare/copy pending) |
+| math module | ✅ (abs/min/max/sqrt/pow/floor/ceil/round/gcd/lcm) |
+| str module | ✅ (len/concat/compare/copy/indexOf/contains/startsWith/endsWith) |
+| num module | ✅ (conversions to int/uint/bool) |
+| hash module | ✅ (djb2/fnv1a/crc32/murmur3; sha256/md5 placeholders) |
+| collections module | ✅ (arrays/stacks/queues/deques/heaps/hashmap/hashset + binary_search_int) |
+| net module | ✅ (socket/connect_ipv4/send/recv/close) |
+| http module | ✅ (get) |
 | printf verbs | ✅ (%d/%b/%o/%x/%X/%c/%q/%s/%v) |
 | Tests | ✅ (import + control-flow + formatting demos) |
 
@@ -130,15 +148,16 @@ fn main() {
 
 ### Next Steps
 
-1. Implement remaining math (sqrt, pow) and str (concat, compare, copy) functions
-2. Flesh out mem behaviors beyond stubs
-3. Add new stdlib modules (time, file, collections, etc.)
-4. Expand formatting (padding/width) if needed
+1. Expand stdlib: time and file I/O modules
+2. Implement full cryptographic hashes (sha256/md5)
+3. Enrich HTTP client (headers, status codes, redirects)
+4. Broaden networking: IPv6/UDP/DNS helpers
+5. Optimization and codegen improvements; optional padding/width for formatting
 
 ## Scope and Next Steps
 
 - Import plumbing and io/mem are ready for use.
-- math/str are partially implemented; remaining functions are planned next.
+- math/str are now fully implemented per current scope.
 - Formatting verbs are in place; width/padding not yet supported.
 
 Focus areas to finish the stdlib:

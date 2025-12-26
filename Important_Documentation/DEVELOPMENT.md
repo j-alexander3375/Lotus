@@ -75,10 +75,15 @@
   - `StdlibModule` and `StdlibFunction` types for organization
 
 3. **Stdlib Modules Created**
-  - **io** - printf, println, fprintf, sprintf, sprint, sprintln
-  - **mem** - malloc, free, sizeof
-  - **math** - abs, min, max, sqrt, pow
-  - **str** - len, concat, compare, copy
+   - **io** - print, println, printf, fprintf, sprint, sprintf, sprintln
+   - **mem** - malloc, free, sizeof, memcpy, memset, mmap, munmap
+   - **math** - abs, min, max, sqrt, pow, floor, ceil, round, gcd, lcm
+   - **str** - len, concat, compare, copy, indexOf, contains, startsWith, endsWith
+   - **num** - toInt8, toUint8, toInt16, toUint16, toInt32, toUint32, toInt64, toUint64, toBool
+   - **hash** - djb2, fnv1a, crc32, murmur3, sha256*, md5* (*placeholders for cryptographic variants*)
+   - **collections** - dynamic arrays, stacks, queues, deques, heaps, hashmap, hashset; helper `binary_search_int`
+   - **net** - socket, connect_ipv4, send, recv, close
+   - **http** - get (minimal client built on `net`)
 
 4. **Import System Features**
   - Module lookup and validation
@@ -94,12 +99,16 @@
   - All current tests passing ✅
 
 6. **Formatting & Stdlib Updates**
-  - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
-  - math: abs/min/max implemented; sqrt/pow pending
-  - str: len implemented; concat/compare/copy pending
-  - mem: malloc/free/sizeof implemented via libc
-  - Function calls now dispatch to imported stdlib functions from codegen
-  - Comprehensive import demo shows correct max/len output
+   - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
+   - math: abs/min/max/sqrt/pow plus floor/ceil/round/gcd/lcm implemented
+   - str: len/concat/compare/copy/indexOf/contains/startsWith/endsWith implemented
+   - mem: malloc/free/sizeof plus memcpy/memset/mmap/munmap implemented
+   - num: integer width conversions and boolean coercion implemented
+   - hash: djb2/fnv1a/crc32/murmur3 implemented; sha256/md5 placeholders return zeroed buffers
+   - collections: dynamic arrays, stacks, queues/deques, heaps, hashmap/hashset, and `binary_search_int` implemented
+   - net/http: minimal socket helpers and `http.get` implemented for simple requests
+   - Function calls now dispatch to imported stdlib functions from codegen
+   - Comprehensive import demo shows correct outputs across modules
 
 7. **Documentation**
   - Created `STDLIB_AND_IMPORTS.md` - Comprehensive module documentation
@@ -175,7 +184,7 @@
 - x86-64 GNU assembly (AT&T)
 - Stack frames, 16-byte alignment, RIP-relative data
 - Function calls honoring System V ABI
-- Stdlib hooks for printf/println/malloc/free
+- Stdlib hooks across io/mem/math/str/num/hash/collections/net/http
 
 **Compilation:**
 - Go build: `go build -o lotus src/*.go`
@@ -224,36 +233,31 @@ Input (.lts file)
    - ✅ FNV-1a implementation (64-bit fast non-cryptographic hash)
    - ✅ DJB2 implementation (simple string hashing)
    - ✅ MurmurHash3 implementation (32-bit with seed support)
-   - ⏳ SHA-256 implementation (placeholder for cryptographic hash)
-   - ⏳ MD5 implementation (placeholder for legacy hash)
+   - ⏳ SHA-256/MD5 placeholders (zeroed output buffers; full implementations planned)
 
 2. **Collections Module Enhancements**
-   - ✅ Array, Stack, Queue, Deque structures defined
-   - ✅ Heap (min-heap) defined
-   - ✅ HashMap and HashSet (int keys) defined
-   - 🚧 Implement binary search helper
-   - 🚧 Complete all collection operations with proper memory management
-   - ⏳ Add generic support for string keys
+   - ✅ Array, Stack, Queue, Deque structures implemented
+   - ✅ Heap (min-heap) implemented
+   - ✅ HashMap and HashSet (int keys) implemented
+   - ✅ `binary_search_int` helper implemented
+   - 🚧 Continue to refine memory management and resizing strategies
+   - ⏳ Add generic support and string key variants
    - ⏳ Add sorted set/map variants
 
 3. **HTTP Module (`http`)**
-   - ✅ Basic structure defined
-   - 🚧 GET request implementation
+   - ✅ Minimal `get` implemented atop `net` primitives
    - ⏳ POST request support
-   - ⏳ Response parsing
-   - ⏳ Header manipulation
-   - ⏳ Connection pooling
+   - ⏳ Response parsing and header manipulation
+   - ⏳ Connection pooling and higher-level client API
 
 4. **Networking Module (`net`)**
-   - ✅ Socket, connect, send, recv, close defined
-   - 🚧 IPv4 connection implementation
+   - ✅ Socket, connect_ipv4, send, recv, close implemented (Linux syscalls)
    - ⏳ IPv6 support
    - ⏳ UDP support
    - ⏳ DNS resolution
 
 5. **String Module Completion**
-   - ✅ len, concat basics
-   - 🚧 indexOf, contains, startsWith, endsWith
+   - ✅ len, concat, compare, copy, indexOf, contains, startsWith, endsWith
    - ⏳ substring, split, join
    - ⏳ toLower, toUpper, trim
    - ⏳ replace, replaceAll
@@ -267,10 +271,11 @@ Input (.lts file)
 ### Next Phases (Planned)
 
 1. **Stdlib Completion**
-   - ✅ Math sqrt/pow - COMPLETED
-   - 🚧 Complete str functions
-   - ⏳ File I/O module
+   - ✅ Math: sqrt/pow implemented; continue numeric and FP coverage
+   - 🚧 String: substring/split/join, replace/replaceAll, case transforms
+   - ⏳ File I/O module (`file`) and time module (`time`)
    - ⏳ JSON parsing/serialization
+   - ⏳ Hash: full cryptographic implementations (SHA-256, MD5)
 
 2. **Formatting Enhancements**
    - Width/padding flags for printf-like output
@@ -287,7 +292,11 @@ Input (.lts file)
    - Union/option types
    - Pattern matching
 
-5. **Tooling**
+5. **Networking/HTTP**
+   - IPv6/UDP support; DNS resolution
+   - Higher-level HTTP client (headers, parsing, POST)
+
+6. **Tooling**
    - Language server
    - Debug/trace hooks
    - Package/module manager
@@ -356,8 +365,8 @@ cd src && go build -o ../lotus
 - ✅ Functions with `fn` and `ret`
 - ✅ Arrays, pointers, struct/enum/class definitions
 - ✅ Exception handling (try/catch/finally/throw/null)
-- ✅ Import system with `use`/`as` and stdlib modules (io, mem, math, str)
-- ✅ Stdlib printf/println/logf and malloc/free/sizeof
+- ✅ Import system with `use`/`as` and stdlib modules (io, mem, math, str, num, hash, collections, net, http)
+- ✅ Stdlib: printf/println/logf; memory helpers (malloc/free/sizeof/memcpy/memset/mmap/munmap); rich math and string functions; numeric conversions; hashing; collections; basic net/http
 
 ### Example Constant Usage
 

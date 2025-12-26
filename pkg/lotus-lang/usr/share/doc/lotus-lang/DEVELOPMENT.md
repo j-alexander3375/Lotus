@@ -95,8 +95,8 @@
 
 6. **Formatting & Stdlib Updates**
   - printf supports %%, %d, %b, %o, %x/%X, %c, %q, %s, %v with base-aware int printing and char output
-  - math: abs/min/max implemented; sqrt/pow pending
-  - str: len implemented; concat/compare/copy pending
+   - math: abs/min/max/sqrt/pow/floor/ceil/round/gcd/lcm implemented
+   - str: len/concat/compare/copy/indexOf/contains/startsWith/endsWith implemented
   - mem: malloc/free/sizeof implemented via libc
   - Function calls now dispatch to imported stdlib functions from codegen
   - Comprehensive import demo shows correct max/len output

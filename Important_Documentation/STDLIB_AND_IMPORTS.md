@@ -129,8 +129,13 @@ Numerical operations and calculations:
 - **`max(a, b)`** - Maximum of two values
 - **`sqrt(x)`** - Square root
 - **`pow(base, exp)`** - Power (base^exp)
+- **`floor(x)`** - Largest integer ≤ x
+- **`ceil(x)`** - Smallest integer ≥ x
+- **`round(x)`** - Nearest integer to x
+- **`gcd(a, b)`** - Greatest common divisor
+- **`lcm(a, b)`** - Least common multiple
 
-Status: abs/min/max implemented; sqrt/pow pending.
+Status: abs/min/max/sqrt/pow/floor/ceil/round/gcd/lcm implemented.
 
 Example:
 ```lotus
@@ -152,8 +157,12 @@ String operations and analysis:
 - **`concat(s1, s2, ...)`** - Concatenate strings (variadic)
 - **`compare(s1, s2)`** - Compare strings (returns 0 if equal)
 - **`copy(src, dst)`** - Copy string from source to destination
+- **`indexOf(s, sub)`** - Find substring index (or -1)
+- **`contains(s, sub)`** - Check substring presence
+- **`startsWith(s, prefix)`** - Prefix check
+- **`endsWith(s, suffix)`** - Suffix check
 
-Status: len implemented; concat/compare/copy pending.
+Status: len/concat/compare/copy/indexOf/contains/startsWith/endsWith implemented.
 
 Example:
 ```lotus

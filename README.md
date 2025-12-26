@@ -89,14 +89,14 @@ use "math";
 int top = max(10, 20);
 int root = sqrt(16);
 ```
-Implemented: abs, min, max. Pending: sqrt, pow.
+Implemented: abs, min, max, sqrt, pow, floor, ceil, round, gcd, lcm.
 
 **str**
 ```lotus
 use "str";
 int length = len("Hello");
 ```
-Implemented: len. Pending: concat, compare, copy.
+Implemented: len, concat, compare, copy, indexOf, contains, startsWith, endsWith.
 
 ## Language Notes
 
