@@ -93,7 +93,10 @@ func GenerateAssembly(tokens []Token) string {
 		return fmt.Sprintf("# Parse error: %v\n", err)
 	}
 
-	// Phase 2: Generate code from AST
+	// Phase 2: Optimize AST (constant folding, strength reduction, etc.)
+	statements = OptimizeAST(statements)
+
+	// Phase 3: Generate code from optimized AST
 	gen := NewCodeGenerator()
 	gen.dataSection.WriteString(DataSectionDirective + "\n")
 
@@ -101,7 +104,9 @@ func GenerateAssembly(tokens []Token) string {
 		gen.generateStatement(stmt)
 	}
 
-	return gen.buildFinalAssembly()
+	// Phase 4: Apply peephole optimizations to generated assembly
+	assembly := gen.buildFinalAssembly()
+	return ApplyPeepholeOptimizations(assembly)
 }
 
 // generateStatement dispatches AST nodes to their appropriate code generation methods.
@@ -314,6 +319,20 @@ func (cg *CodeGenerator) generateFunctionCall(call *FunctionCall) {
 		if fn, ok := cg.imports.ImportedFunctions[call.Name]; ok && fn != nil {
 			fn.CodeGen(cg, call.Args)
 			return
+		}
+	}
+
+	// Check for module-qualified function calls (module::function)
+	if strings.Contains(call.Name, "::") {
+		parts := strings.SplitN(call.Name, "::", 2)
+		if len(parts) == 2 {
+			moduleName := parts[0]
+			funcName := parts[1]
+			// Look up the module and function using GetModuleFunction
+			if fn := GetModuleFunction(moduleName, funcName); fn != nil {
+				fn.CodeGen(cg, call.Args)
+				return
+			}
 		}
 	}
 

@@ -114,6 +114,41 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 			// Back up to re-parse as function call
 			p.pos--
 			return p.parseFunctionCall()
+		case TokenColon:
+			// Check for module-qualified function call: module::function()
+			if p.peek().Type == TokenColon {
+				p.advance() // skip first ':'
+				p.advance() // skip second ':'
+				if p.current().Type != TokenIdentifier {
+					return nil, fmt.Errorf("expected function name after '::', got token type %d", p.current().Type)
+				}
+				funcName := p.current().Value
+				p.advance()
+				if p.current().Type != TokenLParen {
+					return nil, fmt.Errorf("expected '(' after function name, got token type %d", p.current().Type)
+				}
+				p.advance() // skip '('
+
+				var args []ASTNode
+				for p.current().Type != TokenRParen {
+					arg, err := p.parseExpression()
+					if err != nil {
+						return nil, err
+					}
+					args = append(args, arg)
+					if p.current().Type == TokenComma {
+						p.advance()
+					}
+				}
+				p.advance() // skip ')'
+
+				// Return a FunctionCall with module-qualified name
+				return &FunctionCall{
+					Name: name + "::" + funcName,
+					Args: args,
+				}, nil
+			}
+			return nil, fmt.Errorf("unexpected single ':' after identifier %s", name)
 		case TokenAssign:
 			// Simple assignment: identifier = expression
 			p.advance()
@@ -798,6 +833,39 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 			// Step back to re-parse as a function call
 			p.pos--
 			return p.parseFunctionCall()
+		}
+		// Check for module-qualified function call: module::function()
+		if p.current().Type == TokenColon && p.peek().Type == TokenColon {
+			p.advance() // skip first ':'
+			p.advance() // skip second ':'
+			if p.current().Type != TokenIdentifier {
+				return nil, fmt.Errorf("expected function name after '::', got token type %d", p.current().Type)
+			}
+			funcName := p.current().Value
+			p.advance()
+			if p.current().Type != TokenLParen {
+				return nil, fmt.Errorf("expected '(' after function name, got token type %d", p.current().Type)
+			}
+			p.advance() // skip '('
+
+			var args []ASTNode
+			for p.current().Type != TokenRParen {
+				arg, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, arg)
+				if p.current().Type == TokenComma {
+					p.advance()
+				}
+			}
+			p.advance() // skip ')'
+
+			// Return a FunctionCall with module-qualified name
+			return &FunctionCall{
+				Name: name + "::" + funcName,
+				Args: args,
+			}, nil
 		}
 		return &Identifier{Name: name}, nil
 	case TokenLParen:

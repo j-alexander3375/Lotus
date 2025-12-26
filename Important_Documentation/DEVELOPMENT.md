@@ -1,8 +1,55 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: Tooling & Diagnostics Enhancements ✅
+## Latest Phase: Code Optimization ✅
 
-### Current Accomplishments (December 2025 - Phase 5)
+### Current Accomplishments (December 2025 - Phase 6)
+
+1. **AST-Level Optimizations** (`optimizer.go`)
+   - **Constant Folding**: Evaluate constant expressions at compile time
+     * Arithmetic: `2 + 3` → `5`, `10 * 4` → `40`
+     * Nested expressions: `(3 + 2) * 4` → `20`
+     * Bitwise operations: `0xFF & 0x0F` → `0x0F`
+     * Unary operations: `-42` at compile time, `~0` → `-1`
+   - **Strength Reduction**: Replace expensive operations with cheaper equivalents
+     * Multiply by power of 2 → left shift: `x * 8` → `x << 3`
+     * Works for 2, 4, 8, 16, 32, 64, 128, 256, etc.
+   - **Identity Removal**: Eliminate no-op operations
+     * `x + 0` → `x`, `x - 0` → `x`
+     * `x * 1` → `x`, `x / 1` → `x`
+     * `x * 0` → `0`, `x % 1` → `0`
+     * `x & -1` → `x`, `x | 0` → `x`, `x ^ 0` → `x`
+     * `x << 0` → `x`, `x >> 0` → `x`
+   - Recursive optimization through all AST node types
+
+2. **Assembly-Level Peephole Optimizations** (`peephole.go`)
+   - **Redundant Move Elimination**: `movq %rax, %rax` → removed
+   - **Dead Store Elimination**: Store-then-load to same location optimized
+   - **Push-Pop Cancellation**: Adjacent `pushq %rax; popq %rax` → removed
+   - **Zero Loading Optimization**: `movq $0, %rax` → `xorq %rax, %rax`
+   - **Increment/Decrement Simplification**: `addq $1, %rax` → `incq %rax`
+   - Multi-pass optimization until no more changes
+
+3. **Optimization Pipeline Integration**
+   - Optimizations run automatically during compilation
+   - Phase 1: Parse tokens to AST
+   - Phase 2: Optimize AST (constant folding, strength reduction)
+   - Phase 3: Generate code from optimized AST
+   - Phase 4: Apply peephole optimizations to assembly
+
+4. **Comprehensive Test Coverage** (`optimizer_test.go`)
+   - Unit tests for all optimization types
+   - TestConstantFolding: arithmetic, nested expressions
+   - TestIdentityRemoval: all identity cases
+   - TestStrengthReduction: power-of-2 multiplication
+   - TestBitwiseConstantFolding: AND, OR, XOR, shifts
+   - TestUnaryConstantFolding: negation, bitwise NOT
+   - Peephole tests: redundant moves, zero loading, inc/dec, push-pop
+
+---
+
+## Previous Phase: Tooling & Diagnostics Enhancements ✅
+
+### Accomplishments (December 2025 - Phase 5)
 
 1. **Compilation Statistics Tracking**
    - Created `stats.go` - Comprehensive compilation metrics system
@@ -316,11 +363,14 @@ Input (.lts file)
    - Width/padding flags for printf-like output
    - Custom format specifiers
 
-3. **Optimization & Codegen**
-   - Register allocation and peephole optimizations
-   - Constant folding/propagation
-   - Dead code elimination
-   - Inline function expansion
+3. **Optimization & Codegen** ✅ **COMPLETE**
+   - ✅ Constant folding and propagation
+   - ✅ Strength reduction (multiply → shift)
+   - ✅ Identity operation removal
+   - ✅ Peephole optimizations (redundant moves, zero loading, inc/dec)
+   - ⏳ Register allocation improvements
+   - ⏳ Dead code elimination
+   - ⏳ Inline function expansion
 
 4. **Type System Enhancements**
    - Generics and type inference improvements
@@ -351,6 +401,8 @@ src/
 ├── ast.go               - Centralized AST node definitions (NEW)
 ├── types.go             - Type system utilities (NEW)
 ├── codegen.go           - Assembly code generation orchestrator
+├── optimizer.go         - AST-level optimizations (constant folding, strength reduction) (NEW)
+├── peephole.go          - Assembly-level peephole optimizations (NEW)
 ├── diagnostics.go       - Error and warning reporting
 ├── printfuncs.go        - Print function implementations
 ├── arithmetic.go        - Arithmetic & bitwise operations

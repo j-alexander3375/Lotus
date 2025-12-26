@@ -266,51 +266,51 @@ func createStringModule() *StdlibModule {
 				NumArgs: 2,
 				CodeGen: generateStringEndsWith,
 			},
-		"substring": {
-			Name:    "substring",
-			Module:  "str",
-			NumArgs: 3,
-			CodeGen: generateStringSubstring,
+			"substring": {
+				Name:    "substring",
+				Module:  "str",
+				NumArgs: 3,
+				CodeGen: generateStringSubstring,
+			},
+			"split": {
+				Name:    "split",
+				Module:  "str",
+				NumArgs: 2,
+				CodeGen: generateStringSplit,
+			},
+			"join": {
+				Name:    "join",
+				Module:  "str",
+				NumArgs: 2,
+				CodeGen: generateStringJoin,
+			},
+			"replace": {
+				Name:    "replace",
+				Module:  "str",
+				NumArgs: 3,
+				CodeGen: generateStringReplace,
+			},
+			"toLower": {
+				Name:    "toLower",
+				Module:  "str",
+				NumArgs: 1,
+				CodeGen: generateStringToLower,
+			},
+			"toUpper": {
+				Name:    "toUpper",
+				Module:  "str",
+				NumArgs: 1,
+				CodeGen: generateStringToUpper,
+			},
+			"trim": {
+				Name:    "trim",
+				Module:  "str",
+				NumArgs: 1,
+				CodeGen: generateStringTrim,
+			},
 		},
-		"split": {
-			Name:    "split",
-			Module:  "str",
-			NumArgs: 2,
-			CodeGen: generateStringSplit,
-		},
-		"join": {
-			Name:    "join",
-			Module:  "str",
-			NumArgs: 2,
-			CodeGen: generateStringJoin,
-		},
-		"replace": {
-			Name:    "replace",
-			Module:  "str",
-			NumArgs: 3,
-			CodeGen: generateStringReplace,
-		},
-		"toLower": {
-			Name:    "toLower",
-			Module:  "str",
-			NumArgs: 1,
-			CodeGen: generateStringToLower,
-		},
-		"toUpper": {
-			Name:    "toUpper",
-			Module:  "str",
-			NumArgs: 1,
-			CodeGen: generateStringToUpper,
-		},
-		"trim": {
-			Name:    "trim",
-			Module:  "str",
-			NumArgs: 1,
-			CodeGen: generateStringTrim,
-		},
-	},
-	Types: map[string]TokenType{},
-}
+		Types: map[string]TokenType{},
+	}
 }
 
 func createNetModule() *StdlibModule {
@@ -459,24 +459,38 @@ func createTimeModule() *StdlibModule {
 	return &StdlibModule{
 		Name: "time",
 		Functions: map[string]*StdlibFunction{
-			"now":       {Name: "now", Module: "time", NumArgs: 0, CodeGen: generateTimeNow},           // now() -> unix_timestamp
-			"sleep":     {Name: "sleep", Module: "time", NumArgs: 1, CodeGen: generateTimeSleep},       // sleep(seconds) -> status
-			"millis":    {Name: "millis", Module: "time", NumArgs: 0, CodeGen: generateTimeMillis},     // millis() -> milliseconds
-			"nanos":     {Name: "nanos", Module: "time", NumArgs: 0, CodeGen: generateTimeNanos},       // nanos() -> nanoseconds
-			"clock":     {Name: "clock", Module: "time", NumArgs: 0, CodeGen: generateTimeClock},       // clock() -> clock_ticks
-			"gmtime":    {Name: "gmtime", Module: "time", NumArgs: 2, CodeGen: generateTimeGMTime},     // gmtime(timestamp, tm_buf) -> void
+			"now":       {Name: "now", Module: "time", NumArgs: 0, CodeGen: generateTimeNow},             // now() -> unix_timestamp
+			"sleep":     {Name: "sleep", Module: "time", NumArgs: 1, CodeGen: generateTimeSleep},         // sleep(seconds) -> status
+			"millis":    {Name: "millis", Module: "time", NumArgs: 0, CodeGen: generateTimeMillis},       // millis() -> milliseconds
+			"nanos":     {Name: "nanos", Module: "time", NumArgs: 0, CodeGen: generateTimeNanos},         // nanos() -> nanoseconds
+			"clock":     {Name: "clock", Module: "time", NumArgs: 0, CodeGen: generateTimeClock},         // clock() -> clock_ticks
+			"gmtime":    {Name: "gmtime", Module: "time", NumArgs: 2, CodeGen: generateTimeGMTime},       // gmtime(timestamp, tm_buf) -> void
 			"localtime": {Name: "localtime", Module: "time", NumArgs: 2, CodeGen: generateTimeLocalTime}, // localtime(timestamp, tm_buf) -> void
 		},
 		Types: map[string]TokenType{},
 	}
 }
 
+// stdlibLookup is a function pointer for late-binding module lookups
+// This is set after StandardLibrary is initialized to avoid init cycles
+var stdlibLookup func(moduleName, funcName string) *StdlibFunction
+
+func init() {
+	// Set up the lookup function after StandardLibrary is fully initialized
+	stdlibLookup = func(moduleName, funcName string) *StdlibFunction {
+		if module, ok := StandardLibrary[moduleName]; ok {
+			if fn, ok := module.Functions[funcName]; ok {
+				return fn
+			}
+		}
+		return nil
+	}
+}
+
 // GetModuleFunction retrieves a function from a module
 func GetModuleFunction(moduleName, funcName string) *StdlibFunction {
-	if module, ok := StandardLibrary[moduleName]; ok {
-		if fn, ok := module.Functions[funcName]; ok {
-			return fn
-		}
+	if stdlibLookup != nil {
+		return stdlibLookup(moduleName, funcName)
 	}
 	return nil
 }
@@ -1340,7 +1354,10 @@ func generateStringEndsWith(cg *CodeGenerator, args []ASTNode) {
 
 // printfuncs.go wrappers (will use existing implementations from printfuncs.go)
 func generatePrintCode(cg *CodeGenerator, args []ASTNode) {
-	// References existing print logic from printfuncs.go
+	// Print each argument
+	for _, arg := range args {
+		emitPrintValue(cg, arg)
+	}
 }
 
 // Note: Printf and Printf in module system delegate to printfuncs implementations
@@ -1940,7 +1957,10 @@ func generateCollectionsHashmapIntNew(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    movq $0, 24(%r11)\n")
 	cg.textSection.WriteString(fmt.Sprintf("    leaq %d(%%r11), %%rcx\n", collectionsHeaderSize))
 	cg.textSection.WriteString("    movq %rcx, 32(%r11)\n") // data ptr
-	cg.textSection.WriteString("    leaq (%rcx,%rbx,16), %rdx\n")
+	// Compute states ptr: rcx + rbx*16 (using shlq since scale 16 is invalid)
+	cg.textSection.WriteString("    movq %rbx, %rdx\n")
+	cg.textSection.WriteString("    shlq $4, %rdx\n")
+	cg.textSection.WriteString("    addq %rcx, %rdx\n")
 	cg.textSection.WriteString("    movq %rdx, 16(%r11)\n") // states ptr
 	cg.textSection.WriteString("    movq %r11, %rax\n")
 }
@@ -1950,7 +1970,9 @@ func hashmapHash(cg *CodeGenerator, keyReg string) {
 	cg.textSection.WriteString("    movq %rax, %r14\n")
 	cg.textSection.WriteString("    shrq $33, %r14\n")
 	cg.textSection.WriteString("    xorq %r14, %rax\n")
-	cg.textSection.WriteString("    imulq $-352301462168404107, %rax\n")
+	// Use movabsq to load the large constant, then imulq with register
+	cg.textSection.WriteString("    movabsq $-352301462168404107, %r14\n")
+	cg.textSection.WriteString("    imulq %r14, %rax\n")
 	cg.textSection.WriteString("    movq %rax, %r14\n")
 	cg.textSection.WriteString("    shrq $33, %r14\n")
 	cg.textSection.WriteString("    xorq %r14, %rax\n")
@@ -2008,9 +2030,11 @@ func hashmapEnsureCapacity(cg *CodeGenerator, mapReg string) {
 	cg.textSection.WriteString("    movzbq (%r10,%r12,1), %r13\n")
 	cg.textSection.WriteString("    cmpq $1, %r13\n")
 	cg.textSection.WriteString("    jne 3f\n")
-	// load key/value
-	cg.textSection.WriteString("    movq (%r9,%r12,16), %rcx\n")
-	cg.textSection.WriteString("    movq 8(%r9,%r12,16), %r15\n")
+	// load key/value - compute r12*16 offset
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq (%r9,%rdi), %rcx\n")
+	cg.textSection.WriteString("    movq 8(%r9,%rdi), %r15\n")
 	// insert into new table (reuse put logic using r11 as base)
 	cg.textSection.WriteString("    movq %r11, %rbx\n")
 	cg.textSection.WriteString("    jmp 6f\n")
@@ -2041,10 +2065,16 @@ func hashmapEnsureCapacity(cg *CodeGenerator, mapReg string) {
 	cg.textSection.WriteString("    cmpq $-1, %r14\n")
 	cg.textSection.WriteString("    jne 12f\n")
 	cg.textSection.WriteString("    jmp 13f\n")
-	cg.textSection.WriteString("10: movq (%r9,%r13,16), %r15\n")
+	// compute r13*16 offset into rdi
+	cg.textSection.WriteString("10: movq %r13, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq (%r9,%rdi), %r15\n")
 	cg.textSection.WriteString("    cmpq %rcx, %r15\n")
 	cg.textSection.WriteString("    jne 11f\n")
-	cg.textSection.WriteString("    movq %rsi, 8(%r9,%r13,16)\n")
+	// compute r13*16 offset into rdi again
+	cg.textSection.WriteString("    movq %r13, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq %rsi, 8(%r9,%rdi)\n")
 	cg.textSection.WriteString("    jmp 12f\n")
 	cg.textSection.WriteString("11: inc %r13\n")
 	cg.textSection.WriteString("    cmpq %r8, %r13\n")
@@ -2056,8 +2086,11 @@ func hashmapEnsureCapacity(cg *CodeGenerator, mapReg string) {
 	cg.textSection.WriteString("14: cmpq $-1, %r14\n")
 	cg.textSection.WriteString("    je 15f\n")
 	cg.textSection.WriteString("    movb $1, (%r10,%r14,1)\n")
-	cg.textSection.WriteString("    movq %rcx, (%r9,%r14,16)\n")
-	cg.textSection.WriteString("    movq %rsi, 8(%r9,%r14,16)\n")
+	// compute r14*16 offset into rdi
+	cg.textSection.WriteString("    movq %r14, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq %rcx, (%r9,%rdi)\n")
+	cg.textSection.WriteString("    movq %rsi, 8(%r9,%rdi)\n")
 	cg.textSection.WriteString("    inc %rax\n")
 	cg.textSection.WriteString("    movq %rax, (%rbx)\n")
 	cg.textSection.WriteString("15: jmp 3b\n")
@@ -2110,10 +2143,16 @@ func generateCollectionsHashmapIntPut(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    cmpq $-1, %r12\n")
 	cg.textSection.WriteString("    jne 6f\n")
 	cg.textSection.WriteString("    jmp 7f\n")
-	cg.textSection.WriteString("3:  movq (%r9,%r11,16), %r14\n")
+	// compute r11*16 offset into rdi
+	cg.textSection.WriteString("3:  movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq (%r9,%rdi), %r14\n")
 	cg.textSection.WriteString("    cmpq %rcx, %r14\n")
 	cg.textSection.WriteString("    jne 4f\n")
-	cg.textSection.WriteString("    movq %r15, 8(%r9,%r11,16)\n")
+	// compute r11*16 offset into rdi again
+	cg.textSection.WriteString("    movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq %r15, 8(%r9,%rdi)\n")
 	cg.textSection.WriteString("    movq %r15, %rax\n")
 	cg.textSection.WriteString("    jmp 6f\n")
 	cg.textSection.WriteString("4:  inc %r11\n")
@@ -2126,8 +2165,11 @@ func generateCollectionsHashmapIntPut(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("8:  cmpq $-1, %r12\n")
 	cg.textSection.WriteString("    je 9f\n")
 	cg.textSection.WriteString("    movb $1, (%r10,%r12,1)\n")
-	cg.textSection.WriteString("    movq %rcx, (%r9,%r12,16)\n")
-	cg.textSection.WriteString("    movq %r15, 8(%r9,%r12,16)\n")
+	// compute r12*16 offset into rdi
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq %rcx, (%r9,%rdi)\n")
+	cg.textSection.WriteString("    movq %r15, 8(%r9,%rdi)\n")
 	cg.textSection.WriteString("    inc %rax\n")
 	cg.textSection.WriteString("    movq %rax, (%rbx)\n")
 	cg.textSection.WriteString("9:\n")
@@ -2151,7 +2193,10 @@ func generateCollectionsHashmapIntGet(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    je 3f\n")
 	cg.textSection.WriteString("    cmpq $1, %r12\n")
 	cg.textSection.WriteString("    jne 2f\n")
-	cg.textSection.WriteString("    movq (%r9,%r11,16), %r13\n")
+	// compute r11*16 offset into rdi
+	cg.textSection.WriteString("    movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq (%r9,%rdi), %r13\n")
 	cg.textSection.WriteString("    cmpq %rcx, %r13\n")
 	cg.textSection.WriteString("    je 4f\n")
 	cg.textSection.WriteString("2:  inc %r11\n")
@@ -2161,7 +2206,10 @@ func generateCollectionsHashmapIntGet(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    jmp 1b\n")
 	cg.textSection.WriteString("3:  movq $-1, %rax\n")
 	cg.textSection.WriteString("    jmp 5f\n")
-	cg.textSection.WriteString("4:  movq 8(%r9,%r11,16), %rax\n")
+	// compute r11*16 offset into rdi
+	cg.textSection.WriteString("4:  movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq 8(%r9,%rdi), %rax\n")
 	cg.textSection.WriteString("5:\n")
 }
 
@@ -2182,7 +2230,10 @@ func generateCollectionsHashmapIntRemove(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("1:  movzbq (%r10,%r11,1), %r12\n")
 	cg.textSection.WriteString("    cmpq $0, %r12\n")
 	cg.textSection.WriteString("    je 3f\n")
-	cg.textSection.WriteString("    movq (%r9,%r11,16), %r13\n")
+	// compute r11*16 offset into rdi
+	cg.textSection.WriteString("    movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq (%r9,%rdi), %r13\n")
 	cg.textSection.WriteString("    cmpq %rcx, %r13\n")
 	cg.textSection.WriteString("    je 4f\n")
 	cg.textSection.WriteString("    inc %r11\n")
@@ -2192,7 +2243,10 @@ func generateCollectionsHashmapIntRemove(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    jmp 1b\n")
 	cg.textSection.WriteString("3:  movq $-1, %rax\n")
 	cg.textSection.WriteString("    jmp 6f\n")
-	cg.textSection.WriteString("4:  movq 8(%r9,%r11,16), %rax\n")
+	// compute r11*16 offset into rdi
+	cg.textSection.WriteString("4:  movq %r11, %rdi\n")
+	cg.textSection.WriteString("    shlq $4, %rdi\n")
+	cg.textSection.WriteString("    movq 8(%r9,%rdi), %rax\n")
 	cg.textSection.WriteString("    movb $2, (%r10,%r11,1)\n")
 	cg.textSection.WriteString("    dec %r14\n")
 	cg.textSection.WriteString("    movq %r14, (%rbx)\n")
@@ -2765,6 +2819,7 @@ func generateHashMD5(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    rep stosb\n")
 	cg.textSection.WriteString("    # TODO: Implement MD5\n")
 }
+
 // ============================================================================
 // String Extension Functions (Phase 4)
 // ============================================================================
@@ -2779,7 +2834,7 @@ func generateStringSubstring(cg *CodeGenerator, args []ASTNode) {
 	cg.generateExpressionToReg(args[1], "r8")  // start offset
 	cg.generateExpressionToReg(args[2], "r9")  // length
 	cg.generateExpressionToReg(args[0], "rbx") // source string ptr
-	
+
 	// size = len + 1 (for NUL)
 	cg.textSection.WriteString("    movq %r9, %rsi\n")
 	cg.textSection.WriteString("    addq $1, %rsi\n")
@@ -2798,7 +2853,7 @@ func generateStringSubstring(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    movq %r9, %rcx\n") // length
 	cg.textSection.WriteString("    rep movsb\n")
 	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
-	cg.textSection.WriteString("    mov %rax, %rax\n") // result in rax
+	cg.textSection.WriteString("    mov %rax, %rax\n")  // result in rax
 }
 
 // generateStringSplit(str, delim) -> array ptr (placeholder)
@@ -2964,14 +3019,14 @@ func generateFileExists(cg *CodeGenerator, args []ASTNode) {
 		return
 	}
 	// Allocate stat buffer on stack and call stat
-	cg.generateExpressionToReg(args[0], "rdi") // path
+	cg.generateExpressionToReg(args[0], "rdi")          // path
 	cg.textSection.WriteString("    subq $144, %rsp\n") // stat buffer (144 bytes)
 	cg.textSection.WriteString("    movq %rsp, %rsi\n") // stat buffer ptr
 	cg.textSection.WriteString("    movq $4, %rax\n")   // stat syscall
 	cg.textSection.WriteString("    syscall\n")
 	cg.textSection.WriteString("    addq $144, %rsp\n")
 	cg.textSection.WriteString("    movq $0, %rax\n") // default: doesn't exist
-	cg.textSection.WriteString("    cmp $0, %rax\n")   // if stat returned 0, file exists
+	cg.textSection.WriteString("    cmp $0, %rax\n")  // if stat returned 0, file exists
 	lExistsLabel := cg.getLabel("file_exists")
 	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lExistsLabel))
 	cg.textSection.WriteString("    movq $1, %rax\n") // file exists
@@ -3000,7 +3055,7 @@ func generateTimeSleep(cg *CodeGenerator, args []ASTNode) {
 	cg.generateExpressionToReg(args[0], "rdi") // seconds
 	// nanosleep(2) syscall: rax=35, rdi=timespec ptr, rsi=remaining
 	// For simplicity, allocate timespec on stack: [seconds(8), nanoseconds(8)]
-	cg.textSection.WriteString("    subq $16, %rsp\n")  // timespec structure
+	cg.textSection.WriteString("    subq $16, %rsp\n")     // timespec structure
 	cg.textSection.WriteString("    movq %rdi, 0(%rsp)\n") // tv_sec
 	cg.textSection.WriteString("    movq $0, 8(%rsp)\n")   // tv_nsec = 0
 	cg.textSection.WriteString("    movq %rsp, %rdi\n")
