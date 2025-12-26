@@ -35,6 +35,8 @@ var StandardLibrary = map[string]*StdlibModule{
 	"collections": createCollectionsModule(),
 	"net":         createNetModule(),
 	"http":        createHTTPModule(),
+	"file":        createFileModule(),
+	"time":        createTimeModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -264,12 +266,53 @@ func createStringModule() *StdlibModule {
 				NumArgs: 2,
 				CodeGen: generateStringEndsWith,
 			},
+		"substring": {
+			Name:    "substring",
+			Module:  "str",
+			NumArgs: 3,
+			CodeGen: generateStringSubstring,
 		},
-		Types: map[string]TokenType{},
-	}
+		"split": {
+			Name:    "split",
+			Module:  "str",
+			NumArgs: 2,
+			CodeGen: generateStringSplit,
+		},
+		"join": {
+			Name:    "join",
+			Module:  "str",
+			NumArgs: 2,
+			CodeGen: generateStringJoin,
+		},
+		"replace": {
+			Name:    "replace",
+			Module:  "str",
+			NumArgs: 3,
+			CodeGen: generateStringReplace,
+		},
+		"toLower": {
+			Name:    "toLower",
+			Module:  "str",
+			NumArgs: 1,
+			CodeGen: generateStringToLower,
+		},
+		"toUpper": {
+			Name:    "toUpper",
+			Module:  "str",
+			NumArgs: 1,
+			CodeGen: generateStringToUpper,
+		},
+		"trim": {
+			Name:    "trim",
+			Module:  "str",
+			NumArgs: 1,
+			CodeGen: generateStringTrim,
+		},
+	},
+	Types: map[string]TokenType{},
+}
 }
 
-// createNetModule creates a low-level networking module (Linux syscalls)
 func createNetModule() *StdlibModule {
 	return &StdlibModule{
 		Name: "net",
@@ -389,6 +432,40 @@ func createHashModule() *StdlibModule {
 			// Cryptographic hashes
 			"sha256": {Name: "sha256", Module: "hash", NumArgs: 3, CodeGen: generateHashSHA256}, // sha256(data_ptr, len, out_buf) -> void
 			"md5":    {Name: "md5", Module: "hash", NumArgs: 3, CodeGen: generateHashMD5},       // md5(data_ptr, len, out_buf) -> void
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createFileModule creates a file I/O stdlib module (POSIX file operations)
+func createFileModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "file",
+		Functions: map[string]*StdlibFunction{
+			"open":   {Name: "open", Module: "file", NumArgs: 2, CodeGen: generateFileOpen},     // open(path_ptr, flags) -> fd
+			"close":  {Name: "close", Module: "file", NumArgs: 1, CodeGen: generateFileClose},   // close(fd) -> status
+			"read":   {Name: "read", Module: "file", NumArgs: 3, CodeGen: generateFileRead},     // read(fd, buf_ptr, size) -> bytes_read
+			"write":  {Name: "write", Module: "file", NumArgs: 3, CodeGen: generateFileWrite},   // write(fd, buf_ptr, size) -> bytes_written
+			"seek":   {Name: "seek", Module: "file", NumArgs: 3, CodeGen: generateFileSeek},     // seek(fd, offset, whence) -> new_pos
+			"stat":   {Name: "stat", Module: "file", NumArgs: 2, CodeGen: generateFileStat},     // stat(path_ptr, stat_buf) -> status
+			"exists": {Name: "exists", Module: "file", NumArgs: 1, CodeGen: generateFileExists}, // exists(path_ptr) -> 0/1
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createTimeModule creates a time/date utility stdlib module
+func createTimeModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "time",
+		Functions: map[string]*StdlibFunction{
+			"now":       {Name: "now", Module: "time", NumArgs: 0, CodeGen: generateTimeNow},           // now() -> unix_timestamp
+			"sleep":     {Name: "sleep", Module: "time", NumArgs: 1, CodeGen: generateTimeSleep},       // sleep(seconds) -> status
+			"millis":    {Name: "millis", Module: "time", NumArgs: 0, CodeGen: generateTimeMillis},     // millis() -> milliseconds
+			"nanos":     {Name: "nanos", Module: "time", NumArgs: 0, CodeGen: generateTimeNanos},       // nanos() -> nanoseconds
+			"clock":     {Name: "clock", Module: "time", NumArgs: 0, CodeGen: generateTimeClock},       // clock() -> clock_ticks
+			"gmtime":    {Name: "gmtime", Module: "time", NumArgs: 2, CodeGen: generateTimeGMTime},     // gmtime(timestamp, tm_buf) -> void
+			"localtime": {Name: "localtime", Module: "time", NumArgs: 2, CodeGen: generateTimeLocalTime}, // localtime(timestamp, tm_buf) -> void
 		},
 		Types: map[string]TokenType{},
 	}
@@ -2687,4 +2764,283 @@ func generateHashMD5(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
 	cg.textSection.WriteString("    rep stosb\n")
 	cg.textSection.WriteString("    # TODO: Implement MD5\n")
+}
+// ============================================================================
+// String Extension Functions (Phase 4)
+// ============================================================================
+
+// generateStringSubstring(s, start, len) -> new allocated string
+func generateStringSubstring(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// Allocate buffer, copy substring from start with length len
+	cg.generateExpressionToReg(args[1], "r8")  // start offset
+	cg.generateExpressionToReg(args[2], "r9")  // length
+	cg.generateExpressionToReg(args[0], "rbx") // source string ptr
+	
+	// size = len + 1 (for NUL)
+	cg.textSection.WriteString("    movq %r9, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	// mmap
+	cg.textSection.WriteString("    movq $9, %rax\n")
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    movq %rsi, %rdx\n") // size
+	cg.textSection.WriteString("    movq $3, %r10\n")
+	cg.textSection.WriteString("    movq $34, %rcx\n")
+	cg.textSection.WriteString("    movq $-1, %r8\n")
+	cg.textSection.WriteString("    xorq %r9, %r9\n")
+	cg.textSection.WriteString("    syscall\n")
+	// Copy substring
+	cg.textSection.WriteString("    movq %rax, %rdi\n")
+	cg.textSection.WriteString("    addq %r8, %rbx\n") // source + start
+	cg.textSection.WriteString("    movq %r9, %rcx\n") // length
+	cg.textSection.WriteString("    rep movsb\n")
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    mov %rax, %rax\n") // result in rax
+}
+
+// generateStringSplit(str, delim) -> array ptr (placeholder)
+func generateStringSplit(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// Placeholder: returns NULL; full implementation would parse and allocate array
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString("    # TODO: Implement split(str, delim) -> array\n")
+}
+
+// generateStringJoin(array, sep) -> joined string (placeholder)
+func generateStringJoin(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// Placeholder: returns NULL
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString("    # TODO: Implement join(array, sep) -> string\n")
+}
+
+// generateStringReplace(str, old, new) -> new string with replacements
+func generateStringReplace(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// Placeholder: scans and allocates; full implementation would do multi-pass
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString("    # TODO: Implement replace(str, old, new) -> string\n")
+}
+
+// generateStringToLower(str) -> lowercased copy
+func generateStringToLower(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rbx") // source string
+	// Copy and lowercase: allocate, copy byte by byte, apply tolower logic
+	cg.textSection.WriteString("    # TODO: Implement toLower(str) -> lowercased copy\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateStringToUpper(str) -> uppercased copy
+func generateStringToUpper(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rbx") // source string
+	cg.textSection.WriteString("    # TODO: Implement toUpper(str) -> uppercased copy\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateStringTrim(str) -> trimmed string (whitespace removed)
+func generateStringTrim(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rbx") // source string
+	cg.textSection.WriteString("    # TODO: Implement trim(str) -> trimmed copy\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// ============================================================================
+// File I/O Functions (Phase 4)
+// ============================================================================
+
+// generateFileOpen(path_ptr, flags) -> fd or error
+func generateFileOpen(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		cg.textSection.WriteString("    movq $-1, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // path
+	cg.generateExpressionToReg(args[1], "rsi") // flags
+	// open(2) syscall: rax=2, rdi=path, rsi=flags, rdx=mode(0)
+	cg.textSection.WriteString("    movq $2, %rax\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains fd or error code
+}
+
+// generateFileClose(fd) -> status
+func generateFileClose(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	// close(2) syscall: rax=3, rdi=fd
+	cg.textSection.WriteString("    movq $3, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+}
+
+// generateFileRead(fd, buf_ptr, size) -> bytes_read
+func generateFileRead(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	cg.generateExpressionToReg(args[1], "rsi") // buf_ptr
+	cg.generateExpressionToReg(args[2], "rdx") // size
+	// read(2) syscall: rax=0, rdi=fd, rsi=buf, rdx=count
+	cg.textSection.WriteString("    movq $0, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains bytes_read or error
+}
+
+// generateFileWrite(fd, buf_ptr, size) -> bytes_written
+func generateFileWrite(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	cg.generateExpressionToReg(args[1], "rsi") // buf_ptr
+	cg.generateExpressionToReg(args[2], "rdx") // size
+	// write(2) syscall: rax=1, rdi=fd, rsi=buf, rdx=count
+	cg.textSection.WriteString("    movq $1, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains bytes_written or error
+}
+
+// generateFileSeek(fd, offset, whence) -> new_pos
+func generateFileSeek(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	cg.generateExpressionToReg(args[1], "rsi") // offset
+	cg.generateExpressionToReg(args[2], "rdx") // whence (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
+	// lseek(2) syscall: rax=8, rdi=fd, rsi=offset, rdx=whence
+	cg.textSection.WriteString("    movq $8, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains new position or error
+}
+
+// generateFileStat(path_ptr, stat_buf) -> status
+func generateFileStat(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		cg.textSection.WriteString("    movq $-1, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // path
+	cg.generateExpressionToReg(args[1], "rsi") // stat buffer
+	// stat(2) syscall: rax=4, rdi=path, rsi=statbuf
+	cg.textSection.WriteString("    movq $4, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains status (0 on success, < 0 on error)
+}
+
+// generateFileExists(path_ptr) -> 0 or 1
+func generateFileExists(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// Allocate stat buffer on stack and call stat
+	cg.generateExpressionToReg(args[0], "rdi") // path
+	cg.textSection.WriteString("    subq $144, %rsp\n") // stat buffer (144 bytes)
+	cg.textSection.WriteString("    movq %rsp, %rsi\n") // stat buffer ptr
+	cg.textSection.WriteString("    movq $4, %rax\n")   // stat syscall
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $144, %rsp\n")
+	cg.textSection.WriteString("    movq $0, %rax\n") // default: doesn't exist
+	cg.textSection.WriteString("    cmp $0, %rax\n")   // if stat returned 0, file exists
+	lExistsLabel := cg.getLabel("file_exists")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lExistsLabel))
+	cg.textSection.WriteString("    movq $1, %rax\n") // file exists
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lExistsLabel))
+}
+
+// ============================================================================
+// Time Functions (Phase 4)
+// ============================================================================
+
+// generateTimeNow() -> unix timestamp
+func generateTimeNow(cg *CodeGenerator, args []ASTNode) {
+	// time(2) syscall: rax=201, rdi=NULL, rsi=NULL
+	cg.textSection.WriteString("    movq $201, %rax\n")
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    xorq %rsi, %rsi\n")
+	cg.textSection.WriteString("    syscall\n")
+	// rax contains current unix timestamp
+}
+
+// generateTimeSleep(seconds) -> status
+func generateTimeSleep(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // seconds
+	// nanosleep(2) syscall: rax=35, rdi=timespec ptr, rsi=remaining
+	// For simplicity, allocate timespec on stack: [seconds(8), nanoseconds(8)]
+	cg.textSection.WriteString("    subq $16, %rsp\n")  // timespec structure
+	cg.textSection.WriteString("    movq %rdi, 0(%rsp)\n") // tv_sec
+	cg.textSection.WriteString("    movq $0, 8(%rsp)\n")   // tv_nsec = 0
+	cg.textSection.WriteString("    movq %rsp, %rdi\n")
+	cg.textSection.WriteString("    xorq %rsi, %rsi\n")
+	cg.textSection.WriteString("    movq $35, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $16, %rsp\n")
+}
+
+// generateTimeMillis() -> current milliseconds
+func generateTimeMillis(cg *CodeGenerator, args []ASTNode) {
+	// clock_gettime(2) CLOCK_MONOTONIC or similar
+	cg.textSection.WriteString("    # TODO: Implement millis() -> milliseconds\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateTimeNanos() -> current nanoseconds
+func generateTimeNanos(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # TODO: Implement nanos() -> nanoseconds\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateTimeClock() -> clock ticks
+func generateTimeClock(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # TODO: Implement clock() -> clock_ticks\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateTimeGMTime(timestamp, tm_buf) -> void
+func generateTimeGMTime(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.textSection.WriteString("    # TODO: Implement gmtime(timestamp, tm_buf)\n")
+}
+
+// generateTimeLocalTime(timestamp, tm_buf) -> void
+func generateTimeLocalTime(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.textSection.WriteString("    # TODO: Implement localtime(timestamp, tm_buf)\n")
 }

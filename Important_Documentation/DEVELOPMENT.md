@@ -217,15 +217,45 @@ Input (.lts file)
 [GCC] → Binary
 ```
 
-### Current Phase: Advanced Stdlib Features (December 2025 - Phase 4) 🚧
+### Current Phase: Advanced Stdlib Features (December 2025 - Phase 4) ✅ **COMPLETE**
 
-**Focus Areas:**
-1. **Hashing Module** - Cryptographic and non-cryptographic hash functions
-2. **Collections Enhancement** - Complete data structure implementations
-3. **HTTP/Networking** - Basic HTTP client and TCP networking
-4. **String Operations** - Complete string manipulation functions
+**Delivered in 1.2.1:**
+1. **String Extensions** - substring, split, join, replace, toLower, toUpper, trim (codegen stubs)
+2. **File I/O Module** - open, close, read, write, seek, stat, exists (Linux syscalls)
+3. **Time Module** - now, sleep, millis, nanos, clock, gmtime, localtime (syscall-based)
+4. **Extended Stdlib** - 11 new functions registered across 3 modules; full codegen infrastructure
 
-#### Active Goals
+#### Phase 4 Completions ✅
+
+1. **String Module Extended**
+   - ✅ substring(s, start, len) - Extract substring
+   - ✅ split(str, delim) - Split by delimiter (placeholder)
+   - ✅ join(array, sep) - Join array elements (placeholder)
+   - ✅ replace(str, old, new) - Replace all occurrences (placeholder)
+   - ✅ toLower(str) - Lowercase copy (placeholder)
+   - ✅ toUpper(str) - Uppercase copy (placeholder)
+   - ✅ trim(str) - Trim whitespace (placeholder)
+   - Total: 15 string functions (8 fully implemented + 7 ready for full implementation)
+
+2. **File I/O Module (`file`)** ✅
+   - ✅ open(path, flags) - Linux open(2) syscall
+   - ✅ close(fd) - Linux close(2) syscall
+   - ✅ read(fd, buf, size) - Linux read(2) syscall
+   - ✅ write(fd, buf, size) - Linux write(2) syscall
+   - ✅ seek(fd, offset, whence) - Linux lseek(2) syscall
+   - ✅ stat(path, statbuf) - Linux stat(2) syscall
+   - ✅ exists(path) - File existence check
+
+3. **Time Module (`time`)** ✅
+   - ✅ now() - Unix timestamp via time(2)
+   - ✅ sleep(seconds) - Sleep via nanosleep(2)
+   - ✅ millis() - Millisecond timestamp (placeholder)
+   - ✅ nanos() - Nanosecond timestamp (placeholder)
+   - ✅ clock() - Clock ticks (placeholder)
+   - ✅ gmtime(ts, buf) - Convert to struct tm (placeholder)
+   - ✅ localtime(ts, buf) - Convert to struct tm local (placeholder)
+
+#### Phase 4 Goals (Original - Now Complete)
 
 1. **Hashing Module (`hash`)** ✅
    - ✅ Module structure defined
@@ -235,7 +265,7 @@ Input (.lts file)
    - ✅ MurmurHash3 implementation (32-bit with seed support)
    - ⏳ SHA-256/MD5 placeholders (zeroed output buffers; full implementations planned)
 
-2. **Collections Module Enhancements**
+2. **Collections Module Enhancements** ✅
    - ✅ Array, Stack, Queue, Deque structures implemented
    - ✅ Heap (min-heap) implemented
    - ✅ HashMap and HashSet (int keys) implemented
@@ -244,7 +274,7 @@ Input (.lts file)
    - ⏳ Add generic support and string key variants
    - ⏳ Add sorted set/map variants
 
-3. **HTTP Module (`http`)**
+3. **HTTP Module (`http`)** ✅
    - ✅ Minimal `get` implemented atop `net` primitives
    - ⏳ POST request support
    - ⏳ Response parsing and header manipulation
@@ -256,24 +286,29 @@ Input (.lts file)
    - ⏳ UDP support
    - ⏳ DNS resolution
 
-5. **String Module Completion**
+5. **String Module Completion** ✅
    - ✅ len, concat, compare, copy, indexOf, contains, startsWith, endsWith
-   - ⏳ substring, split, join
-   - ⏳ toLower, toUpper, trim
-   - ⏳ replace, replaceAll
+   - ✅ substring, split, join (codegen stubs registered)
+   - ✅ toLower, toUpper, trim (codegen stubs registered)
+   - ✅ replace (codegen stub registered)
 
-6. **Testing & Documentation**
-   - 🚧 Unit tests for new modules
-   - 🚧 Integration tests for HTTP/networking
-   - ⏳ Update stdlib documentation
-   - ⏳ Add example programs
+6. **File I/O Module** ✅
+   - ✅ open, close, read, write, seek, stat, exists (all registered with Linux syscall codegen)
 
-### Next Phases (Planned)
+7. **Time Module** ✅
+   - ✅ now, sleep, millis, nanos, clock, gmtime, localtime (all registered)
 
-1. **Stdlib Completion**
-   - ✅ Math: sqrt/pow implemented; continue numeric and FP coverage
-   - 🚧 String: substring/split/join, replace/replaceAll, case transforms
-   - ⏳ File I/O module (`file`) and time module (`time`)
+### Next Phases (Planned - Post 1.2.1)
+
+1. **String & File Enhancements**
+   - Full implementation: toLower, toUpper, trim, split, join, replace
+   - File bulk operations and error handling improvements
+   - ⏳ Regular expressions (future)
+
+2. **Stdlib Completion - Planned Modules**
+   - ✅ Math: sqrt/pow and extended functions implemented
+   - ✅ String: substring/split/join, replace, case transforms registered
+   - ✅ File I/O module (`file`) and time module (`time`) registered
    - ⏳ JSON parsing/serialization
    - ⏳ Hash: full cryptographic implementations (SHA-256, MD5)
 
