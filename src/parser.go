@@ -778,6 +778,10 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 		val := p.current().Value
 		p.advance()
 		return &StringLiteral{Value: val}, nil
+	case TokenChar:
+		val := p.current().Value
+		p.advance()
+		return &CharLiteral{Value: val}, nil
 	case TokenBool:
 		val := p.current().Value == "true"
 		p.advance()

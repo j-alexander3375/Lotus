@@ -23,6 +23,7 @@ const (
 	// Literals
 	TokenInt        // integer literal
 	TokenString     // string literal
+	TokenChar       // character literal (single Unicode character)
 	TokenBool       // bool literal
 	TokenFloat      // float literal
 	TokenIdentifier // variable name
@@ -41,6 +42,7 @@ const (
 
 	// Type keywords - other
 	TokenTypeString // type keyword: string
+	TokenTypeChar   // type keyword: char (Unicode character, 32-bit)
 	TokenTypeBool   // type keyword: bool
 	TokenTypeFloat  // type keyword: float
 

@@ -30,6 +30,61 @@ type FunctionContext struct {
 // Global registry of function definitions
 var UserDefinedFunctions = make(map[string]*FunctionDefinition)
 
+// calculateStackSize calculates the required stack space for a function
+func (cg *CodeGenerator) calculateStackSize(funcDef *FunctionDefinition) int {
+	stackNeeded := 0
+
+	// Each parameter takes 8 bytes (we pass them via registers but store on stack)
+	stackNeeded += len(funcDef.Parameters) * 8
+
+	// Count local variables in the function body
+	stackNeeded += cg.countLocalVariablesInBody(funcDef.Body) * 8
+
+	// Ensure 16-byte alignment for x86-64 ABI (add padding if needed)
+	if stackNeeded%16 != 0 {
+		stackNeeded += 16 - (stackNeeded % 16)
+	}
+
+	// Minimum 8192 bytes for recursive functions, maximum 1MB to prevent stack overflow
+	if stackNeeded < 8192 {
+		stackNeeded = 8192
+	}
+	if stackNeeded > 1048576 {
+		stackNeeded = 1048576
+	}
+
+	return stackNeeded
+}
+
+// countLocalVariablesInBody counts unique variables declared in function body
+func (cg *CodeGenerator) countLocalVariablesInBody(body []ASTNode) int {
+	varNames := make(map[string]bool)
+	cg.walkBodyForVars(body, varNames)
+	return len(varNames)
+}
+
+// walkBodyForVars recursively finds all variable declarations
+func (cg *CodeGenerator) walkBodyForVars(body []ASTNode, vars map[string]bool) {
+	for _, node := range body {
+		switch n := node.(type) {
+		case *VariableDeclaration:
+			vars[n.Name] = true
+		case *IfStatement:
+			cg.walkBodyForVars(n.ThenBody, vars)
+			cg.walkBodyForVars(n.ElseBody, vars)
+		case *WhileLoop:
+			cg.walkBodyForVars(n.Body, vars)
+		case *ForLoop:
+			if n.Init != nil {
+				if decl, ok := n.Init.(*VariableDeclaration); ok {
+					vars[decl.Name] = true
+				}
+			}
+			cg.walkBodyForVars(n.Body, vars)
+		}
+	}
+}
+
 // generateFunctionDefinition processes a function definition and stores it
 func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition) {
 	// Register the function for later use
@@ -39,11 +94,14 @@ func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition)
 	funcLabel := cg.getFunctionLabel(funcDef.Name)
 	returnLabel := cg.getLabel("return")
 
+	// Calculate required stack size
+	stackSize := cg.calculateStackSize(funcDef)
+
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", funcLabel))
 	cg.textSection.WriteString("    # Function prologue\n")
 	cg.textSection.WriteString("    pushq %rbp\n")
 	cg.textSection.WriteString("    movq %rsp, %rbp\n")
-	cg.textSection.WriteString("    subq $256, %rsp\n") // Allocate space for local variables
+	cg.textSection.WriteString(fmt.Sprintf("    subq $%d, %%rsp\n", stackSize)) // Dynamic stack allocation
 
 	// Save current state and create new scope
 	savedVars := cg.variables
@@ -84,6 +142,7 @@ func (cg *CodeGenerator) generateFunctionDefinition(funcDef *FunctionDefinition)
 		cg.textSection.WriteString("    movq $60, %rax\n")
 		cg.textSection.WriteString("    syscall\n")
 	} else {
+		cg.textSection.WriteString("    movq %rbp, %rsp\n") // Restore stack pointer
 		cg.textSection.WriteString("    popq %rbp\n")
 		cg.textSection.WriteString("    ret\n")
 	}

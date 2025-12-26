@@ -77,6 +77,13 @@ type StringLiteral struct {
 
 func (s *StringLiteral) astNode() {}
 
+// CharLiteral represents a single Unicode character (32-bit code point)
+type CharLiteral struct {
+	Value string // Single Unicode character as string
+}
+
+func (c *CharLiteral) astNode() {}
+
 // BoolLiteral represents a boolean constant (true/false)
 type BoolLiteral struct {
 	Value bool

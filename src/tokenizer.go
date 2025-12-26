@@ -17,7 +17,7 @@ func Tokenize(input string) []Token {
 		c := runes[i]
 
 		if c == '"' {
-			// String literal
+			// String literal (UTF-8 aware)
 			i++
 			buf.Reset()
 			for i < len(runes) && runes[i] != '"' {
@@ -33,6 +33,24 @@ func Tokenize(input string) []Token {
 						buf.WriteRune('\\')
 					case '"':
 						buf.WriteRune('"')
+					case 'u':
+						// Unicode escape: \uXXXX (4 hex digits)
+						if i+4 < len(runes) {
+							hexStr := string(runes[i+1 : i+5])
+							var codepoint rune
+							fmt.Sscanf(hexStr, "%x", &codepoint)
+							buf.WriteRune(codepoint)
+							i += 4
+						}
+					case 'U':
+						// Unicode escape: \UXXXXXXXX (8 hex digits)
+						if i+8 < len(runes) {
+							hexStr := string(runes[i+1 : i+9])
+							var codepoint rune
+							fmt.Sscanf(hexStr, "%x", &codepoint)
+							buf.WriteRune(codepoint)
+							i += 8
+						}
 					default:
 						buf.WriteRune(runes[i])
 					}
@@ -46,6 +64,60 @@ func Tokenize(input string) []Token {
 				return []Token{}
 			}
 			tokens = append(tokens, Token{Type: TokenString, Value: buf.String()})
+			buf.Reset()
+		} else if c == '\'' {
+			// Character literal (single Unicode character, UTF-8 aware)
+			i++
+			buf.Reset()
+			if i < len(runes) {
+				if runes[i] == '\\' && i+1 < len(runes) {
+					// Handle escape sequences in character literal
+					i++
+					switch runes[i] {
+					case 'n':
+						buf.WriteRune('\n')
+					case 't':
+						buf.WriteRune('\t')
+					case '\\':
+						buf.WriteRune('\\')
+					case '\'':
+						buf.WriteRune('\'')
+					case 'u':
+						// Unicode escape: \uXXXX (4 hex digits)
+						if i+4 < len(runes) {
+							hexStr := string(runes[i+1 : i+5])
+							var codepoint rune
+							fmt.Sscanf(hexStr, "%x", &codepoint)
+							buf.WriteRune(codepoint)
+							i += 4
+						}
+					case 'U':
+						// Unicode escape: \UXXXXXXXX (8 hex digits)
+						if i+8 < len(runes) {
+							hexStr := string(runes[i+1 : i+9])
+							var codepoint rune
+							fmt.Sscanf(hexStr, "%x", &codepoint)
+							buf.WriteRune(codepoint)
+							i += 8
+						}
+					default:
+						buf.WriteRune(runes[i])
+					}
+				} else {
+					buf.WriteRune(runes[i])
+				}
+				i++
+			}
+			if i >= len(runes) || runes[i] != '\'' {
+				fmt.Fprintf(os.Stderr, "Unterminated character literal\n")
+				return []Token{}
+			}
+			charStr := buf.String()
+			if len([]rune(charStr)) != 1 {
+				fmt.Fprintf(os.Stderr, "Character literal must contain exactly one character\n")
+				return []Token{}
+			}
+			tokens = append(tokens, Token{Type: TokenChar, Value: charStr})
 			buf.Reset()
 		} else if unicode.IsLetter(c) || c == '_' {
 			// Identifier or keyword
@@ -89,6 +161,8 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, Token{Type: TokenTypeUint64, Value: ""})
 			case "string":
 				tokens = append(tokens, Token{Type: TokenTypeString, Value: ""})
+			case "char":
+				tokens = append(tokens, Token{Type: TokenTypeChar, Value: ""})
 			case "bool":
 				tokens = append(tokens, Token{Type: TokenTypeBool, Value: ""})
 			case "float":
@@ -339,6 +413,8 @@ func TokenValue(t Token) string {
 		return "EOF"
 	case TokenString:
 		return fmt.Sprintf("\"%s\"", t.Value)
+	case TokenChar:
+		return fmt.Sprintf("'%s'", t.Value)
 	case TokenBool:
 		return t.Value
 	case TokenNewline:
