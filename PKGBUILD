@@ -10,7 +10,7 @@ license=('MIT')
 depends=('gcc')
 makedepends=('go>=1.20')
 source=("lotus-lang-${pkgver}.tar.gz::https://github.com/j-alexander3375/Lotus/archive/refs/tags/${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('65add29036e8dae76e06111e5070af196491490bc7132a77f70f6fab5d7c606c')
 
 build() {
     cd "${srcdir}/Lotus-${pkgver}"
