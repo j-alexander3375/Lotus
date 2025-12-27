@@ -162,6 +162,10 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 	switch e := expr.(type) {
 	case *IntLiteral:
 		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%%s\n", e.Value, reg))
+	case *StringLiteral:
+		// Emit string to data section and load address
+		label, _ := emitStringLiteral(cg, e.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%%s\n", label, reg))
 	case *Identifier:
 		// Check if it's a variable first
 		if v, exists := cg.variables[e.Name]; exists {
