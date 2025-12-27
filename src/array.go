@@ -4,6 +4,7 @@ import "fmt"
 
 // ArrayLiteral represents an array literal [1, 2, 3]
 type ArrayLiteral struct {
+	BaseNode
 	Elements []ASTNode
 	ElemType TokenType
 }
@@ -12,6 +13,8 @@ func (a *ArrayLiteral) astNode() {}
 
 // ArrayAccess represents array indexing: arr[index]
 type ArrayAccess struct {
+	BaseNode
+	Name  string // For backwards compatibility with semantic analyzer
 	Array ASTNode
 	Index ASTNode
 }
@@ -20,6 +23,7 @@ func (a *ArrayAccess) astNode() {}
 
 // ArrayDeclaration represents dynamic array declaration
 type ArrayDeclaration struct {
+	BaseNode
 	Name     string
 	ElemType TokenType
 	Size     ASTNode   // size expression or nil for dynamic

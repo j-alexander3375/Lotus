@@ -46,10 +46,31 @@ func (p *Parser) advance() {
 // expect consumes a token of the expected type or returns an error
 func (p *Parser) expect(expected TokenType) error {
 	if p.current().Type != expected {
-		return fmt.Errorf("expected token type %d, got %d", expected, p.current().Type)
+		return p.formatError(FormatExpectedToken(expected, p.current().Type, p.current().Value))
 	}
 	p.advance()
 	return nil
+}
+
+// formatError creates a detailed error with context
+func (p *Parser) formatError(msg string) error {
+	tok := p.current()
+	return fmt.Errorf("[%s] line %d, col %d: %s", ErrUnexpectedToken, tok.Line, tok.Column, msg)
+}
+
+// formatErrorWithCode creates an error with a specific error code
+func (p *Parser) formatErrorWithCode(code ErrorCode, msg string) error {
+	tok := p.current()
+	return fmt.Errorf("[%s] line %d, col %d: %s", code, tok.Line, tok.Column, msg)
+}
+
+// formatErrorWithSuggestion creates an error with a suggestion
+func (p *Parser) formatErrorWithSuggestion(msg, suggestion string) error {
+	tok := p.current()
+	if suggestion != "" {
+		return fmt.Errorf("[%s] line %d, col %d: %s\n  help: %s", ErrUnexpectedToken, tok.Line, tok.Column, msg, suggestion)
+	}
+	return fmt.Errorf("[%s] line %d, col %d: %s", ErrUnexpectedToken, tok.Line, tok.Column, msg)
 }
 
 // Parse parses the token stream and returns an AST
@@ -171,7 +192,8 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 			return &Identifier{Name: name}, nil
 		}
 	default:
-		return nil, fmt.Errorf("unexpected token type %d at position %d", p.current().Type, p.pos)
+		suggestion := SuggestForTypo(p.current().Value)
+		return nil, p.formatErrorWithSuggestion(FormatUnexpectedToken(p.current().Type, p.current().Value, "in statement"), suggestion)
 	}
 }
 
@@ -342,7 +364,7 @@ func (p *Parser) parseReturnStatement() (*ReturnStatement, error) {
 	if p.current().Type == TokenRet || p.current().Type == TokenReturn {
 		p.advance()
 	} else {
-		return nil, fmt.Errorf("expected return, got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'ret' or 'return', got "+TokenTypeName(p.current().Type))
 	}
 
 	// Return value can be any expression (optional)
@@ -367,7 +389,7 @@ func (p *Parser) parseVariableDeclaration() (*VariableDeclaration, error) {
 	p.advance()
 
 	if p.current().Type != TokenIdentifier {
-		return nil, fmt.Errorf("expected identifier, got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingIdentifier+", got "+TokenTypeName(p.current().Type))
 	}
 	varName := p.current().Value
 	p.advance()
@@ -396,14 +418,14 @@ func (p *Parser) parseConstantDeclaration() (*ConstantDeclaration, error) {
 
 	// Type is required for constants
 	if !isTypeToken(p.current().Type) {
-		return nil, fmt.Errorf("expected type after 'const', got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingType+" after 'const', got "+TokenTypeName(p.current().Type))
 	}
 	constType := p.current().Type
 	p.advance()
 
 	// Constant name
 	if p.current().Type != TokenIdentifier {
-		return nil, fmt.Errorf("expected identifier for constant name, got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected constant name, got "+TokenTypeName(p.current().Type))
 	}
 	constName := p.current().Value
 	p.advance()
@@ -439,7 +461,7 @@ func (p *Parser) parseImportStatement() (*ImportStatement, error) {
 
 	// Module name must be a string
 	if p.current().Type != TokenString {
-		return nil, fmt.Errorf("expected module name (string) after 'use', got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected module name (string) after 'use', got "+TokenTypeName(p.current().Type))
 	}
 	moduleName := p.current().Value
 	p.advance()
@@ -469,7 +491,7 @@ func (p *Parser) parseImportStatement() (*ImportStatement, error) {
 	if p.current().Type == TokenAs {
 		p.advance()
 		if p.current().Type != TokenIdentifier {
-			return nil, fmt.Errorf("expected identifier after 'as', got token type %d", p.current().Type)
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected alias name after 'as', got "+TokenTypeName(p.current().Type))
 		}
 		stmt.Alias = p.current().Value
 		p.advance()
@@ -839,12 +861,12 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 			p.advance() // skip first ':'
 			p.advance() // skip second ':'
 			if p.current().Type != TokenIdentifier {
-				return nil, fmt.Errorf("expected function name after '::', got token type %d", p.current().Type)
+				return nil, p.formatErrorWithCode(ErrExpectedToken, "expected function name after '::', got "+TokenTypeName(p.current().Type))
 			}
 			funcName := p.current().Value
 			p.advance()
 			if p.current().Type != TokenLParen {
-				return nil, fmt.Errorf("expected '(' after function name, got token type %d", p.current().Type)
+				return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingParameterList+", got "+TokenTypeName(p.current().Type))
 			}
 			p.advance() // skip '('
 
@@ -879,7 +901,7 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 		}
 		return expr, nil
 	default:
-		return nil, fmt.Errorf("unexpected token in expression: type %d", p.current().Type)
+		return nil, p.formatErrorWithSuggestion(FormatUnexpectedToken(p.current().Type, p.current().Value, "in expression"), SuggestForTypo(p.current().Value))
 	}
 }
 
@@ -906,14 +928,14 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 
 	// Return type
 	if !isTypeToken(p.current().Type) {
-		return nil, fmt.Errorf("expected return type after 'fn', got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingReturnType+", got "+TokenTypeName(p.current().Type))
 	}
 	retType := p.current().Type
 	p.advance()
 
 	// Function name
 	if p.current().Type != TokenIdentifier {
-		return nil, fmt.Errorf("expected function name, got token type %d", p.current().Type)
+		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingFunctionName+", got "+TokenTypeName(p.current().Type))
 	}
 	name := p.current().Value
 	p.advance()
@@ -927,14 +949,14 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 	for p.current().Type != TokenRParen {
 		// Parameter type
 		if !isTypeToken(p.current().Type) {
-			return nil, fmt.Errorf("expected parameter type, got token type %d", p.current().Type)
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected parameter type, got "+TokenTypeName(p.current().Type))
 		}
 		pType := p.current().Type
 		p.advance()
 
 		// Parameter name
 		if p.current().Type != TokenIdentifier {
-			return nil, fmt.Errorf("expected parameter name, got token type %d", p.current().Type)
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected parameter name, got "+TokenTypeName(p.current().Type))
 		}
 		pName := p.current().Value
 		p.advance()

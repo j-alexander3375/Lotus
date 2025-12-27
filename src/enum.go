@@ -4,6 +4,7 @@ import "fmt"
 
 // EnumDefinition represents an enum type definition
 type EnumDefinition struct {
+	BaseNode
 	Name   string
 	Values []EnumValue
 }
@@ -18,6 +19,7 @@ type EnumValue struct {
 
 // EnumLiteral represents an enum value reference
 type EnumLiteral struct {
+	BaseNode
 	EnumName  string
 	ValueName string
 }

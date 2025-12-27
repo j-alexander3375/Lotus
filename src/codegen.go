@@ -84,13 +84,13 @@ func NewCodeGenerator() *CodeGenerator {
 
 // GenerateAssembly is the main entry point for assembly generation.
 // It takes a token stream, parses it into an AST, and generates x86-64 assembly.
-// Returns the complete assembly program as a string.
-func GenerateAssembly(tokens []Token) string {
+// Returns the complete assembly program as a string and any error encountered.
+func GenerateAssembly(tokens []Token) (string, error) {
 	// Phase 1: Parse tokens to AST
 	parser := NewParser(tokens)
 	statements, err := parser.Parse()
 	if err != nil {
-		return fmt.Sprintf("# Parse error: %v\n", err)
+		return "", fmt.Errorf("parse error: %w", err)
 	}
 
 	// Phase 2: Optimize AST (constant folding, strength reduction, etc.)
@@ -106,7 +106,7 @@ func GenerateAssembly(tokens []Token) string {
 
 	// Phase 4: Apply peephole optimizations to generated assembly
 	assembly := gen.buildFinalAssembly()
-	return ApplyPeepholeOptimizations(assembly)
+	return ApplyPeepholeOptimizations(assembly), nil
 }
 
 // generateStatement dispatches AST nodes to their appropriate code generation methods.

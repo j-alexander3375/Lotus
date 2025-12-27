@@ -4,6 +4,7 @@ import "fmt"
 
 // FunctionDefinition represents a user-defined function
 type FunctionDefinition struct {
+	BaseNode
 	Name       string
 	Parameters []FunctionParam
 	ReturnType TokenType

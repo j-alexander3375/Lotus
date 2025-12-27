@@ -25,6 +25,22 @@ type CompilerOptions struct {
 	Quiet      bool // Suppress all non-error output (-q, --quiet)
 	TimingInfo bool // Show detailed phase timing (--timing)
 	ASTDump    bool // Print AST and exit (--ast-dump)
+
+	// Documentation
+	ShowDocs    bool   // Show offline documentation (-docs, --docs)
+	DocsSection string // Specific documentation section to show
+
+	// Warning and error control
+	Wall           bool // Enable all warnings (-Wall)
+	Werror         bool // Treat warnings as errors (-Werror)
+	WarnUnused     bool // Warn about unused variables (-Wunused)
+	WarnShadow     bool // Warn about variable shadowing (-Wshadow)
+	WarnImplicit   bool // Warn about implicit conversions (-Wimplicit)
+	WarnDeprecated bool // Warn about deprecated features (-Wdeprecated)
+	NoWarn         bool // Suppress all warnings (-w)
+	MaxErrors      int  // Maximum errors before stopping (--max-errors)
+	ColorOutput    bool // Enable colored output (--color)
+	NoColor        bool // Disable colored output (--no-color)
 }
 
 // Version is the current compiler version
@@ -69,6 +85,22 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	// Version
 	fs.BoolVar(&opts.ShowVersion, "version", false, "print compiler version and exit")
 
+	// Documentation
+	fs.BoolVar(&opts.ShowDocs, "docs", false, "show offline documentation")
+	fs.StringVar(&opts.DocsSection, "docs-section", "", "show specific docs section (syntax, stdlib, types, examples)")
+
+	// Warning flags
+	fs.BoolVar(&opts.Wall, "Wall", false, "enable all warnings")
+	fs.BoolVar(&opts.Werror, "Werror", false, "treat warnings as errors")
+	fs.BoolVar(&opts.WarnUnused, "Wunused", false, "warn about unused variables")
+	fs.BoolVar(&opts.WarnShadow, "Wshadow", false, "warn about variable shadowing")
+	fs.BoolVar(&opts.WarnImplicit, "Wimplicit", false, "warn about implicit conversions")
+	fs.BoolVar(&opts.WarnDeprecated, "Wdeprecated", false, "warn about deprecated features")
+	fs.BoolVar(&opts.NoWarn, "w", false, "suppress all warnings")
+	fs.IntVar(&opts.MaxErrors, "max-errors", 20, "maximum number of errors before stopping")
+	fs.BoolVar(&opts.ColorOutput, "color", true, "enable colored output")
+	fs.BoolVar(&opts.NoColor, "no-color", false, "disable colored output")
+
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: lotus [flags] <file>")
 		fmt.Fprintln(os.Stderr, "\nFlags:")
@@ -82,6 +114,10 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "  lotus --stats program.lts      # Show compilation stats")
 		fmt.Fprintln(os.Stderr, "  lotus --timing program.lts     # Show phase timing")
 		fmt.Fprintln(os.Stderr, "  lotus --ast-dump program.lts   # Dump AST structure")
+		fmt.Fprintln(os.Stderr, "  lotus -docs                    # Show documentation")
+		fmt.Fprintln(os.Stderr, "  lotus -docs-section stdlib     # Show stdlib docs")
+		fmt.Fprintln(os.Stderr, "  lotus -Wall program.lts        # Enable all warnings")
+		fmt.Fprintln(os.Stderr, "  lotus -Werror program.lts      # Warnings as errors")
 	}
 
 	// Normalize args to accept various flag formats
@@ -99,6 +135,10 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 			norm = append(norm, "-quiet")
 		case "--timing":
 			norm = append(norm, "-timing")
+		case "--docs":
+			norm = append(norm, "-docs")
+		case "--docs-section":
+			norm = append(norm, "-docs-section")
 		default:
 			norm = append(norm, a)
 		}

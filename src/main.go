@@ -28,6 +28,11 @@ func run() int {
 		return 0
 	}
 
+	if opts.ShowDocs || opts.DocsSection != "" {
+		PrintDocs(opts.DocsSection)
+		return 0
+	}
+
 	// Phase 3: Validate input
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Error: no input file specified")

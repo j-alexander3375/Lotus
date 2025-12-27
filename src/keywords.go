@@ -138,6 +138,8 @@ const (
 
 // Token represents a lexical token with its type and value
 type Token struct {
-	Type  TokenType // The token type
-	Value string    // The raw string value from source code
+	Type   TokenType // The token type
+	Value  string    // The raw string value from source code
+	Line   int       // Line number in source (1-based)
+	Column int       // Column number in source (1-based)
 }

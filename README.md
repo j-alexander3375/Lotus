@@ -34,6 +34,8 @@ fn int main() {
 - Structs, enums, and classes with snake_case identifiers
 - Error handling via try/catch/finally and throw
 - Direct x86-64 GNU assembly output (System V AMD64 ABI)
+- **Enhanced error messages** with line/column tracking and "did you mean?" suggestions
+- **Semantic analysis** with unused variable and shadowing detection
 
 ## Project Structure
 ```

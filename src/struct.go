@@ -4,6 +4,7 @@ import "fmt"
 
 // StructDefinition represents a struct type definition
 type StructDefinition struct {
+	BaseNode
 	Name   string
 	Fields []StructField
 }
@@ -19,6 +20,7 @@ type StructField struct {
 
 // StructLiteral represents struct initialization
 type StructLiteral struct {
+	BaseNode
 	StructName string
 	Fields     map[string]ASTNode // field name -> value
 }
@@ -27,6 +29,7 @@ func (s *StructLiteral) astNode() {}
 
 // FieldAccess represents struct field access: obj.field or obj->field
 type FieldAccess struct {
+	BaseNode
 	Object    ASTNode
 	FieldName string
 	IsPointer bool // true for ->, false for .

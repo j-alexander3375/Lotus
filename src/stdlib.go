@@ -3065,23 +3065,53 @@ func generateTimeSleep(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    addq $16, %rsp\n")
 }
 
-// generateTimeMillis() -> current milliseconds
+// generateTimeMillis() -> current milliseconds since epoch
 func generateTimeMillis(cg *CodeGenerator, args []ASTNode) {
-	// clock_gettime(2) CLOCK_MONOTONIC or similar
-	cg.textSection.WriteString("    # TODO: Implement millis() -> milliseconds\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	// clock_gettime(2) syscall: rax=228, rdi=CLOCK_REALTIME(0), rsi=timespec ptr
+	// Returns: timespec { tv_sec, tv_nsec }
+	// milliseconds = tv_sec * 1000 + tv_nsec / 1000000
+	cg.textSection.WriteString("    subq $16, %rsp\n")  // timespec on stack
+	cg.textSection.WriteString("    movq $228, %rax\n") // clock_gettime syscall
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n") // CLOCK_REALTIME = 0
+	cg.textSection.WriteString("    movq %rsp, %rsi\n") // timespec ptr
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    movq 0(%rsp), %rax\n") // tv_sec
+	cg.textSection.WriteString("    imulq $1000, %rax\n")  // tv_sec * 1000
+	cg.textSection.WriteString("    movq 8(%rsp), %rcx\n") // tv_nsec
+	cg.textSection.WriteString("    movq $1000000, %rdx\n")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.textSection.WriteString("    movq %rcx, %rax\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    movq $1000000, %rcx\n")
+	cg.textSection.WriteString("    divq %rcx\n") // tv_nsec / 1000000
+	cg.textSection.WriteString("    popq %rcx\n")
+	cg.textSection.WriteString("    addq %rcx, %rax\n") // total milliseconds
+	cg.textSection.WriteString("    addq $16, %rsp\n")
 }
 
-// generateTimeNanos() -> current nanoseconds
+// generateTimeNanos() -> current nanoseconds (monotonic for timing)
 func generateTimeNanos(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # TODO: Implement nanos() -> nanoseconds\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	// clock_gettime(2) with CLOCK_MONOTONIC(1) for timing purposes
+	// Returns raw nanoseconds portion (useful for elapsed time measurement)
+	cg.textSection.WriteString("    subq $16, %rsp\n")  // timespec on stack
+	cg.textSection.WriteString("    movq $228, %rax\n") // clock_gettime syscall
+	cg.textSection.WriteString("    movq $1, %rdi\n")   // CLOCK_MONOTONIC = 1
+	cg.textSection.WriteString("    movq %rsp, %rsi\n") // timespec ptr
+	cg.textSection.WriteString("    syscall\n")
+	// Compute: tv_sec * 1000000000 + tv_nsec
+	cg.textSection.WriteString("    movq 0(%rsp), %rax\n") // tv_sec
+	cg.textSection.WriteString("    movq $1000000000, %rcx\n")
+	cg.textSection.WriteString("    imulq %rcx, %rax\n")   // tv_sec * 1e9
+	cg.textSection.WriteString("    addq 8(%rsp), %rax\n") // + tv_nsec
+	cg.textSection.WriteString("    addq $16, %rsp\n")
 }
 
-// generateTimeClock() -> clock ticks
+// generateTimeClock() -> CPU clock ticks (via RDTSC instruction)
 func generateTimeClock(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # TODO: Implement clock() -> clock_ticks\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	// Use RDTSC (Read Time-Stamp Counter) for CPU cycles
+	cg.textSection.WriteString("    rdtsc\n")          // edx:eax = timestamp counter
+	cg.textSection.WriteString("    shlq $32, %rdx\n") // shift high 32 bits
+	cg.textSection.WriteString("    orq %rdx, %rax\n") // combine into 64-bit value
 }
 
 // generateTimeGMTime(timestamp, tm_buf) -> void

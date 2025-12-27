@@ -1,8 +1,53 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: Code Optimization ✅
+## Latest Phase: Enhanced Error Messages & Diagnostics ✅
 
-### Current Accomplishments (December 2025 - Phase 6)
+### Current Accomplishments (December 2025 - Phase 7)
+
+1. **Line/Column Tracking in Tokens**
+   - Added `Line` and `Column` fields to Token struct
+   - Tokenizer now tracks position during lexical analysis
+   - All error messages include precise source locations
+
+2. **Human-Readable Error Messages**
+   - Created `error_messages.go` with error formatting utilities
+   - `TokenTypeName()` - Converts token types to readable names
+   - `FormatExpectedToken()` - Formats "expected X, got Y" messages
+   - `FormatUnexpectedToken()` - Formats unexpected token errors
+   - Error codes: E01xx (syntax), E02xx (semantic), E03xx (type)
+
+3. **"Did You Mean?" Suggestions**
+   - Levenshtein distance algorithm for typo detection
+   - `SuggestForTypo()` suggests corrections for misspelled keywords
+   - Integrated into parser error messages
+   - Example: `pritnln` → "did you mean 'println'?"
+
+4. **Enhanced Semantic Analyzer**
+   - Rewrote `semantic.go` with proper scope tracking
+   - Unused variable detection with warnings
+   - Variable shadowing detection
+   - Undefined variable suggestions using Levenshtein distance
+
+5. **AST Location Tracking**
+   - Added `Location` struct with Line/Column fields
+   - `BaseNode` embedded in all AST nodes
+   - All nodes now have `Loc()` method for position info
+
+6. **Diagnostic Categories**
+   - `DiagnosticCategory` enum: Syntax, Semantic, Unused, Shadow, Deprecated
+   - Error codes for machine-readable parsing
+   - Colored output with ANSI codes
+
+7. **Comprehensive Test Suite**
+   - `compiler_features_test.go` - 18 tests for new features
+   - `integration_test.go` - End-to-end compilation tests
+   - Tests for tokenizer tracking, error formatting, Levenshtein distance
+
+---
+
+## Previous Phase: Code Optimization ✅
+
+### Accomplishments (December 2025 - Phase 6)
 
 1. **AST-Level Optimizations** (`optimizer.go`)
    - **Constant Folding**: Evaluate constant expressions at compile time

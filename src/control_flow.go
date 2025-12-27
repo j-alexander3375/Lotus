@@ -4,6 +4,7 @@ import "fmt"
 
 // IfStatement represents an if/else control flow structure
 type IfStatement struct {
+	BaseNode
 	Condition ASTNode
 	ThenBody  []ASTNode
 	ElseBody  []ASTNode
@@ -13,6 +14,7 @@ func (i *IfStatement) astNode() {}
 
 // WhileLoop represents a while loop structure
 type WhileLoop struct {
+	BaseNode
 	Condition ASTNode
 	Body      []ASTNode
 }
@@ -21,6 +23,7 @@ func (w *WhileLoop) astNode() {}
 
 // ForLoop represents a for loop structure
 type ForLoop struct {
+	BaseNode
 	Init      ASTNode
 	Condition ASTNode
 	Update    ASTNode
@@ -31,6 +34,7 @@ func (f *ForLoop) astNode() {}
 
 // Comparison represents a comparison expression
 type Comparison struct {
+	BaseNode
 	Left     ASTNode
 	Operator TokenType // TokenEqual, TokenNotEqual, TokenLess, TokenLessEq, TokenGreater, TokenGreaterEq
 	Right    ASTNode
@@ -40,6 +44,7 @@ func (c *Comparison) astNode() {}
 
 // LogicalOp represents logical operations (&&, ||)
 type LogicalOp struct {
+	BaseNode
 	Left     ASTNode
 	Operator TokenType // TokenAnd, TokenOr
 	Right    ASTNode
@@ -49,6 +54,7 @@ func (l *LogicalOp) astNode() {}
 
 // TernaryOp represents ternary conditional operator (condition ? trueExpr : falseExpr)
 type TernaryOp struct {
+	BaseNode
 	Condition ASTNode
 	TrueExpr  ASTNode
 	FalseExpr ASTNode

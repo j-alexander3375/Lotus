@@ -4,6 +4,7 @@ import "fmt"
 
 // ClassDefinition represents a class type definition
 type ClassDefinition struct {
+	BaseNode
 	Name    string
 	Fields  []ClassField
 	Methods []ClassMethod
@@ -29,6 +30,7 @@ type ClassMethod struct {
 
 // ClassLiteral represents class instantiation (new ClassName)
 type ClassLiteral struct {
+	BaseNode
 	ClassName string
 	Fields    map[string]ASTNode // field name -> initial value
 }
@@ -37,6 +39,7 @@ func (c *ClassLiteral) astNode() {}
 
 // MethodCall represents a method call: obj.method() or obj->method()
 type MethodCall struct {
+	BaseNode
 	Object     ASTNode
 	MethodName string
 	Args       []ASTNode

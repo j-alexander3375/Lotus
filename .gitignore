@@ -7,6 +7,9 @@ a.out
 *_test.go
 *.html
 *.py
+*.code-workspace
+release_workflow.md
+
 
 # Ignore build directories
 out/
@@ -15,3 +18,4 @@ tests/
 test_suite/
 examples/
 site/
+ext/

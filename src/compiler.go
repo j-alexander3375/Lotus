@@ -52,7 +52,10 @@ func (c *Compiler) CompileFile(inputPath string) error {
 	}
 
 	// Phase 3: Syntax analysis and code generation
-	asm := GenerateAssembly(tokens)
+	asm, err := GenerateAssembly(tokens)
+	if err != nil {
+		return err
+	}
 
 	// Handle assembly output mode (-S flag)
 	if c.Options.PrintAsm {
