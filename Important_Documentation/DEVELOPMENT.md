@@ -317,17 +317,22 @@ Input (.lts file)
 3. **Time Module** - now, sleep, millis, nanos, clock, gmtime, localtime (syscall-based)
 4. **Extended Stdlib** - 11 new functions registered across 3 modules; full codegen infrastructure
 
+**Completed in 1.2.5 (Phase 4 Finalization):**
+1. **String Functions Fully Implemented** - toLower, toUpper, trim, split, join, replace
+2. **Time Functions Implemented** - gmtime, localtime (UTC-based broken-down time)
+3. **Math Functions Fixed** - GCD/LCM now work correctly with Euclidean algorithm
+
 #### Phase 4 Completions ✅
 
-1. **String Module Extended**
+1. **String Module Extended** ✅ **FULLY IMPLEMENTED**
    - ✅ substring(s, start, len) - Extract substring
-   - ✅ split(str, delim) - Split by delimiter (placeholder)
-   - ✅ join(array, sep) - Join array elements (placeholder)
-   - ✅ replace(str, old, new) - Replace all occurrences (placeholder)
-   - ✅ toLower(str) - Lowercase copy (placeholder)
-   - ✅ toUpper(str) - Uppercase copy (placeholder)
-   - ✅ trim(str) - Trim whitespace (placeholder)
-   - Total: 15 string functions (8 fully implemented + 7 ready for full implementation)
+   - ✅ split(str, delim) - Split string by single-char delimiter, returns array structure
+   - ✅ join(array, sep) - Join array elements with separator
+   - ✅ replace(str, old, new) - Replace all occurrences (single-char replacement)
+   - ✅ toLower(str) - Lowercase copy with proper A-Z conversion
+   - ✅ toUpper(str) - Uppercase copy with proper a-z conversion
+   - ✅ trim(str) - Trim whitespace (space, tab, newline, carriage return) from both ends
+   - Total: 15 string functions (ALL fully implemented)
 
 2. **File I/O Module (`file`)** ✅
    - ✅ open(path, flags) - Linux open(2) syscall
@@ -338,14 +343,14 @@ Input (.lts file)
    - ✅ stat(path, statbuf) - Linux stat(2) syscall
    - ✅ exists(path) - File existence check
 
-3. **Time Module (`time`)** ✅
+3. **Time Module (`time`)** ✅ **FULLY IMPLEMENTED**
    - ✅ now() - Unix timestamp via time(2)
    - ✅ sleep(seconds) - Sleep via nanosleep(2)
-   - ✅ millis() - Millisecond timestamp (placeholder)
-   - ✅ nanos() - Nanosecond timestamp (placeholder)
-   - ✅ clock() - Clock ticks (placeholder)
-   - ✅ gmtime(ts, buf) - Convert to struct tm (placeholder)
-   - ✅ localtime(ts, buf) - Convert to struct tm local (placeholder)
+   - ✅ millis() - Millisecond timestamp
+   - ✅ nanos() - Nanosecond timestamp
+   - ✅ clock() - Clock ticks
+   - ✅ gmtime(ts, buf) - Convert to broken-down time (UTC)
+   - ✅ localtime(ts, buf) - Convert to broken-down time (UTC-based, no TZ support)
 
 #### Phase 4 Goals (Original - Now Complete)
 
@@ -355,7 +360,7 @@ Input (.lts file)
    - ✅ FNV-1a implementation (64-bit fast non-cryptographic hash)
    - ✅ DJB2 implementation (simple string hashing)
    - ✅ MurmurHash3 implementation (32-bit with seed support)
-   - ⏳ SHA-256/MD5 placeholders (zeroed output buffers; full implementations planned)
+   - ⏳ SHA-256/MD5 placeholders (complex cryptographic hashes, planned for future)
 
 2. **Collections Module Enhancements** ✅
    - ✅ Array, Stack, Queue, Deque structures implemented
@@ -368,39 +373,40 @@ Input (.lts file)
 
 3. **HTTP Module (`http`)** ✅
    - ✅ Minimal `get` implemented atop `net` primitives
-   - ⏳ POST request support
+   - ✅ POST request support with Content-Length header
    - ⏳ Response parsing and header manipulation
    - ⏳ Connection pooling and higher-level client API
 
-4. **Networking Module (`net`)**
+4. **Networking Module (`net`)** ✅
    - ✅ Socket, connect_ipv4, send, recv, close implemented (Linux syscalls)
+   - ✅ UDP support: bind_ipv4, sendto_ipv4, recvfrom
    - ⏳ IPv6 support
-   - ⏳ UDP support
    - ⏳ DNS resolution
 
-5. **String Module Completion** ✅
+5. **String Module Completion** ✅ **COMPLETE**
    - ✅ len, concat, compare, copy, indexOf, contains, startsWith, endsWith
-   - ✅ substring, split, join (codegen stubs registered)
-   - ✅ toLower, toUpper, trim (codegen stubs registered)
-   - ✅ replace (codegen stub registered)
+   - ✅ substring, split, join (FULLY IMPLEMENTED)
+   - ✅ toLower, toUpper, trim (FULLY IMPLEMENTED)
+   - ✅ replace (FULLY IMPLEMENTED)
 
 6. **File I/O Module** ✅
    - ✅ open, close, read, write, seek, stat, exists (all registered with Linux syscall codegen)
 
-7. **Time Module** ✅
+7. **Time Module** ✅ **COMPLETE**
    - ✅ now, sleep, millis, nanos, clock, gmtime, localtime (all registered)
 
-### Next Phases (Planned - Post 1.2.1)
+### Next Phases (Planned - Post 1.2.5)
 
 1. **String & File Enhancements**
-   - Full implementation: toLower, toUpper, trim, split, join, replace
+   - ✅ Full implementation: toLower, toUpper, trim, split, join, replace - **DONE in 1.2.5**
    - File bulk operations and error handling improvements
    - ⏳ Regular expressions (future)
 
 2. **Stdlib Completion - Planned Modules**
-   - ✅ Math: sqrt/pow and extended functions implemented
-   - ✅ String: substring/split/join, replace, case transforms registered
-   - ✅ File I/O module (`file`) and time module (`time`) registered
+   - ✅ Math: sqrt/pow, GCD, LCM and extended functions - **FULLY IMPLEMENTED**
+   - ✅ String: ALL 15 string functions - **FULLY IMPLEMENTED**
+   - ✅ File I/O module (`file`) - **FULLY IMPLEMENTED**
+   - ✅ Time module (`time`) including gmtime/localtime - **FULLY IMPLEMENTED**
    - ⏳ JSON parsing/serialization
    - ⏳ Hash: full cryptographic implementations (SHA-256, MD5)
 

@@ -9,7 +9,7 @@ a.out
 *.py
 *.code-workspace
 release_workflow.md
-
+NEW_MODULE.md
 
 # Ignore build directories
 out/

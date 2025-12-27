@@ -322,6 +322,10 @@ func createNetModule() *StdlibModule {
 			"send":         {Name: "send", Module: "net", NumArgs: 3, CodeGen: generateNetSend},
 			"recv":         {Name: "recv", Module: "net", NumArgs: 3, CodeGen: generateNetRecv},
 			"close":        {Name: "close", Module: "net", NumArgs: 1, CodeGen: generateNetClose},
+			// UDP support
+			"bind_ipv4":   {Name: "bind_ipv4", Module: "net", NumArgs: 3, CodeGen: generateNetBindIPv4},
+			"sendto_ipv4": {Name: "sendto_ipv4", Module: "net", NumArgs: 5, CodeGen: generateNetSendtoIPv4},
+			"recvfrom":    {Name: "recvfrom", Module: "net", NumArgs: 3, CodeGen: generateNetRecvfrom},
 		},
 		Types: map[string]TokenType{},
 	}
@@ -332,7 +336,8 @@ func createHTTPModule() *StdlibModule {
 	return &StdlibModule{
 		Name: "http",
 		Functions: map[string]*StdlibFunction{
-			"get": {Name: "get", Module: "http", NumArgs: 7, CodeGen: generateHTTPGetSimple},
+			"get":  {Name: "get", Module: "http", NumArgs: 7, CodeGen: generateHTTPGetSimple},
+			"post": {Name: "post", Module: "http", NumArgs: 9, CodeGen: generateHTTPPostSimple},
 		},
 		Types: map[string]TokenType{},
 	}
@@ -681,36 +686,30 @@ func generateMathGcd(cg *CodeGenerator, args []ASTNode) {
 	// Load second argument into rcx
 	cg.generateExpressionToReg(args[1], "rcx")
 
+	// gcd(a,b):
+	//   while b != 0:
+	//     temp = b
+	//     b = a % b
+	//     a = temp
+	//   return a
 	// rax = a, rcx = b
-	// while b != 0:
-	//   temp = b
-	//   b = a % b
-	//   a = temp
 
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelLoop))
 	cg.textSection.WriteString("    testq %rcx, %rcx\n")
 	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelEnd))
 
-	cg.textSection.WriteString("    movq %rcx, %rdx\n") // temp = b
-	cg.textSection.WriteString("    movq %rax, %r8\n")  // r8 = a (preserve for division)
-	cg.textSection.WriteString("    cqo\n")             // sign extend for division
-	cg.textSection.WriteString("    idivq %rcx\n")      // rax = a / b, rdx = a % b
-	cg.textSection.WriteString("    movq %rdx, %rcx\n") // b = a % b
-	cg.textSection.WriteString("    movq %r8, %rax\n")  // rax = a (restore from temp? no, need the divisor result)
-	cg.textSection.WriteString("    movq %rdx, %rcx\n") // Actually, set b to remainder
-	cg.textSection.WriteString("    movq %r8, %rax\n")  // a = old b (which is in rdx now... let me fix this)
-
-	// Actually, let me rewrite this more clearly
-	// gcd(a,b):
-	//   while b != 0:
-	//     temp = b
-	//     b = a mod b
-	//     a = temp
-	//   return a
+	// temp = b (save in r8)
+	cg.textSection.WriteString("    movq %rcx, %r8\n")
+	// b = a % b
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // clear rdx for division
+	cg.textSection.WriteString("    divq %rcx\n")       // rax = a / b, rdx = a % b
+	cg.textSection.WriteString("    movq %rdx, %rcx\n") // b = remainder
+	// a = temp
+	cg.textSection.WriteString("    movq %r8, %rax\n") // a = old b
 
 	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelLoop))
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
-	// rax already contains the GCD
+	// rax contains the GCD
 }
 
 func generateMathLcm(cg *CodeGenerator, args []ASTNode) {
@@ -718,20 +717,37 @@ func generateMathLcm(cg *CodeGenerator, args []ASTNode) {
 		return
 	}
 	// LCM(a,b) = (a * b) / GCD(a,b)
+	// To avoid overflow, compute as: a / gcd(a,b) * b
 
-	// Load first argument into rax
-	cg.generateExpressionToReg(args[0], "rax")
-	cg.textSection.WriteString("    pushq %rax\n") // save a
+	labelLoop := cg.getLabel("lcm_gcd_loop")
+	labelEnd := cg.getLabel("lcm_gcd_end")
 
-	// Load second argument into rax
-	cg.generateExpressionToReg(args[1], "rax")
-	cg.textSection.WriteString("    pushq %rax\n") // save b
+	// Load arguments
+	cg.generateExpressionToReg(args[0], "r12") // save a in r12
+	cg.generateExpressionToReg(args[1], "r13") // save b in r13
 
-	// For now, just return a*b (simplified version)
-	// TODO: Call GCD and divide
-	cg.textSection.WriteString("    popq %rcx\n")        // rcx = b
-	cg.textSection.WriteString("    popq %rax\n")        // rax = a
-	cg.textSection.WriteString("    imulq %rcx, %rax\n") // rax = a * b
+	// Compute GCD first
+	cg.textSection.WriteString("    movq %r12, %rax\n") // a
+	cg.textSection.WriteString("    movq %r13, %rcx\n") // b
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelLoop))
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelEnd))
+	cg.textSection.WriteString("    movq %rcx, %r8\n")  // temp = b
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // clear for division
+	cg.textSection.WriteString("    divq %rcx\n")       // rax = a/b, rdx = a%b
+	cg.textSection.WriteString("    movq %rdx, %rcx\n") // b = remainder
+	cg.textSection.WriteString("    movq %r8, %rax\n")  // a = old b
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelLoop))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
+	// rax = GCD
+
+	// LCM = (a / GCD) * b
+	cg.textSection.WriteString("    movq %rax, %rcx\n")  // rcx = GCD
+	cg.textSection.WriteString("    movq %r12, %rax\n")  // rax = original a
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")  // clear for division
+	cg.textSection.WriteString("    divq %rcx\n")        // rax = a / GCD
+	cg.textSection.WriteString("    imulq %r13, %rax\n") // rax = (a / GCD) * b
 }
 
 func generateStringLen(cg *CodeGenerator, args []ASTNode) {
@@ -1171,6 +1187,99 @@ func generateNetClose(cg *CodeGenerator, args []ASTNode) {
 }
 
 // ============================================================================
+// UDP Networking Support
+// ============================================================================
+
+// bind_ipv4(fd, ip_u32_host, port_host) -> 0 on success, negative on error
+func generateNetBindIPv4(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	cg.generateExpressionToReg(args[1], "rsi") // ip host order
+	cg.generateExpressionToReg(args[2], "rdx") // port host order
+
+	// Build sockaddr_in on stack
+	cg.textSection.WriteString("    subq $32, %rsp\n")
+	cg.textSection.WriteString("    movw $2, (%rsp)\n") // AF_INET = 2
+	// Convert port to network byte order (big-endian)
+	cg.textSection.WriteString("    movq %rdx, %rcx\n")
+	cg.textSection.WriteString("    rorw $8, %cx\n")
+	cg.textSection.WriteString("    movw %cx, 2(%rsp)\n") // port network order
+	// Convert IP to network byte order
+	cg.textSection.WriteString("    movq %rsi, %r8\n")
+	cg.textSection.WriteString("    movl %r8d, %ecx\n")
+	cg.textSection.WriteString("    bswap %ecx\n")
+	cg.textSection.WriteString("    movl %ecx, 4(%rsp)\n") // ip network order
+	// Zero padding
+	cg.textSection.WriteString("    movq $0, 8(%rsp)\n")
+	cg.textSection.WriteString("    movq $0, 16(%rsp)\n")
+	// bind syscall: fd in rdi, addr in rsi, addrlen in rdx
+	cg.textSection.WriteString("    movq %rsp, %rsi\n")
+	cg.textSection.WriteString("    movq $16, %rdx\n")
+	cg.textSection.WriteString("    movq $49, %rax\n") // syscall 49 = bind
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $32, %rsp\n")
+}
+
+// sendto_ipv4(fd, buf_ptr, buf_len, dest_ip_u32, dest_port) -> bytes sent
+func generateNetSendtoIPv4(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 5 {
+		return
+	}
+	// Save fd in r12
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.textSection.WriteString("    pushq %rdi\n") // save fd
+
+	// Build sockaddr_in for destination on stack
+	cg.textSection.WriteString("    subq $32, %rsp\n")
+	cg.textSection.WriteString("    movw $2, (%rsp)\n") // AF_INET = 2
+
+	// Get dest_port and convert to network order
+	cg.generateExpressionToReg(args[4], "rcx") // dest_port
+	cg.textSection.WriteString("    rorw $8, %cx\n")
+	cg.textSection.WriteString("    movw %cx, 2(%rsp)\n")
+
+	// Get dest_ip and convert to network order
+	cg.generateExpressionToReg(args[3], "r8") // dest_ip
+	cg.textSection.WriteString("    movl %r8d, %ecx\n")
+	cg.textSection.WriteString("    bswap %ecx\n")
+	cg.textSection.WriteString("    movl %ecx, 4(%rsp)\n")
+
+	// Zero padding
+	cg.textSection.WriteString("    movq $0, 8(%rsp)\n")
+	cg.textSection.WriteString("    movq $0, 16(%rsp)\n")
+
+	// Now set up sendto syscall
+	// rdi = fd, rsi = buf, rdx = len, r10 = flags (0), r8 = addr, r9 = addrlen
+	cg.textSection.WriteString("    movq 32(%rsp), %rdi\n") // restore fd from stack
+	cg.generateExpressionToReg(args[1], "rsi")              // buf_ptr
+	cg.generateExpressionToReg(args[2], "rdx")              // buf_len
+	cg.textSection.WriteString("    xorq %r10, %r10\n")     // flags = 0
+	cg.textSection.WriteString("    movq %rsp, %r8\n")      // addr ptr
+	cg.textSection.WriteString("    movq $16, %r9\n")       // addrlen
+	cg.textSection.WriteString("    movq $44, %rax\n")      // syscall 44 = sendto
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $40, %rsp\n") // clean up sockaddr + saved fd
+}
+
+// recvfrom(fd, buf_ptr, buf_len) -> bytes received
+// Note: This simplified version doesn't return sender info
+func generateNetRecvfrom(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")          // fd
+	cg.generateExpressionToReg(args[1], "rsi")          // buf_ptr
+	cg.generateExpressionToReg(args[2], "rdx")          // buf_len
+	cg.textSection.WriteString("    xorq %r10, %r10\n") // flags = 0
+	cg.textSection.WriteString("    xorq %r8, %r8\n")   // addr = NULL (don't care about sender)
+	cg.textSection.WriteString("    xorq %r9, %r9\n")   // addrlen = NULL
+	cg.textSection.WriteString("    movq $45, %rax\n")  // syscall 45 = recvfrom
+	cg.textSection.WriteString("    syscall\n")
+}
+
+// ============================================================================
 // HTTP module - minimal GET over an existing connected socket
 // ============================================================================
 
@@ -1219,6 +1328,98 @@ func generateHTTPGetSimple(cg *CodeGenerator, args []ASTNode) {
 	// read response into caller buffer
 	cg.generateExpressionToReg(args[5], "rsi") // buf ptr
 	cg.generateExpressionToReg(args[6], "rdx") // buf len
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    movq $0, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+}
+
+// post(fd, host_ptr, host_len, path_ptr, path_len, body_ptr, body_len, buf_ptr, buf_len) -> bytes read
+func generateHTTPPostSimple(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 9 {
+		return
+	}
+	// fd in r12 for reuse
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.textSection.WriteString("    movq %rdi, %r12\n")
+	// body_len in r13 for Content-Length header
+	cg.generateExpressionToReg(args[6], "rdi")
+	cg.textSection.WriteString("    movq %rdi, %r13\n")
+
+	// literals
+	lblPost, _ := emitStringLiteral(cg, "POST ")
+	lblMid, _ := emitStringLiteral(cg, " HTTP/1.0\r\nHost: ")
+	lblContentType, _ := emitStringLiteral(cg, "\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ")
+	lblEnd, _ := emitStringLiteral(cg, "\r\nConnection: close\r\n\r\n")
+
+	writeLiteral := func(label string, length int) {
+		cg.textSection.WriteString("    movq %r12, %rdi\n")
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%rsi\n", label))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%rdx\n", length))
+		cg.textSection.WriteString("    movq $1, %rax\n")
+		cg.textSection.WriteString("    syscall\n")
+	}
+
+	writeLiteral(lblPost, 5)
+
+	// write path
+	cg.generateExpressionToReg(args[3], "rsi") // path ptr
+	cg.generateExpressionToReg(args[4], "rdx") // path len
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    movq $1, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	writeLiteral(lblMid, 17)
+
+	// write host
+	cg.generateExpressionToReg(args[1], "rsi") // host ptr
+	cg.generateExpressionToReg(args[2], "rdx") // host len
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    movq $1, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	writeLiteral(lblContentType, 62)
+
+	// Write Content-Length as decimal string
+	// Convert r13 (body_len) to decimal and write
+	// Use stack buffer for conversion
+	cg.textSection.WriteString("    subq $32, %rsp\n")
+	cg.textSection.WriteString("    movq %r13, %rax\n")     // number to convert
+	cg.textSection.WriteString("    leaq 31(%rsp), %rdi\n") // end of buffer
+	cg.textSection.WriteString("    movb $0, (%rdi)\n")     // null terminator
+	cg.textSection.WriteString("    movq %rdi, %r14\n")     // save end position
+	lblConvLoop := cg.getLabel("post_conv")
+	lblConvDone := cg.getLabel("post_conv_done")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lblConvLoop))
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    movq $10, %rcx\n")
+	cg.textSection.WriteString("    divq %rcx\n")        // rax = quotient, rdx = remainder
+	cg.textSection.WriteString("    addb $48, %dl\n")    // convert to ASCII
+	cg.textSection.WriteString("    decq %rdi\n")        // move buffer position back
+	cg.textSection.WriteString("    movb %dl, (%rdi)\n") // store digit
+	cg.textSection.WriteString("    testq %rax, %rax\n") // check if done
+	cg.textSection.WriteString(fmt.Sprintf("    jnz %s\n", lblConvLoop))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lblConvDone))
+	// Now rdi points to start of number string, r14 points to end
+	cg.textSection.WriteString("    movq %rdi, %rsi\n") // source = start of number
+	cg.textSection.WriteString("    movq %r14, %rdx\n") // compute length
+	cg.textSection.WriteString("    subq %rsi, %rdx\n") // rdx = length
+	cg.textSection.WriteString("    movq %r12, %rdi\n") // fd
+	cg.textSection.WriteString("    movq $1, %rax\n")   // write syscall
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $32, %rsp\n")
+
+	writeLiteral(lblEnd, 24)
+
+	// write body
+	cg.generateExpressionToReg(args[5], "rsi")          // body ptr
+	cg.textSection.WriteString("    movq %r13, %rdx\n") // body len from r13
+	cg.textSection.WriteString("    movq %r12, %rdi\n")
+	cg.textSection.WriteString("    movq $1, %rax\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	// read response into caller buffer
+	cg.generateExpressionToReg(args[7], "rsi") // buf ptr
+	cg.generateExpressionToReg(args[8], "rdx") // buf len
 	cg.textSection.WriteString("    movq %r12, %rdi\n")
 	cg.textSection.WriteString("    movq $0, %rax\n")
 	cg.textSection.WriteString("    syscall\n")
@@ -2856,37 +3057,534 @@ func generateStringSubstring(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    mov %rax, %rax\n")  // result in rax
 }
 
-// generateStringSplit(str, delim) -> array ptr (placeholder)
+// generateStringSplit(str, delim) -> array ptr
+// Returns a pointer to a structure: [count:i64][ptr1][ptr2]...[ptrN]
+// Each pointer points to an allocated substring
 func generateStringSplit(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 2 {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	// Placeholder: returns NULL; full implementation would parse and allocate array
+
+	// Get source string into r10
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r10\n", lbl))
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r10\n", varInfo.Offset))
+		} else {
+			cg.textSection.WriteString("    xorq %r10, %r10\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[0], "r10")
+	}
+
+	// Get delimiter into r11 (single char for simplicity)
+	switch v := args[1].(type) {
+	case *StringLiteral:
+		if len(v.Value) > 0 {
+			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r11\n", byte(v.Value[0])))
+		} else {
+			cg.textSection.WriteString("    xorq %r11, %r11\n")
+		}
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rbx\n", varInfo.Offset))
+			cg.textSection.WriteString("    movzbl (%rbx), %r11d\n")
+		} else {
+			cg.textSection.WriteString("    xorq %r11, %r11\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[1], "rbx")
+		cg.textSection.WriteString("    movzbl (%rbx), %r11d\n")
+	}
+
+	// Save string ptr and delimiter
+	cg.textSection.WriteString("    pushq %r10\n") // save src
+	cg.textSection.WriteString("    pushq %r11\n") // save delim
+
+	// First pass: count delimiters to know array size
+	cg.textSection.WriteString("    movq %r10, %rbx\n")
+	cg.textSection.WriteString("    movq $1, %r12\n") // count = 1 (at least one segment)
+
+	lCountLoop := cg.getLabel("split_count_loop")
+	lCountDone := cg.getLabel("split_count_done")
+	lCountInc := cg.getLabel("split_count_inc")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCountLoop))
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	cg.textSection.WriteString("    testb %al, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCountDone))
+	cg.textSection.WriteString("    cmpb %r11b, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jne %s\n", lCountInc))
+	cg.textSection.WriteString("    incq %r12\n") // found delimiter
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCountInc))
+	cg.textSection.WriteString("    incq %rbx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCountLoop))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCountDone))
+
+	// Save count
+	cg.textSection.WriteString("    pushq %r12\n")
+
+	// Allocate array: 8 bytes for count + 8 bytes per pointer
+	cg.textSection.WriteString("    movq %r12, %rsi\n")
+	cg.textSection.WriteString("    shlq $3, %rsi\n") // count * 8
+	cg.textSection.WriteString("    addq $8, %rsi\n") // + 8 for count header
+	cg.textSection.WriteString("    movq $9, %rax\n") // mmap
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    movq $3, %rdx\n")
+	cg.textSection.WriteString("    movq $34, %r10\n")
+	cg.textSection.WriteString("    movq $-1, %r8\n")
+	cg.textSection.WriteString("    xorq %r9, %r9\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("split_err")
+	lEnd := cg.getLabel("split_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// rax = array ptr, store count at offset 0
+	cg.textSection.WriteString("    movq %rax, %r15\n")   // save array ptr
+	cg.textSection.WriteString("    popq %r12\n")         // restore count
+	cg.textSection.WriteString("    movq %r12, (%r15)\n") // store count
+
+	// Restore delim and src
+	cg.textSection.WriteString("    popq %r11\n") // restore delim
+	cg.textSection.WriteString("    popq %r10\n") // restore src
+
+	// Second pass: extract substrings
+	// r13 = current segment start, r14 = current array slot (after count)
+	cg.textSection.WriteString("    movq %r10, %r13\n")    // segment start
+	cg.textSection.WriteString("    leaq 8(%r15), %r14\n") // first slot
+	cg.textSection.WriteString("    movq %r10, %rbx\n")    // current ptr
+
+	lExtractLoop := cg.getLabel("split_extract_loop")
+	lExtractDone := cg.getLabel("split_extract_done")
+	lFoundDelim := cg.getLabel("split_found_delim")
+	_ = cg.getLabel("split_extract_next") // reserved for future use
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lExtractLoop))
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	cg.textSection.WriteString("    testb %al, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lFoundDelim)) // end of string = final segment
+	cg.textSection.WriteString("    cmpb %r11b, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lFoundDelim))
+	cg.textSection.WriteString("    incq %rbx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lExtractLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lFoundDelim))
+	// Calculate segment length: rbx - r13
+	cg.textSection.WriteString("    movq %rbx, %rcx\n")
+	cg.textSection.WriteString("    subq %r13, %rcx\n") // len = current - start
+
+	// Save registers before mmap
+	cg.textSection.WriteString("    pushq %rbx\n")
+	cg.textSection.WriteString("    pushq %r10\n")
+	cg.textSection.WriteString("    pushq %r11\n")
+	cg.textSection.WriteString("    pushq %r13\n")
+	cg.textSection.WriteString("    pushq %r14\n")
+	cg.textSection.WriteString("    pushq %r15\n")
+	cg.textSection.WriteString("    pushq %rcx\n")
+
+	// Allocate substring (len + 1)
+	cg.textSection.WriteString("    movq %rcx, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    movq $3, %rdx\n")
+	cg.textSection.WriteString("    movq $34, %r10\n")
+	cg.textSection.WriteString("    movq $-1, %r8\n")
+	cg.textSection.WriteString("    xorq %r9, %r9\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	// Restore registers
+	cg.textSection.WriteString("    popq %rcx\n")
+	cg.textSection.WriteString("    popq %r15\n")
+	cg.textSection.WriteString("    popq %r14\n")
+	cg.textSection.WriteString("    popq %r13\n")
+	cg.textSection.WriteString("    popq %r11\n")
+	cg.textSection.WriteString("    popq %r10\n")
+	cg.textSection.WriteString("    popq %rbx\n")
+
+	// Copy segment: rax = dest, r13 = src, rcx = len
+	cg.textSection.WriteString("    movq %rax, %rdi\n")
+	cg.textSection.WriteString("    movq %r13, %rsi\n")
+	cg.textSection.WriteString("    pushq %rcx\n")
+	cg.textSection.WriteString("    rep movsb\n")
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    popq %rcx\n")
+
+	// Store pointer in array
+	cg.textSection.WriteString("    movq %rax, (%r14)\n")
+	cg.textSection.WriteString("    addq $8, %r14\n") // next slot
+
+	// Check if done
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	cg.textSection.WriteString("    testb %al, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lExtractDone))
+
+	// Move past delimiter
+	cg.textSection.WriteString("    incq %rbx\n")
+	cg.textSection.WriteString("    movq %rbx, %r13\n") // new segment start
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lExtractLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lExtractDone))
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return array ptr
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
+	cg.textSection.WriteString("    addq $24, %rsp\n") // clean stack
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
-	cg.textSection.WriteString("    # TODO: Implement split(str, delim) -> array\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
-// generateStringJoin(array, sep) -> joined string (placeholder)
+// generateStringJoin(array, sep) -> joined string
+// array format: [count:i64][ptr1][ptr2]...[ptrN]
 func generateStringJoin(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 2 {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	// Placeholder: returns NULL
+
+	// Get array ptr into r10
+	cg.generateExpressionToReg(args[0], "r10")
+
+	// Get separator into r11
+	switch v := args[1].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r11\n", lbl))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r9\n", len(v.Value))) // sep len
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r11\n", varInfo.Offset))
+			if l, ok := cg.stringLengths[v.Name]; ok {
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r9\n", l))
+			} else {
+				// Compute sep length at runtime
+				lLoop := cg.getLabel("join_seplen_loop")
+				lEnd := cg.getLabel("join_seplen_end")
+				cg.textSection.WriteString("    movq %r11, %rbx\n")
+				cg.textSection.WriteString("    xorq %r9, %r9\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+				cg.textSection.WriteString("    testb %al, %al\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    incq %r9\n")
+				cg.textSection.WriteString("    incq %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+			}
+		} else {
+			cg.textSection.WriteString("    xorq %r11, %r11\n")
+			cg.textSection.WriteString("    xorq %r9, %r9\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[1], "r11")
+		// Compute sep length at runtime
+		lLoop := cg.getLabel("join_seplen_loop")
+		lEnd := cg.getLabel("join_seplen_end")
+		cg.textSection.WriteString("    movq %r11, %rbx\n")
+		cg.textSection.WriteString("    xorq %r9, %r9\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+		cg.textSection.WriteString("    testb %al, %al\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    incq %r9\n")
+		cg.textSection.WriteString("    incq %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+	}
+
+	// r10 = array, r11 = sep, r9 = sep_len
+	// Get count from array
+	cg.textSection.WriteString("    movq (%r10), %r12\n") // count
+
+	// Calculate total length needed
+	// total = sum(strlen of each) + (count-1) * sep_len
+	cg.textSection.WriteString("    xorq %r8, %r8\n")      // total = 0
+	cg.textSection.WriteString("    leaq 8(%r10), %r13\n") // first ptr slot
+	cg.textSection.WriteString("    movq %r12, %r14\n")    // loop counter
+
+	lLenLoop := cg.getLabel("join_len_loop")
+	lLenDone := cg.getLabel("join_len_done")
+	lStrLen := cg.getLabel("join_strlen")
+	lStrLenDone := cg.getLabel("join_strlen_done")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLenLoop))
+	cg.textSection.WriteString("    testq %r14, %r14\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lLenDone))
+	cg.textSection.WriteString("    movq (%r13), %rbx\n") // get string ptr
+	// strlen loop
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lStrLen))
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	cg.textSection.WriteString("    testb %al, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lStrLenDone))
+	cg.textSection.WriteString("    incq %r8\n")
+	cg.textSection.WriteString("    incq %rbx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lStrLen))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lStrLenDone))
+	cg.textSection.WriteString("    addq $8, %r13\n") // next slot
+	cg.textSection.WriteString("    decq %r14\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLenLoop))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLenDone))
+
+	// Add separator lengths: (count-1) * sep_len
+	cg.textSection.WriteString("    movq %r12, %rax\n")
+	cg.textSection.WriteString("    decq %rax\n")       // count - 1
+	cg.textSection.WriteString("    imulq %r9, %rax\n") // * sep_len
+	cg.textSection.WriteString("    addq %rax, %r8\n")  // add to total
+
+	// Save values before mmap
+	cg.textSection.WriteString("    pushq %r10\n") // array
+	cg.textSection.WriteString("    pushq %r11\n") // sep
+	cg.textSection.WriteString("    pushq %r12\n") // count
+	cg.textSection.WriteString("    pushq %r9\n")  // sep_len
+	cg.textSection.WriteString("    pushq %r8\n")  // total
+
+	// Allocate result (total + 1)
+	cg.textSection.WriteString("    movq %r8, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    movq $3, %rdx\n")
+	cg.textSection.WriteString("    movq $34, %r10\n")
+	cg.textSection.WriteString("    movq $-1, %r8\n")
+	cg.textSection.WriteString("    xorq %r9, %r9\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("join_err")
+	lEnd := cg.getLabel("join_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// Restore values
+	cg.textSection.WriteString("    popq %r8\n")  // total (unused now)
+	cg.textSection.WriteString("    popq %r9\n")  // sep_len
+	cg.textSection.WriteString("    popq %r12\n") // count
+	cg.textSection.WriteString("    popq %r11\n") // sep
+	cg.textSection.WriteString("    popq %r10\n") // array
+
+	// rax = dest buffer
+	cg.textSection.WriteString("    movq %rax, %r15\n")    // save result ptr
+	cg.textSection.WriteString("    movq %rax, %rdi\n")    // dest ptr
+	cg.textSection.WriteString("    leaq 8(%r10), %r13\n") // first string slot
+	cg.textSection.WriteString("    movq %r12, %r14\n")    // loop counter
+
+	lCopyLoop := cg.getLabel("join_copy_loop")
+	lCopyDone := cg.getLabel("join_copy_done")
+	lCopyStr := cg.getLabel("join_copy_str")
+	lCopyStrDone := cg.getLabel("join_copy_str_done")
+	lCopySep := cg.getLabel("join_copy_sep")
+	lCopySepDone := cg.getLabel("join_copy_sep_done")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyLoop))
+	cg.textSection.WriteString("    testq %r14, %r14\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopyDone))
+
+	// Copy current string
+	cg.textSection.WriteString("    movq (%r13), %rsi\n") // get string ptr
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyStr))
+	cg.textSection.WriteString("    movzbl (%rsi), %eax\n")
+	cg.textSection.WriteString("    testb %al, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopyStrDone))
+	cg.textSection.WriteString("    movb %al, (%rdi)\n")
+	cg.textSection.WriteString("    incq %rsi\n")
+	cg.textSection.WriteString("    incq %rdi\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopyStr))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyStrDone))
+
+	// If not last, add separator
+	cg.textSection.WriteString("    cmpq $1, %r14\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopySepDone))
+	cg.textSection.WriteString("    movq %r11, %rsi\n") // sep ptr
+	cg.textSection.WriteString("    movq %r9, %rcx\n")  // sep len
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopySep))
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopySepDone))
+	cg.textSection.WriteString("    movzbl (%rsi), %eax\n")
+	cg.textSection.WriteString("    movb %al, (%rdi)\n")
+	cg.textSection.WriteString("    incq %rsi\n")
+	cg.textSection.WriteString("    incq %rdi\n")
+	cg.textSection.WriteString("    decq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopySep))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopySepDone))
+
+	cg.textSection.WriteString("    addq $8, %r13\n") // next slot
+	cg.textSection.WriteString("    decq %r14\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopyLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyDone))
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return result
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
+	cg.textSection.WriteString("    addq $40, %rsp\n") // clean stack
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
-	cg.textSection.WriteString("    # TODO: Implement join(array, sep) -> string\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
-// generateStringReplace(str, old, new) -> new string with replacements
+// generateStringReplace(str, old, new) -> new string with all occurrences replaced
 func generateStringReplace(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 3 {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	// Placeholder: scans and allocates; full implementation would do multi-pass
+
+	// For simplicity, implement single-character replacement
+	// Get source string
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r10\n", lbl))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", len(v.Value)))
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r10\n", varInfo.Offset))
+			if l, ok := cg.stringLengths[v.Name]; ok {
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", l))
+			} else {
+				// Compute length
+				lLoop := cg.getLabel("replace_len_loop")
+				lEnd := cg.getLabel("replace_len_end")
+				cg.textSection.WriteString("    movq %r10, %rbx\n")
+				cg.textSection.WriteString("    xorq %r8, %r8\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+				cg.textSection.WriteString("    testb %al, %al\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    incq %r8\n")
+				cg.textSection.WriteString("    incq %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+			}
+		} else {
+			cg.textSection.WriteString("    xorq %r10, %r10\n")
+			cg.textSection.WriteString("    xorq %r8, %r8\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[0], "r10")
+		// Compute length
+		lLoop := cg.getLabel("replace_len_loop")
+		lEnd := cg.getLabel("replace_len_end")
+		cg.textSection.WriteString("    movq %r10, %rbx\n")
+		cg.textSection.WriteString("    xorq %r8, %r8\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+		cg.textSection.WriteString("    testb %al, %al\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    incq %r8\n")
+		cg.textSection.WriteString("    incq %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+	}
+
+	// Get old char (first char of string)
+	switch v := args[1].(type) {
+	case *StringLiteral:
+		if len(v.Value) > 0 {
+			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r11\n", byte(v.Value[0])))
+		} else {
+			cg.textSection.WriteString("    xorq %r11, %r11\n")
+		}
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rbx\n", varInfo.Offset))
+			cg.textSection.WriteString("    movzbl (%rbx), %r11d\n")
+		} else {
+			cg.textSection.WriteString("    xorq %r11, %r11\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[1], "rbx")
+		cg.textSection.WriteString("    movzbl (%rbx), %r11d\n")
+	}
+
+	// Get new char (first char of string)
+	switch v := args[2].(type) {
+	case *StringLiteral:
+		if len(v.Value) > 0 {
+			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r12\n", byte(v.Value[0])))
+		} else {
+			cg.textSection.WriteString("    xorq %r12, %r12\n")
+		}
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%rbx\n", varInfo.Offset))
+			cg.textSection.WriteString("    movzbl (%rbx), %r12d\n")
+		} else {
+			cg.textSection.WriteString("    xorq %r12, %r12\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[2], "rbx")
+		cg.textSection.WriteString("    movzbl (%rbx), %r12d\n")
+	}
+
+	// r10 = src, r8 = len, r11 = old char, r12 = new char
+	// Save values before mmap
+	cg.textSection.WriteString("    pushq %r10\n")
+	cg.textSection.WriteString("    pushq %r8\n")
+	cg.textSection.WriteString("    pushq %r11\n")
+	cg.textSection.WriteString("    pushq %r12\n")
+
+	// Allocate buffer (len + 1)
+	cg.textSection.WriteString("    movq %r8, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n")
+	cg.textSection.WriteString("    movq $3, %rdx\n")
+	cg.textSection.WriteString("    movq $34, %r10\n")
+	cg.textSection.WriteString("    movq $-1, %r8\n")
+	cg.textSection.WriteString("    xorq %r9, %r9\n")
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("replace_err")
+	lEnd := cg.getLabel("replace_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// Restore values
+	cg.textSection.WriteString("    popq %r12\n") // new char
+	cg.textSection.WriteString("    popq %r11\n") // old char
+	cg.textSection.WriteString("    popq %r8\n")  // len
+	cg.textSection.WriteString("    popq %r10\n") // src
+
+	cg.textSection.WriteString("    movq %rax, %r15\n") // save dest
+
+	// Copy with replacement
+	cg.textSection.WriteString("    movq %r10, %rsi\n") // src
+	cg.textSection.WriteString("    movq %r15, %rdi\n") // dest
+	cg.textSection.WriteString("    movq %r8, %rcx\n")  // len
+
+	lCopyLoop := cg.getLabel("replace_copy_loop")
+	lCopyDone := cg.getLabel("replace_copy_done")
+	lNoReplace := cg.getLabel("replace_no_replace")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyLoop))
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopyDone))
+	cg.textSection.WriteString("    movzbl (%rsi), %eax\n")
+	cg.textSection.WriteString("    cmpb %r11b, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jne %s\n", lNoReplace))
+	cg.textSection.WriteString("    movb %r12b, %al\n") // replace
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lNoReplace))
+	cg.textSection.WriteString("    movb %al, (%rdi)\n")
+	cg.textSection.WriteString("    incq %rsi\n")
+	cg.textSection.WriteString("    incq %rdi\n")
+	cg.textSection.WriteString("    decq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopyLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyDone))
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return result
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
+	cg.textSection.WriteString("    addq $32, %rsp\n") // clean stack
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
-	cg.textSection.WriteString("    # TODO: Implement replace(str, old, new) -> string\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
 // generateStringToLower(str) -> lowercased copy
@@ -2895,10 +3593,113 @@ func generateStringToLower(cg *CodeGenerator, args []ASTNode) {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	cg.generateExpressionToReg(args[0], "rbx") // source string
-	// Copy and lowercase: allocate, copy byte by byte, apply tolower logic
-	cg.textSection.WriteString("    # TODO: Implement toLower(str) -> lowercased copy\n")
+
+	// Step 1: Get source string pointer into r10
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r10\n", lbl))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", len(v.Value)))
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r10\n", varInfo.Offset))
+			if l, ok := cg.stringLengths[v.Name]; ok {
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", l))
+			} else {
+				// Compute length at runtime
+				lLoop := cg.getLabel("lower_len_loop")
+				lEnd := cg.getLabel("lower_len_end")
+				cg.textSection.WriteString("    movq %r10, %rbx\n")
+				cg.textSection.WriteString("    xorq %r8, %r8\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+				cg.textSection.WriteString("    testq %rax, %rax\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    incq %r8\n")
+				cg.textSection.WriteString("    incq %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+			}
+		} else {
+			cg.textSection.WriteString("    xorq %r10, %r10\n")
+			cg.textSection.WriteString("    xorq %r8, %r8\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[0], "r10")
+		// Compute length at runtime
+		lLoop := cg.getLabel("lower_len_loop")
+		lEnd := cg.getLabel("lower_len_end")
+		cg.textSection.WriteString("    movq %r10, %rbx\n")
+		cg.textSection.WriteString("    xorq %r8, %r8\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+		cg.textSection.WriteString("    testq %rax, %rax\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    incq %r8\n")
+		cg.textSection.WriteString("    incq %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+	}
+
+	// Save source ptr and length before mmap
+	cg.textSection.WriteString("    movq %r10, %r13\n") // save src ptr
+	cg.textSection.WriteString("    movq %r8, %r14\n")  // save src len
+
+	// Step 2: Allocate buffer with mmap (len + 1)
+	cg.textSection.WriteString("    movq %r8, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")   // mmap syscall
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n") // addr = NULL
+	cg.textSection.WriteString("    movq $3, %rdx\n")   // PROT_READ | PROT_WRITE
+	cg.textSection.WriteString("    movq $34, %r10\n")  // MAP_PRIVATE | MAP_ANONYMOUS
+	cg.textSection.WriteString("    movq $-1, %r8\n")   // fd = -1
+	cg.textSection.WriteString("    xorq %r9, %r9\n")   // offset = 0
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("lower_mmap_err")
+	lEnd := cg.getLabel("lower_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// Save dest ptr
+	cg.textSection.WriteString("    movq %rax, %r15\n") // save dest ptr
+
+	// Step 3: Copy with lowercase conversion
+	// rsi = src, rdi = dest, rcx = len
+	cg.textSection.WriteString("    movq %r13, %rsi\n") // restore src
+	cg.textSection.WriteString("    movq %r15, %rdi\n") // dest
+	cg.textSection.WriteString("    movq %r14, %rcx\n") // restore len
+
+	lCopyLoop := cg.getLabel("lower_copy_loop")
+	lCopyDone := cg.getLabel("lower_copy_done")
+	lNotUpper := cg.getLabel("lower_not_upper")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyLoop))
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopyDone))
+	cg.textSection.WriteString("    movzbl (%rsi), %eax\n")
+	// Check if uppercase (A-Z: 65-90)
+	cg.textSection.WriteString("    cmpb $65, %al\n") // 'A'
+	cg.textSection.WriteString(fmt.Sprintf("    jb %s\n", lNotUpper))
+	cg.textSection.WriteString("    cmpb $90, %al\n") // 'Z'
+	cg.textSection.WriteString(fmt.Sprintf("    ja %s\n", lNotUpper))
+	// Convert to lowercase: add 32
+	cg.textSection.WriteString("    addb $32, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lNotUpper))
+	cg.textSection.WriteString("    movb %al, (%rdi)\n")
+	cg.textSection.WriteString("    incq %rsi\n")
+	cg.textSection.WriteString("    incq %rdi\n")
+	cg.textSection.WriteString("    decq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopyLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyDone))
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return dest ptr
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
 // generateStringToUpper(str) -> uppercased copy
@@ -2907,20 +3708,276 @@ func generateStringToUpper(cg *CodeGenerator, args []ASTNode) {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	cg.generateExpressionToReg(args[0], "rbx") // source string
-	cg.textSection.WriteString("    # TODO: Implement toUpper(str) -> uppercased copy\n")
+
+	// Step 1: Get source string pointer into r10
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r10\n", lbl))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", len(v.Value)))
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r10\n", varInfo.Offset))
+			if l, ok := cg.stringLengths[v.Name]; ok {
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", l))
+			} else {
+				// Compute length at runtime
+				lLoop := cg.getLabel("upper_len_loop")
+				lEnd := cg.getLabel("upper_len_end")
+				cg.textSection.WriteString("    movq %r10, %rbx\n")
+				cg.textSection.WriteString("    xorq %r8, %r8\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+				cg.textSection.WriteString("    testq %rax, %rax\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    incq %r8\n")
+				cg.textSection.WriteString("    incq %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+			}
+		} else {
+			cg.textSection.WriteString("    xorq %r10, %r10\n")
+			cg.textSection.WriteString("    xorq %r8, %r8\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[0], "r10")
+		// Compute length at runtime
+		lLoop := cg.getLabel("upper_len_loop")
+		lEnd := cg.getLabel("upper_len_end")
+		cg.textSection.WriteString("    movq %r10, %rbx\n")
+		cg.textSection.WriteString("    xorq %r8, %r8\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+		cg.textSection.WriteString("    testq %rax, %rax\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    incq %r8\n")
+		cg.textSection.WriteString("    incq %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+	}
+
+	// Save source ptr and length before mmap
+	cg.textSection.WriteString("    movq %r10, %r13\n") // save src ptr
+	cg.textSection.WriteString("    movq %r8, %r14\n")  // save src len
+
+	// Step 2: Allocate buffer with mmap (len + 1)
+	cg.textSection.WriteString("    movq %r8, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")   // mmap syscall
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n") // addr = NULL
+	cg.textSection.WriteString("    movq $3, %rdx\n")   // PROT_READ | PROT_WRITE
+	cg.textSection.WriteString("    movq $34, %r10\n")  // MAP_PRIVATE | MAP_ANONYMOUS
+	cg.textSection.WriteString("    movq $-1, %r8\n")   // fd = -1
+	cg.textSection.WriteString("    xorq %r9, %r9\n")   // offset = 0
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("upper_mmap_err")
+	lEnd := cg.getLabel("upper_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// Save dest ptr
+	cg.textSection.WriteString("    movq %rax, %r15\n") // save dest ptr
+
+	// Step 3: Copy with uppercase conversion
+	// rsi = src, rdi = dest, rcx = len
+	cg.textSection.WriteString("    movq %r13, %rsi\n") // restore src
+	cg.textSection.WriteString("    movq %r15, %rdi\n") // dest
+	cg.textSection.WriteString("    movq %r14, %rcx\n") // restore len
+
+	lCopyLoop := cg.getLabel("upper_copy_loop")
+	lCopyDone := cg.getLabel("upper_copy_done")
+	lNotLower := cg.getLabel("upper_not_lower")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyLoop))
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lCopyDone))
+	cg.textSection.WriteString("    movzbl (%rsi), %eax\n")
+	// Check if lowercase (a-z: 97-122)
+	cg.textSection.WriteString("    cmpb $97, %al\n") // 'a'
+	cg.textSection.WriteString(fmt.Sprintf("    jb %s\n", lNotLower))
+	cg.textSection.WriteString("    cmpb $122, %al\n") // 'z'
+	cg.textSection.WriteString(fmt.Sprintf("    ja %s\n", lNotLower))
+	// Convert to uppercase: subtract 32
+	cg.textSection.WriteString("    subb $32, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lNotLower))
+	cg.textSection.WriteString("    movb %al, (%rdi)\n")
+	cg.textSection.WriteString("    incq %rsi\n")
+	cg.textSection.WriteString("    incq %rdi\n")
+	cg.textSection.WriteString("    decq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lCopyLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lCopyDone))
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return dest ptr
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
-// generateStringTrim(str) -> trimmed string (whitespace removed)
+// generateStringTrim(str) -> trimmed string (whitespace removed from both ends)
 func generateStringTrim(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 1 {
 		cg.textSection.WriteString("    xorq %rax, %rax\n")
 		return
 	}
-	cg.generateExpressionToReg(args[0], "rbx") // source string
-	cg.textSection.WriteString("    # TODO: Implement trim(str) -> trimmed copy\n")
+
+	// Step 1: Get source string pointer into r10
+	switch v := args[0].(type) {
+	case *StringLiteral:
+		lbl, _ := emitStringLiteral(cg, v.Value)
+		cg.textSection.WriteString(fmt.Sprintf("    leaq %s(%%rip), %%r10\n", lbl))
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", len(v.Value)))
+	case *Identifier:
+		if varInfo, ok := cg.variables[v.Name]; ok {
+			cg.textSection.WriteString(fmt.Sprintf("    movq -%d(%%rbp), %%r10\n", varInfo.Offset))
+			if l, ok := cg.stringLengths[v.Name]; ok {
+				cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%r8\n", l))
+			} else {
+				// Compute length at runtime
+				lLoop := cg.getLabel("trim_len_loop")
+				lEnd := cg.getLabel("trim_len_end")
+				cg.textSection.WriteString("    movq %r10, %rbx\n")
+				cg.textSection.WriteString("    xorq %r8, %r8\n")
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+				cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+				cg.textSection.WriteString("    testq %rax, %rax\n")
+				cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+				cg.textSection.WriteString("    incq %r8\n")
+				cg.textSection.WriteString("    incq %rbx\n")
+				cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+				cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+			}
+		} else {
+			cg.textSection.WriteString("    xorq %r10, %r10\n")
+			cg.textSection.WriteString("    xorq %r8, %r8\n")
+		}
+	default:
+		cg.generateExpressionToReg(args[0], "r10")
+		// Compute length at runtime
+		lLoop := cg.getLabel("trim_len_loop")
+		lEnd := cg.getLabel("trim_len_end")
+		cg.textSection.WriteString("    movq %r10, %rbx\n")
+		cg.textSection.WriteString("    xorq %r8, %r8\n")
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLoop))
+		cg.textSection.WriteString("    movzbq (%rbx), %rax\n")
+		cg.textSection.WriteString("    testq %rax, %rax\n")
+		cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lEnd))
+		cg.textSection.WriteString("    incq %r8\n")
+		cg.textSection.WriteString("    incq %rbx\n")
+		cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lLoop))
+		cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
+	}
+
+	// r10 = src ptr, r8 = len
+	// Step 2: Find start (skip leading whitespace)
+	// r12 = start offset, r13 = end offset
+	cg.textSection.WriteString("    movq %r10, %rbx\n") // current ptr
+	cg.textSection.WriteString("    xorq %r12, %r12\n") // start offset = 0
+
+	lTrimStart := cg.getLabel("trim_start_loop")
+	lTrimStartDone := cg.getLabel("trim_start_done")
+	lIsWhitespace := cg.getLabel("trim_is_ws")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lTrimStart))
+	cg.textSection.WriteString("    cmpq %r8, %r12\n") // if start >= len, done
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", lTrimStartDone))
+	cg.textSection.WriteString("    movq %r10, %rbx\n")
+	cg.textSection.WriteString("    addq %r12, %rbx\n")
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	// Check whitespace: space(32), tab(9), newline(10), carriage return(13)
+	cg.textSection.WriteString("    cmpb $32, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWhitespace))
+	cg.textSection.WriteString("    cmpb $9, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWhitespace))
+	cg.textSection.WriteString("    cmpb $10, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWhitespace))
+	cg.textSection.WriteString("    cmpb $13, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWhitespace))
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lTrimStartDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lIsWhitespace))
+	cg.textSection.WriteString("    incq %r12\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lTrimStart))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lTrimStartDone))
+
+	// Step 3: Find end (skip trailing whitespace)
+	// r13 = end position (exclusive)
+	cg.textSection.WriteString("    movq %r8, %r13\n") // end = len
+
+	lTrimEnd := cg.getLabel("trim_end_loop")
+	lTrimEndDone := cg.getLabel("trim_end_done")
+	lIsWsEnd := cg.getLabel("trim_is_ws_end")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lTrimEnd))
+	cg.textSection.WriteString("    cmpq %r12, %r13\n") // if end <= start, done
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", lTrimEndDone))
+	cg.textSection.WriteString("    movq %r10, %rbx\n")
+	cg.textSection.WriteString("    addq %r13, %rbx\n")
+	cg.textSection.WriteString("    decq %rbx\n") // check char at end-1
+	cg.textSection.WriteString("    movzbl (%rbx), %eax\n")
+	cg.textSection.WriteString("    cmpb $32, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWsEnd))
+	cg.textSection.WriteString("    cmpb $9, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWsEnd))
+	cg.textSection.WriteString("    cmpb $10, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWsEnd))
+	cg.textSection.WriteString("    cmpb $13, %al\n")
+	cg.textSection.WriteString(fmt.Sprintf("    je %s\n", lIsWsEnd))
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lTrimEndDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lIsWsEnd))
+	cg.textSection.WriteString("    decq %r13\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lTrimEnd))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lTrimEndDone))
+
+	// r12 = start, r13 = end, new_len = r13 - r12
+	cg.textSection.WriteString("    movq %r13, %r14\n")
+	cg.textSection.WriteString("    subq %r12, %r14\n") // r14 = new length
+
+	// Save values before mmap
+	cg.textSection.WriteString("    pushq %r10\n") // save src ptr
+	cg.textSection.WriteString("    pushq %r12\n") // save start offset
+	cg.textSection.WriteString("    pushq %r14\n") // save new length
+
+	// Step 4: Allocate buffer with mmap (new_len + 1)
+	cg.textSection.WriteString("    movq %r14, %rsi\n")
+	cg.textSection.WriteString("    addq $1, %rsi\n")
+	cg.textSection.WriteString("    movq $9, %rax\n")   // mmap syscall
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n") // addr = NULL
+	cg.textSection.WriteString("    movq $3, %rdx\n")   // PROT_READ | PROT_WRITE
+	cg.textSection.WriteString("    movq $34, %r10\n")  // MAP_PRIVATE | MAP_ANONYMOUS
+	cg.textSection.WriteString("    movq $-1, %r8\n")   // fd = -1
+	cg.textSection.WriteString("    xorq %r9, %r9\n")   // offset = 0
+	cg.textSection.WriteString("    syscall\n")
+
+	lErr := cg.getLabel("trim_mmap_err")
+	lEnd := cg.getLabel("trim_end")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    js %s\n", lErr))
+
+	// Restore values
+	cg.textSection.WriteString("    popq %r14\n") // new length
+	cg.textSection.WriteString("    popq %r12\n") // start offset
+	cg.textSection.WriteString("    popq %r10\n") // src ptr
+
+	// Save dest ptr
+	cg.textSection.WriteString("    movq %rax, %r15\n")
+
+	// Step 5: Copy trimmed portion
+	cg.textSection.WriteString("    movq %r10, %rsi\n")
+	cg.textSection.WriteString("    addq %r12, %rsi\n") // src + start
+	cg.textSection.WriteString("    movq %r15, %rdi\n") // dest
+	cg.textSection.WriteString("    movq %r14, %rcx\n") // length
+	cg.textSection.WriteString("    rep movsb\n")
+	cg.textSection.WriteString("    movb $0, (%rdi)\n") // NUL terminate
+	cg.textSection.WriteString("    movq %r15, %rax\n") // return dest ptr
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lEnd))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lErr))
+	cg.textSection.WriteString("    addq $24, %rsp\n") // clean up stack
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lEnd))
 }
 
 // ============================================================================
@@ -3115,17 +4172,208 @@ func generateTimeClock(cg *CodeGenerator, args []ASTNode) {
 }
 
 // generateTimeGMTime(timestamp, tm_buf) -> void
+// Converts Unix timestamp to broken-down time (UTC)
+// tm_buf layout (all i64): [sec][min][hour][mday][mon][year][wday][yday][isdst]
 func generateTimeGMTime(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 2 {
 		return
 	}
-	cg.textSection.WriteString("    # TODO: Implement gmtime(timestamp, tm_buf)\n")
+
+	// Get timestamp into r10
+	cg.generateExpressionToReg(args[0], "r10")
+	// Get buffer pointer into r11
+	cg.generateExpressionToReg(args[1], "r11")
+
+	// Constants
+	cg.textSection.WriteString("    movq %r10, %rax\n") // timestamp
+
+	// Calculate days since epoch and time of day
+	// seconds_in_day = 86400
+	cg.textSection.WriteString("    movq $86400, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")       // rax = days, rdx = seconds remaining
+	cg.textSection.WriteString("    movq %rax, %r12\n") // r12 = days since epoch
+	cg.textSection.WriteString("    movq %rdx, %r13\n") // r13 = seconds in day
+
+	// Calculate hour, minute, second from r13
+	cg.textSection.WriteString("    movq %r13, %rax\n")
+	cg.textSection.WriteString("    movq $3600, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")       // rax = hours, rdx = remaining
+	cg.textSection.WriteString("    movq %rax, %r14\n") // r14 = hours
+	cg.textSection.WriteString("    movq %rdx, %rax\n")
+	cg.textSection.WriteString("    movq $60, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")       // rax = minutes, rdx = seconds
+	cg.textSection.WriteString("    movq %rax, %r15\n") // r15 = minutes
+	cg.textSection.WriteString("    movq %rdx, %r8\n")  // r8 = seconds
+
+	// Store sec, min, hour
+	cg.textSection.WriteString("    movq %r8, (%r11)\n")    // tm_sec
+	cg.textSection.WriteString("    movq %r15, 8(%r11)\n")  // tm_min
+	cg.textSection.WriteString("    movq %r14, 16(%r11)\n") // tm_hour
+
+	// Calculate day of week: (days + 4) % 7 (Jan 1, 1970 was Thursday = 4)
+	cg.textSection.WriteString("    movq %r12, %rax\n")
+	cg.textSection.WriteString("    addq $4, %rax\n")
+	cg.textSection.WriteString("    movq $7, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq %rdx, 48(%r11)\n") // tm_wday
+
+	// Calculate year, month, day using simplified algorithm
+	// This is a simplified version - works for dates after 1970
+	cg.textSection.WriteString("    movq %r12, %rax\n") // days since epoch
+	cg.textSection.WriteString("    movq $1970, %r9\n") // year counter
+
+	// Year loop - subtract days per year
+	lYearLoop := cg.getLabel("gmtime_year_loop")
+	lYearDone := cg.getLabel("gmtime_year_done")
+	lLeapYear := cg.getLabel("gmtime_leap_year")
+	lNotLeap := cg.getLabel("gmtime_not_leap")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lYearLoop))
+	// Check if leap year: divisible by 4 and (not by 100 or by 400)
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    andq $3, %rcx\n") // year % 4
+	cg.textSection.WriteString(fmt.Sprintf("    jnz %s\n", lNotLeap))
+	// Divisible by 4, check if not by 100 or by 400
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.textSection.WriteString("    pushq %rdx\n")
+	cg.textSection.WriteString("    movq %rcx, %rax\n")
+	cg.textSection.WriteString("    movq $100, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    testq %rdx, %rdx\n") // year % 100
+	cg.textSection.WriteString("    popq %rdx\n")
+	cg.textSection.WriteString("    popq %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jnz %s\n", lLeapYear)) // not divisible by 100 = leap
+	// Divisible by 100, check if by 400
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.textSection.WriteString("    pushq %rdx\n")
+	cg.textSection.WriteString("    movq %rcx, %rax\n")
+	cg.textSection.WriteString("    movq $400, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    testq %rdx, %rdx\n")
+	cg.textSection.WriteString("    popq %rdx\n")
+	cg.textSection.WriteString("    popq %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jnz %s\n", lNotLeap)) // not divisible by 400 = not leap
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lLeapYear))
+	cg.textSection.WriteString("    cmpq $366, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jb %s\n", lYearDone))
+	cg.textSection.WriteString("    subq $366, %rax\n")
+	cg.textSection.WriteString("    incq %r9\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lYearLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lNotLeap))
+	cg.textSection.WriteString("    cmpq $365, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jb %s\n", lYearDone))
+	cg.textSection.WriteString("    subq $365, %rax\n")
+	cg.textSection.WriteString("    incq %r9\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lYearLoop))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lYearDone))
+	// rax = day of year (0-based), r9 = year
+	cg.textSection.WriteString("    movq %rax, 56(%r11)\n") // tm_yday
+
+	// Calculate year - 1900 for tm_year
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    subq $1900, %rcx\n")
+	cg.textSection.WriteString("    movq %rcx, 40(%r11)\n") // tm_year
+
+	// Calculate month and day from day of year
+	// Use month lengths: 31,28/29,31,30,31,30,31,31,30,31,30,31
+	cg.textSection.WriteString("    movq %rax, %r12\n") // day of year
+	cg.textSection.WriteString("    xorq %r13, %r13\n") // month = 0
+
+	// Simplified: subtract month lengths
+	// January
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// February (check leap year)
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    andq $3, %rcx\n")
+	cg.textSection.WriteString("    jnz 2f\n")
+	cg.textSection.WriteString("    cmpq $29, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $29, %r12\n")
+	cg.textSection.WriteString("    jmp 3f\n")
+	cg.textSection.WriteString("2:\n")
+	cg.textSection.WriteString("    cmpq $28, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $28, %r12\n")
+	cg.textSection.WriteString("3:\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// March
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// April
+	cg.textSection.WriteString("    cmpq $30, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $30, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// May
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// June
+	cg.textSection.WriteString("    cmpq $30, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $30, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// July
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// August
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// September
+	cg.textSection.WriteString("    cmpq $30, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $30, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// October
+	cg.textSection.WriteString("    cmpq $31, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $31, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// November
+	cg.textSection.WriteString("    cmpq $30, %r12\n")
+	cg.textSection.WriteString("    jb 1f\n")
+	cg.textSection.WriteString("    subq $30, %r12\n")
+	cg.textSection.WriteString("    incq %r13\n")
+	// December (remaining days)
+	cg.textSection.WriteString("1:\n")
+
+	// Store month (0-based) and day (1-based)
+	cg.textSection.WriteString("    movq %r13, 32(%r11)\n") // tm_mon (0-11)
+	cg.textSection.WriteString("    incq %r12\n")           // day is 1-based
+	cg.textSection.WriteString("    movq %r12, 24(%r11)\n") // tm_mday
+
+	// isdst = 0 for UTC
+	cg.textSection.WriteString("    movq $0, 64(%r11)\n") // tm_isdst
 }
 
 // generateTimeLocalTime(timestamp, tm_buf) -> void
+// For simplicity, this is the same as gmtime (no timezone support)
 func generateTimeLocalTime(cg *CodeGenerator, args []ASTNode) {
 	if len(args) != 2 {
 		return
 	}
-	cg.textSection.WriteString("    # TODO: Implement localtime(timestamp, tm_buf)\n")
+	// For now, localtime is the same as gmtime (UTC)
+	// Full implementation would need timezone support
+	generateTimeGMTime(cg, args)
 }

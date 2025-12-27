@@ -21,10 +21,11 @@ type CompilerOptions struct {
 	IncludeDirs   []string // Include directories for imports (-I)
 
 	// Tooling enhancements
-	ShowStats  bool // Display compilation statistics (--stats)
-	Quiet      bool // Suppress all non-error output (-q, --quiet)
-	TimingInfo bool // Show detailed phase timing (--timing)
-	ASTDump    bool // Print AST and exit (--ast-dump)
+	ShowStats    bool // Display compilation statistics (--stats)
+	ShowFileStat bool // Display file size and memory usage (-stat)
+	Quiet        bool // Suppress all non-error output (-q, --quiet)
+	TimingInfo   bool // Show detailed phase timing (--timing)
+	ASTDump      bool // Print AST and exit (--ast-dump)
 
 	// Documentation
 	ShowDocs    bool   // Show offline documentation (-docs, --docs)
@@ -66,6 +67,7 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 
 	// Tooling options
 	fs.BoolVar(&opts.ShowStats, "stats", false, "display compilation statistics")
+	fs.BoolVar(&opts.ShowFileStat, "stat", false, "display file size and memory usage")
 	fs.BoolVar(&opts.Quiet, "q", false, "suppress non-error output")
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress non-error output")
 	fs.BoolVar(&opts.TimingInfo, "timing", false, "show detailed phase timing")
@@ -113,6 +115,7 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "  lotus -td program.lts          # Dump tokens")
 		fmt.Fprintln(os.Stderr, "  lotus --stats program.lts      # Show compilation stats")
 		fmt.Fprintln(os.Stderr, "  lotus --timing program.lts     # Show phase timing")
+		fmt.Fprintln(os.Stderr, "  lotus -stat program.lts        # Show file/memory stats")
 		fmt.Fprintln(os.Stderr, "  lotus --ast-dump program.lts   # Dump AST structure")
 		fmt.Fprintln(os.Stderr, "  lotus -docs                    # Show documentation")
 		fmt.Fprintln(os.Stderr, "  lotus -docs-section stdlib     # Show stdlib docs")
