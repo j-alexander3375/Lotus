@@ -106,6 +106,16 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 	switch p.current().Type {
 	case TokenFn:
 		return p.parseFunctionDefinition()
+	case TokenVirtual:
+		return p.parseVirtualFunctionDefinition()
+	case TokenOverride:
+		return p.parseOverrideFunctionDefinition()
+	case TokenStatic:
+		return p.parseStaticDeclaration()
+	case TokenLocal:
+		return p.parseLocalDeclaration()
+	case TokenGlobal:
+		return p.parseGlobalDeclaration()
 	case TokenUse:
 		return p.parseImportStatement()
 	case TokenRet:
@@ -1006,4 +1016,117 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		ReturnType: retType,
 		Body:       body,
 	}, nil
+}
+
+// parseVirtualFunctionDefinition parses a virtual function definition
+// Syntax: vrt fn <return_type> <name>(<params>) { <body> }
+func (p *Parser) parseVirtualFunctionDefinition() (*FunctionDefinition, error) {
+	// 'vrt' keyword
+	if err := p.expect(TokenVirtual); err != nil {
+		return nil, err
+	}
+
+	// Parse the function definition part
+	funcDef, err := p.parseFunctionDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark as virtual
+	funcDef.IsVirtual = true
+	return funcDef, nil
+}
+
+// parseOverrideFunctionDefinition parses an override function definition
+// Syntax: override fn <return_type> <name>(<params>) { <body> }
+func (p *Parser) parseOverrideFunctionDefinition() (*FunctionDefinition, error) {
+	// 'override' keyword
+	if err := p.expect(TokenOverride); err != nil {
+		return nil, err
+	}
+
+	// Parse the function definition part
+	funcDef, err := p.parseFunctionDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark as override
+	funcDef.IsOverride = true
+	return funcDef, nil
+}
+
+// parseStaticDeclaration parses a static variable or function declaration
+// Syntax: static <type> <name> = <value>; or static fn <return_type> <name>(<params>) { <body> }
+func (p *Parser) parseStaticDeclaration() (ASTNode, error) {
+	// 'static' keyword
+	if err := p.expect(TokenStatic); err != nil {
+		return nil, err
+	}
+
+	// Check if this is a static function or static variable
+	if p.current().Type == TokenFn {
+		// Static function
+		funcDef, err := p.parseFunctionDefinition()
+		if err != nil {
+			return nil, err
+		}
+		funcDef.IsStatic = true
+		funcDef.Storage = StorageStatic
+		return funcDef, nil
+	}
+
+	// Static variable - must be a type token
+	if !isTypeToken(p.current().Type) {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected type or 'fn' after 'static', got "+TokenTypeName(p.current().Type))
+	}
+
+	varDecl, err := p.parseVariableDeclaration()
+	if err != nil {
+		return nil, err
+	}
+	varDecl.Storage = StorageStatic
+	return varDecl, nil
+}
+
+// parseLocalDeclaration parses an explicitly local variable declaration
+// Syntax: lcl <type> <name> = <value>;
+func (p *Parser) parseLocalDeclaration() (ASTNode, error) {
+	// 'lcl' keyword
+	if err := p.expect(TokenLocal); err != nil {
+		return nil, err
+	}
+
+	// Must be followed by a type token
+	if !isTypeToken(p.current().Type) {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected type after 'lcl', got "+TokenTypeName(p.current().Type))
+	}
+
+	varDecl, err := p.parseVariableDeclaration()
+	if err != nil {
+		return nil, err
+	}
+	varDecl.Storage = StorageLocal
+	return varDecl, nil
+}
+
+// parseGlobalDeclaration parses an explicitly global variable declaration
+// Syntax: gbl <type> <name> = <value>;
+func (p *Parser) parseGlobalDeclaration() (ASTNode, error) {
+	// 'gbl' keyword
+	if err := p.expect(TokenGlobal); err != nil {
+		return nil, err
+	}
+
+	// Must be followed by a type token
+	if !isTypeToken(p.current().Type) {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected type after 'gbl', got "+TokenTypeName(p.current().Type))
+	}
+
+	varDecl, err := p.parseVariableDeclaration()
+	if err != nil {
+		return nil, err
+	}
+	varDecl.Storage = StorageGlobal
+	return varDecl, nil
 }

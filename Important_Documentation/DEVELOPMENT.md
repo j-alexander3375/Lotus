@@ -71,6 +71,25 @@
    - `tests/test_llvm_basic.lts` - Basic LLVM compilation test
    - `tests/test_llvm_comprehensive.lts` - Full feature test (21 tests)
 
+10. **Virtual Functions (vrt/override)**
+    - Added `vrt` keyword for declaring virtual functions
+    - Added `override` keyword for overriding virtual functions
+    - New token types: `TokenVirtual`, `TokenOverride`
+    - `IsVirtual` and `IsOverride` fields added to `FunctionDefinition`
+
+11. **Scope Modifiers (static, lcl, gbl)**
+    - Added `static` keyword for persistent/file-local storage
+    - Added `lcl` keyword for explicit local (stack) storage  
+    - Added `gbl` keyword for explicit global storage
+    - `StorageClass` enum: `StorageAuto`, `StorageStatic`, `StorageLocal`, `StorageGlobal`
+    - Static variables use guard pattern for one-time initialization
+    - Top-level global variable declarations outside functions
+    - Static functions have internal linkage (file-local)
+
+12. **Scope Modifier Tests** (`scope_test.go`)
+    - 11 unit tests covering all storage classes
+    - `test_scope_modifiers.lts` integration test
+
 ---
 
 ## Previous Phase: Enhanced Error Messages & Diagnostics ✅

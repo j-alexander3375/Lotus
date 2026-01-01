@@ -9,6 +9,10 @@ type FunctionDefinition struct {
 	Parameters []FunctionParam
 	ReturnType TokenType
 	Body       []ASTNode
+	IsVirtual  bool         // true if marked with 'vrt' keyword
+	IsOverride bool         // true if marked with 'override' keyword
+	IsStatic   bool         // true if marked with 'static' keyword
+	Storage    StorageClass // Storage class (static makes function file-local)
 }
 
 func (f *FunctionDefinition) astNode() {}
@@ -18,6 +22,25 @@ type FunctionParam struct {
 	Name string
 	Type TokenType
 }
+
+// VTableEntry represents an entry in a virtual method table
+type VTableEntry struct {
+	MethodName   string    // Method name
+	ReturnType   TokenType // Return type
+	Parameters   []FunctionParam
+	ImplLabel    string // Assembly label for implementation
+	VTableOffset int    // Offset in vtable
+}
+
+// VTable represents a virtual method table for a class
+type VTable struct {
+	ClassName string
+	Entries   []VTableEntry
+	Label     string // Assembly label for vtable
+}
+
+// VTableRegistry maps class names to their vtables
+var VTableRegistry = make(map[string]*VTable)
 
 // FunctionContext holds information about a function during code generation
 type FunctionContext struct {

@@ -1,189 +1,330 @@
 # Lotus Compiler - Fresh Systems Language
 
-Lotus is a systems programming language with a few deliberate twists: module imports are string-based (use "io";), returns use ret, and declarations default to type-first bindings (int n = 42;). The compiler uses **LLVM** as its default backend for cross-platform compilation and advanced optimizations.
+<p align="center">
+  <img src="ext/images/lotus.svg" alt="Lotus Logo" width="120">
+</p>
 
-## Documentation
+**Lotus** is a systems programming language with deliberate design choices: module imports are string-based (`use "io";`), returns use `ret`, and declarations default to type-first bindings (`int n = 42;`). The compiler uses **LLVM** as its default backend for cross-platform compilation and advanced optimizations.
 
-| Document | Purpose |
-|----------|---------|
-| [STYLE_GUIDE.md](Important_Documentation/STYLE_GUIDE.md) | Naming, formatting, and idioms tuned for Lotus (snake_case for functions/structs/enums; ret preferred for returns; type-first bindings). |
-| [STDLIB_AND_IMPORTS.md](Important_Documentation/STDLIB_AND_IMPORTS.md) | How to pull in stdlib modules via use, with import patterns and examples. |
-| [STDLIB_IMPLEMENTATION.md](Important_Documentation/STDLIB_IMPLEMENTATION.md) | How stdlib modules are registered and wired into the compiler. |
-| [STDLIB_FINAL_SUMMARY.md](Important_Documentation/STDLIB_FINAL_SUMMARY.md) | One-page reference for all stdlib functions across io, mem, math, and str. |
-| [DEVELOPMENT.md](Important_Documentation/DEVELOPMENT.md) | Contributor guide and architecture overview. |
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://go.dev)
+[![LLVM](https://img.shields.io/badge/LLVM-Backend-orange.svg)](https://llvm.org)
 
-## Quick Example (Lotus-flavored)
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Language Overview](#language-overview)
+- [Standard Library](#standard-library)
+- [Compiler Options](#compiler-options)
+- [Documentation](#documentation)
+- [Examples](#examples)
+- [Contributing](#contributing)
+
+## Features
+
+### Language Features
+- **Type-first bindings** - `int count = 42;` with explicit `ret` for returns
+- **String-based imports** - `use "module";` with Rust-like aliasing (`as`)
+- **Virtual functions** - `vrt fn` for virtual methods, `override fn` for overrides
+- **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
+- **Structs, enums, classes** - snake_case identifiers with full OOP support
+- **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
+
+### Compiler Features
+- **LLVM backend** (default) - Cross-platform: x86, ARM, RISC-V, WebAssembly
+- **Advanced optimizations** - Dead code elimination, constant folding, inlining
+- **Enhanced diagnostics** - Line/column tracking, "did you mean?" suggestions
+- **Semantic analysis** - Unused variable detection, shadowing warnings
+- **Legacy GCC backend** - Available with `--gcc` flag
+
+### Standard Library Modules
+- **io** - printf, println, file operations
+- **mem** - malloc, free, sizeof, memcpy
+- **math** - abs, min, max, sqrt, pow, gcd, lcm
+- **str** - len, concat, compare, indexOf, contains
+- **json** - parse, stringify, get, array operations
+- **format** - sprintf, snprintf, pad_left, pad_right
+
+## Quick Start
 
 ```lotus
 use "io";
 use "math";
 
 fn int main() {
-  int max_val = max(10, 20);
-  printf("Maximum: %d\n", max_val);
-  ret 0;
+    int max_val = max(10, 20);
+    printf("Maximum: %d\n", max_val);
+    ret 0;
 }
 ```
-
-## Key Features
-
-- Type-first bindings and explicit ret for a distinct Lotus feel
-- String-based imports with use "module"; and Rust-like aliasing
-- Standard library modules for I/O, memory, math, and strings
-- Printf-style formatting verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v
-- Structs, enums, and classes with snake_case identifiers
-- Error handling via try/catch/finally and throw
-- **LLVM backend** (default) for cross-platform compilation (x86, ARM, RISC-V, WebAssembly)
-- Legacy GCC/assembly backend available with `--gcc` flag
-- **Enhanced error messages** with line/column tracking and "did you mean?" suggestions
-- **Semantic analysis** with unused variable and shadowing detection
-
-## Project Structure
-```
-src/
-├── main.go              # Entry point and CLI orchestration
-├── compiler.go          # Compilation pipeline management
-├── flags.go             # Command-line argument parsing
-├── constants.go         # Compiler constants and configuration
-│
-├── keywords.go          # Token type definitions (100+ tokens)
-├── tokenizer.go         # Lexical analysis with multi-char operators
-├── parser.go            # Recursive descent parser with precedence
-├── ast.go               # Central AST node definitions
-├── types.go             # Type system utilities and helpers
-├── codegen.go           # Code generation orchestrator
-├── diagnostics.go       # Error and warning reporting
-│
-├── printfuncs.go        # Print function implementations (printf/println/log)
-├── memory.go            # Memory management helpers (malloc/free/sizeof)
-├── arithmetic.go        # Arithmetic & bitwise operations
-├── control_flow.go      # Branching and loops
-├── references.go        # References, deref, and assignments
-├── functions.go         # User-defined functions and ABI compliance
-├── array.go             # Arrays and indexing
-├── struct.go            # Struct definitions and field access
-├── enum.go              # Enum definitions and resolution
-├── class.go             # Classes with fields/methods and new
-├── error_handling.go    # try/catch/finally/throw/null
-└── stdlib.go            # Stdlib module registration and imports
-```
-
-## Standard Library Modules
-
-**io**
-```lotus
-use "io";
-printf("Hello, %s\\n", "Lotus");
-println("Auto newline included");
-```
-
-Supported printf verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v (ints, chars, strings, quoted strings)
-
-**mem**
-```lotus
-use "mem";
-int* ptr = malloc(sizeof(int) * 4);
-free(ptr);
-```
-
-**math**
-```lotus
-use "math";
-int top = max(10, 20);
-int root = sqrt(16);
-```
-Implemented: abs, min, max, sqrt, pow, floor, ceil, round, gcd, lcm.
-
-**str**
-```lotus
-use "str";
-int length = len("Hello");
-```
-Implemented: len, concat, compare, copy, indexOf, contains, startsWith, endsWith.
-
-## Language Notes
-
-- Naming: snake_case for functions/structs/enums; constants stay UPPER_SNAKE_CASE; variables in snake_case.
-- Returns: prefer `ret expr;` and `fn int main() { ... ret 0; }` for entrypoints.
-- Declarations: type-first by default (`int count = 42;`). Pointers use postfix `*` (`int* buffer`).
-- Functions: C-style signatures with `fn <return_type> name(<type> <name>, ...)`.
-- Control flow: `if/else`, `while`, and `for (init; cond; update)` blocks require braces.
-- Modules: import via `use "module";` and alias with `as` (`use "io::printf" as io_print;`).
-- Ownership: allocate with `malloc`, release with `free`; document lifetimes when transferring ownership.
-
-## Sample Patterns
-
-**Function with explicit ret**
-```lotus
-fn int add(int a, int b) {
-  ret a + b;
-}
-```
-
-**Looping and conditionals**
-```lotus
-fn int countdown(int start) {
-  int n = start;
-  while n > 0 {
-    printf("%d...\n", n);
-    n = n - 1;
-  }
-  println("liftoff!");
-  ret 0;
-}
-```
-
-**Structs and enums**
-```lotus
-struct point { int x, y }
-
-enum status { ok = 0, error = -1 }
-
-fn move_point(*point p, int dx, dy) {
-    p->x = p->x + dx;
-    p->y = p->y + dy;
-}
-```
-
-## Print Functions (printfuncs.go)
-All print functions ultimately call Linux write():
-```lotus
-printf("Hello, %s\\n", name);
-println("Auto newline");
-logf("Debug: %d\\n", value);
-fatalf("Error: %s\\n", msg);
-```
-
-## Arithmetic & Bitwise
-```lotus
-int sum = 10 + 5;
-int diff = x - y;
-int masked = flags & 0xFF;
-int shifted = value << 2;
-```
-
-## Compilation Pipeline
-```
-Source (.lts)
-  ↓
-Tokenizer
-  ↓
-Parser → AST
-  ↓
-CodeGen → x86-64 assembly
-  ↓
-Assembler/Linker → Binary (ELF)
-```
-
-## Build & Run
 
 ```bash
+# Compile and run
+./lotus --run program.lts
+
+# Just compile
+./lotus program.lts -o myprogram
+./myprogram
+```
+
+## Installation
+
+### From Source (Recommended)
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/lotus.git
+cd lotus
+
 # Build compiler
 go build -o lotus ./src
 
-# Compile Lotus source to a.out (default)
-./lotus program.lts
-
-# Emit assembly instead of a binary
-./lotus -S -o program.s program.lts
+# Verify installation
+./lotus --version
 ```
+
+### Arch Linux (AUR)
+
+```bash
+# Using yay
+yay -S lotus-lang
+
+# Or with paru
+paru -S lotus-lang
+```
+
+### Dependencies
+
+- **Go 1.21+** - Compiler is written in Go
+- **LLVM 15+** - Backend (automatically linked via go-llvm)
+- **GCC/Clang** - For linking final binaries
+
+## Language Overview
+
+### Variables and Constants
+
+```lotus
+// Type-first declarations
+int count = 42;
+string name = "Lotus";
+bool active = true;
+float pi = 3.14159;
+
+// Constants
+const int MAX_SIZE = 1024;
+
+// Scope modifiers
+static int persistent = 0;    // Persists across function calls
+gbl int shared = 100;         // Explicit global
+lcl int temp = 5;             // Explicit local (stack)
+```
+
+### Functions
+
+```lotus
+// Regular function
+fn int add(int a, int b) {
+    ret a + b;
+}
+
+// Virtual function (for polymorphism)
+vrt fn int compute() {
+    ret 42;
+}
+
+// Override function
+override fn int compute() {
+    ret 100;
+}
+
+// Static function (file-local)
+static fn int helper() {
+    ret 0;
+}
+```
+
+### Control Flow
+
+```lotus
+// If/else
+if x > 0 {
+    printf("positive\n");
+} else {
+    printf("non-positive\n");
+}
+
+// While loop
+while n > 0 {
+    n = n - 1;
+}
+
+// For loop
+for int i = 0; i < 10; i++ {
+    printf("%d\n", i);
+}
+```
+
+### Structs and Enums
+
+```lotus
+struct point {
+    int x;
+    int y;
+}
+
+enum status {
+    ok = 0,
+    error = -1
+}
+
+fn int main() {
+    point p;
+    p.x = 10;
+    p.y = 20;
+    ret status::ok;
+}
+```
+
+### Error Handling
+
+```lotus
+fn int risky_operation() {
+    try {
+        // Code that might fail
+        int result = dangerous_call();
+        ret result;
+    } catch {
+        printf("Error occurred\n");
+        ret -1;
+    } finally {
+        cleanup();
+    }
+}
+```
+
+## Standard Library
+
+### io Module
+```lotus
+use "io";
+
+printf("Hello, %s\n", "World");
+println("Auto newline");
+fprintf(stderr, "Error: %s\n", msg);
+```
+
+**Printf verbs:** `%%`, `%d`, `%b`, `%o`, `%x`/`%X`, `%c`, `%q`, `%s`, `%v`
+
+### mem Module
+```lotus
+use "mem";
+
+int* buffer = malloc(sizeof(int) * 100);
+memset(buffer, 0, 100);
+free(buffer);
+```
+
+### math Module
+```lotus
+use "math";
+
+int m = max(10, 20);      // 20
+int r = sqrt(16);         // 4
+int p = pow(2, 8);        // 256
+int g = gcd(48, 18);      // 6
+```
+
+### str Module
+```lotus
+use "str";
+
+int length = len("Hello");           // 5
+bool has = contains("Hello", "ell"); // true
+int pos = indexOf("Hello", "l");     // 2
+```
+
+## Compiler Options
+
+```
+Usage: lotus [options] <source.lts>
+
+Output Options:
+  -o <file>        Output file name (default: a.out)
+  -S               Emit assembly instead of binary
+  --emit-llvm      Emit LLVM IR
+  --run            Compile and run immediately
+
+Backend Options:
+  --gcc            Use legacy GCC/assembly backend
+  --target <triple> Cross-compile for target (e.g., aarch64-linux-gnu)
+
+Optimization:
+  -O0              No optimization
+  -O1              Basic optimization
+  -O2              Standard optimization (default)
+  -O3              Aggressive optimization
+
+Debugging:
+  --ast-dump       Print AST structure
+  --stats          Show compilation statistics
+  --timing         Show phase timing
+  -v, --verbose    Verbose output
+
+Other:
+  --version        Show version
+  --help           Show help
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [STYLE_GUIDE.md](Important_Documentation/STYLE_GUIDE.md) | Naming conventions, formatting, idioms |
+| [STDLIB_AND_IMPORTS.md](Important_Documentation/STDLIB_AND_IMPORTS.md) | Import patterns and module usage |
+| [STDLIB_FINAL_SUMMARY.md](Important_Documentation/STDLIB_FINAL_SUMMARY.md) | Complete stdlib reference |
+| [DEVELOPMENT.md](Important_Documentation/DEVELOPMENT.md) | Contributor guide and architecture |
+
+## Examples
+
+See the [examples/](examples/) directory for complete programs:
+
+- `control_flow_if.lts` - Conditionals
+- `control_flow_for.lts` - Loops
+- `control_flow_while.lts` - While loops
+
+See [tests/](tests/) for more comprehensive examples.
+
+## Project Structure
+
+```
+lotus/
+├── src/                    # Compiler source code
+│   ├── main.go            # Entry point
+│   ├── compiler.go        # Compilation pipeline
+│   ├── tokenizer.go       # Lexical analysis
+│   ├── parser.go          # Parsing
+│   ├── llvm_codegen.go    # LLVM code generation
+│   ├── llvm_optimizer.go  # LLVM optimizations
+│   ├── llvm_stdlib.go     # LLVM stdlib implementations
+│   └── ...
+├── ext/                    # VS Code extension
+├── tests/                  # Test files
+├── examples/              # Example programs
+└── Important_Documentation/
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open a Pull Request
+
+See [DEVELOPMENT.md](Important_Documentation/DEVELOPMENT.md) for architecture details.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

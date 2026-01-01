@@ -35,6 +35,12 @@ type LLVMCodeGenerator struct {
 	namedValues   map[string]LLVMVariable // Local variables with type info
 	globalStrings map[string]llvm.Value   // String constants
 	functions     map[string]llvm.Value   // Declared functions
+	globalVars    map[string]llvm.Value   // Global and static variables
+	staticVars    map[string]llvm.Value   // Static variables (function-local persistent)
+
+	// Virtual function tables
+	vtables        map[string]llvm.Value // Class name -> vtable global
+	virtualMethods map[string]bool       // Set of virtual method names
 
 	// Import context for stdlib
 	imports *ImportContext
@@ -50,14 +56,18 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 	builder := ctx.NewBuilder()
 
 	cg := &LLVMCodeGenerator{
-		context:       ctx,
-		module:        mod,
-		builder:       builder,
-		namedValues:   make(map[string]LLVMVariable),
-		globalStrings: make(map[string]llvm.Value),
-		functions:     make(map[string]llvm.Value),
-		imports:       NewImportContext(),
-		stringCounter: 0,
+		context:        ctx,
+		module:         mod,
+		builder:        builder,
+		namedValues:    make(map[string]LLVMVariable),
+		globalStrings:  make(map[string]llvm.Value),
+		functions:      make(map[string]llvm.Value),
+		globalVars:     make(map[string]llvm.Value),
+		staticVars:     make(map[string]llvm.Value),
+		vtables:        make(map[string]llvm.Value),
+		virtualMethods: make(map[string]bool),
+		imports:        NewImportContext(),
+		stringCounter:  0,
 	}
 
 	// Declare external C library functions
@@ -121,19 +131,31 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 
 // Generate generates LLVM IR from the AST
 func (cg *LLVMCodeGenerator) Generate(statements []ASTNode) error {
-	// First pass: declare all functions
+	// First pass: declare all functions and top-level global variables
 	for _, stmt := range statements {
-		if fn, ok := stmt.(*FunctionDefinition); ok {
-			if err := cg.declareFunction(fn); err != nil {
+		switch s := stmt.(type) {
+		case *FunctionDefinition:
+			if err := cg.declareFunction(s); err != nil {
+				return err
+			}
+		case *VariableDeclaration:
+			// Top-level variables are implicitly global
+			if err := cg.declareTopLevelVar(s); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Second pass: generate function bodies
+	// Second pass: generate function bodies (skip top-level vars, already handled)
 	for _, stmt := range statements {
-		if err := cg.generateStatement(stmt); err != nil {
-			return err
+		switch stmt.(type) {
+		case *VariableDeclaration:
+			// Already handled in first pass
+			continue
+		default:
+			if err := cg.generateStatement(stmt); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -143,6 +165,59 @@ func (cg *LLVMCodeGenerator) Generate(statements []ASTNode) error {
 	}
 
 	return nil
+}
+
+// declareTopLevelVar declares a top-level (global) variable
+func (cg *LLVMCodeGenerator) declareTopLevelVar(v *VariableDeclaration) error {
+	varType := cg.tokenTypeToLLVM(v.Type)
+
+	// Check if already created
+	if _, ok := cg.globalVars[v.Name]; ok {
+		return nil // Already declared
+	}
+
+	// Create global variable
+	global := llvm.AddGlobal(cg.module, varType, v.Name)
+
+	// Set linkage based on storage class
+	if v.Storage == StorageStatic {
+		global.SetLinkage(llvm.InternalLinkage)
+	} else {
+		global.SetLinkage(llvm.ExternalLinkage)
+	}
+
+	// Initialize with constant value if provided
+	if v.Value != nil {
+		if constVal := cg.tryGetConstantValue(v.Value, varType); !constVal.IsNil() {
+			global.SetInitializer(constVal)
+		} else {
+			// Non-constant initializer - use zero init and set in main
+			global.SetInitializer(llvm.ConstNull(varType))
+		}
+	} else {
+		global.SetInitializer(llvm.ConstNull(varType))
+	}
+
+	cg.globalVars[v.Name] = global
+	cg.namedValues[v.Name] = LLVMVariable{Alloca: global, ElementType: varType}
+	return nil
+}
+
+// tryGetConstantValue attempts to evaluate an expression as a constant
+func (cg *LLVMCodeGenerator) tryGetConstantValue(expr ASTNode, targetType llvm.Type) llvm.Value {
+	switch e := expr.(type) {
+	case *IntLiteral:
+		return llvm.ConstInt(targetType, uint64(e.Value), true)
+	case *BoolLiteral:
+		if e.Value {
+			return llvm.ConstInt(targetType, 1, false)
+		}
+		return llvm.ConstInt(targetType, 0, false)
+	case *FloatLiteral:
+		return llvm.ConstFloat(targetType, float64(e.Value)/1000.0)
+	default:
+		return llvm.Value{} // Not a constant
+	}
 }
 
 // declareFunction creates a function declaration
@@ -159,7 +234,13 @@ func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
 
 	// Create function
 	llvmFn := llvm.AddFunction(cg.module, fn.Name, fnType)
-	llvmFn.SetLinkage(llvm.ExternalLinkage)
+
+	// Set linkage based on static modifier
+	if fn.IsStatic {
+		llvmFn.SetLinkage(llvm.InternalLinkage) // Static functions are file-local
+	} else {
+		llvmFn.SetLinkage(llvm.ExternalLinkage)
+	}
 
 	// Name parameters
 	for i, param := range fn.Parameters {
@@ -167,6 +248,12 @@ func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
 	}
 
 	cg.functions[fn.Name] = llvmFn
+
+	// Track virtual methods for vtable generation
+	if fn.IsVirtual {
+		cg.virtualMethods[fn.Name] = true
+	}
+
 	return nil
 }
 
@@ -243,6 +330,24 @@ func (cg *LLVMCodeGenerator) generateFunction(fn *FunctionDefinition) error {
 // generateVarDecl generates a variable declaration
 func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
 	varType := cg.tokenTypeToLLVM(v.Type)
+
+	switch v.Storage {
+	case StorageStatic:
+		// Static variables are allocated in the data section (global with internal linkage)
+		return cg.generateStaticVar(v, varType)
+	case StorageGlobal:
+		// Global variables are allocated in the data section with external linkage
+		return cg.generateGlobalVar(v, varType)
+	case StorageLocal, StorageAuto:
+		// Local/auto variables are stack allocated (default behavior)
+		return cg.generateLocalVar(v, varType)
+	default:
+		return cg.generateLocalVar(v, varType)
+	}
+}
+
+// generateLocalVar generates a stack-allocated local variable
+func (cg *LLVMCodeGenerator) generateLocalVar(v *VariableDeclaration, varType llvm.Type) error {
 	alloca := cg.builder.CreateAlloca(varType, v.Name)
 
 	if v.Value != nil {
@@ -255,6 +360,117 @@ func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
 
 	cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: varType}
 	return nil
+}
+
+// generateStaticVar generates a static variable (persistent storage, internal linkage)
+func (cg *LLVMCodeGenerator) generateStaticVar(v *VariableDeclaration, varType llvm.Type) error {
+	// Create a unique name for the static variable (function-scoped)
+	staticName := fmt.Sprintf("_static_%s_%s", cg.currentFn.Name(), v.Name)
+
+	// Check if already created (for re-entry into same function)
+	if existing, ok := cg.staticVars[staticName]; ok {
+		cg.namedValues[v.Name] = LLVMVariable{Alloca: existing, ElementType: varType}
+		return nil
+	}
+
+	// Create global variable with internal linkage
+	global := llvm.AddGlobal(cg.module, varType, staticName)
+	global.SetLinkage(llvm.InternalLinkage)
+
+	// For static variables, use constant initializer if available
+	if v.Value != nil {
+		if constVal := cg.tryGetConstantValue(v.Value, varType); !constVal.IsNil() {
+			global.SetInitializer(constVal)
+		} else {
+			// Non-constant initializer - use guard variable pattern
+			global.SetInitializer(llvm.ConstNull(varType))
+			cg.generateStaticInitGuard(staticName, global, v.Value)
+		}
+	} else {
+		global.SetInitializer(llvm.ConstNull(varType))
+	}
+
+	// Store in static vars map
+	cg.staticVars[staticName] = global
+	cg.namedValues[v.Name] = LLVMVariable{Alloca: global, ElementType: varType}
+	return nil
+}
+
+// generateStaticInitGuard generates a guard for one-time static initialization
+func (cg *LLVMCodeGenerator) generateStaticInitGuard(staticName string, global llvm.Value, initValue ASTNode) {
+	guardName := staticName + "_guard"
+
+	// Check if guard exists
+	if _, ok := cg.staticVars[guardName]; ok {
+		return // Already initialized
+	}
+
+	// Create guard variable
+	guardVar := llvm.AddGlobal(cg.module, cg.context.Int1Type(), guardName)
+	guardVar.SetLinkage(llvm.InternalLinkage)
+	guardVar.SetInitializer(llvm.ConstInt(cg.context.Int1Type(), 0, false))
+	cg.staticVars[guardName] = guardVar
+
+	// Generate: if (!guard) { static_var = init_val; guard = true; }
+	initBlock := llvm.AddBasicBlock(cg.currentFn, "static_init")
+	contBlock := llvm.AddBasicBlock(cg.currentFn, "static_cont")
+
+	// Load guard and branch
+	guardVal := cg.builder.CreateLoad(cg.context.Int1Type(), guardVar, "guard")
+	cg.builder.CreateCondBr(guardVal, contBlock, initBlock)
+
+	// Init block
+	cg.builder.SetInsertPointAtEnd(initBlock)
+	val, _ := cg.generateExpression(initValue)
+	cg.builder.CreateStore(val, global)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int1Type(), 1, false), guardVar)
+	cg.builder.CreateBr(contBlock)
+
+	// Continue block
+	cg.builder.SetInsertPointAtEnd(contBlock)
+}
+
+// generateGlobalVar generates a global variable (external linkage)
+func (cg *LLVMCodeGenerator) generateGlobalVar(v *VariableDeclaration, varType llvm.Type) error {
+	// Check if already created
+	if existing, ok := cg.globalVars[v.Name]; ok {
+		cg.namedValues[v.Name] = LLVMVariable{Alloca: existing, ElementType: varType}
+		return nil
+	}
+
+	// Create global variable with external linkage
+	global := llvm.AddGlobal(cg.module, varType, v.Name)
+	global.SetLinkage(llvm.ExternalLinkage)
+
+	// Initialize with constant value if available, otherwise null
+	if v.Value != nil {
+		// Try to get a constant initializer
+		initVal := cg.getConstantValue(v.Value, varType)
+		global.SetInitializer(initVal)
+	} else {
+		global.SetInitializer(llvm.ConstNull(varType))
+	}
+
+	// Store in global vars map
+	cg.globalVars[v.Name] = global
+	cg.namedValues[v.Name] = LLVMVariable{Alloca: global, ElementType: varType}
+	return nil
+}
+
+// getConstantValue tries to get a constant LLVM value from an AST node
+func (cg *LLVMCodeGenerator) getConstantValue(node ASTNode, varType llvm.Type) llvm.Value {
+	switch n := node.(type) {
+	case *IntLiteral:
+		return llvm.ConstInt(varType, uint64(n.Value), true)
+	case *BoolLiteral:
+		if n.Value {
+			return llvm.ConstInt(varType, 1, false)
+		}
+		return llvm.ConstInt(varType, 0, false)
+	default:
+		// Default to null for non-constant expressions
+		return llvm.ConstNull(varType)
+	}
 }
 
 // generateReturn generates a return statement
@@ -289,14 +505,23 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 		return llvm.ConstInt(cg.context.Int1Type(), val, false), nil
 
 	case *Identifier:
+		// First check local variables
 		variable, ok := cg.namedValues[e.Name]
 		if !ok {
+			// Then check global variables
+			if globalVar, gok := cg.globalVars[e.Name]; gok {
+				varType := globalVar.GlobalValueType()
+				return cg.builder.CreateLoad(varType, globalVar, e.Name), nil
+			}
 			return llvm.Value{}, fmt.Errorf("undefined variable: %s", e.Name)
 		}
 		return cg.builder.CreateLoad(variable.ElementType, variable.Alloca, e.Name), nil
 
 	case *BinaryOp:
 		return cg.generateBinaryExpr(e)
+
+	case *BitwiseOp:
+		return cg.generateBitwiseOp(e)
 
 	case *UnaryOp:
 		return cg.generateUnaryExpr(e)
@@ -353,6 +578,33 @@ func (cg *LLVMCodeGenerator) generateBinaryExpr(b *BinaryOp) (llvm.Value, error)
 
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported binary operator: %v", b.Operator)
+	}
+}
+
+// generateBitwiseOp generates a bitwise operation
+func (cg *LLVMCodeGenerator) generateBitwiseOp(b *BitwiseOp) (llvm.Value, error) {
+	left, err := cg.generateExpression(b.Left)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	right, err := cg.generateExpression(b.Right)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	switch b.Operator {
+	case TokenAmpersand:
+		return cg.builder.CreateAnd(left, right, "andtmp"), nil
+	case TokenPipe:
+		return cg.builder.CreateOr(left, right, "ortmp"), nil
+	case TokenCaret:
+		return cg.builder.CreateXor(left, right, "xortmp"), nil
+	case TokenLShift:
+		return cg.builder.CreateShl(left, right, "shltmp"), nil
+	case TokenRShift:
+		return cg.builder.CreateAShr(left, right, "shrtmp"), nil
+	default:
+		return llvm.Value{}, fmt.Errorf("unsupported bitwise operator: %v", b.Operator)
 	}
 }
 
@@ -441,6 +693,174 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generatePrint(call)
 	case "printf":
 		return cg.generatePrintf(call)
+
+	// Math stdlib functions
+	case "abs":
+		return cg.generateAbs(call)
+	case "min":
+		return cg.generateMin(call)
+	case "max":
+		return cg.generateMax(call)
+	case "sqrt":
+		return cg.generateSqrt(call)
+
+	// String stdlib functions
+	case "len":
+		return cg.generateStrlen(call)
+	case "concat":
+		return cg.generateConcat(call)
+	case "contains":
+		return cg.generateContains(call)
+
+	// Memory stdlib functions
+	case "malloc":
+		return cg.generateMalloc(call)
+	case "free":
+		return cg.generateFree(call)
+
+	// Collections stdlib functions
+	case "array_int_new":
+		return cg.generateArrayIntNew(call)
+	case "array_int_push":
+		return cg.generateArrayIntPush(call)
+	case "array_int_pop":
+		return cg.generateArrayIntPop(call)
+	case "array_int_len":
+		return cg.generateArrayIntLen(call)
+	case "array_int_resize":
+		return cg.generateArrayIntResize(call)
+	case "array_int_reserve":
+		return cg.generateArrayIntReserve(call)
+	case "array_int_shrink":
+		return cg.generateArrayIntShrink(call)
+	case "array_int_capacity":
+		return cg.generateArrayIntCapacity(call)
+	case "array_int_get":
+		return cg.generateArrayIntGet(call)
+	case "array_int_set":
+		return cg.generateArrayIntSet(call)
+	case "array_int_free":
+		return cg.generateArrayIntFree(call)
+
+	// Stack functions
+	case "stack_int_new":
+		return cg.generateStackIntNew(call)
+	case "stack_int_push":
+		return cg.generateStackIntPush(call)
+	case "stack_int_pop":
+		return cg.generateStackIntPop(call)
+	case "stack_int_len":
+		return cg.generateStackIntLen(call)
+
+	// Queue functions
+	case "queue_int_new":
+		return cg.generateQueueIntNew(call)
+	case "queue_int_enqueue":
+		return cg.generateQueueIntEnqueue(call)
+	case "queue_int_dequeue":
+		return cg.generateQueueIntDequeue(call)
+	case "queue_int_len":
+		return cg.generateQueueIntLen(call)
+
+	// Deque functions
+	case "deque_int_new":
+		return cg.generateDequeIntNew(call)
+	case "deque_int_push_front":
+		return cg.generateDequeIntPushFront(call)
+	case "deque_int_push_back":
+		return cg.generateDequeIntPushBack(call)
+	case "deque_int_pop_front":
+		return cg.generateDequeIntPopFront(call)
+	case "deque_int_pop_back":
+		return cg.generateDequeIntPopBack(call)
+	case "deque_int_len":
+		return cg.generateDequeIntLen(call)
+
+	// Heap functions
+	case "heap_int_new":
+		return cg.generateHeapIntNew(call)
+	case "heap_int_push":
+		return cg.generateHeapIntPush(call)
+	case "heap_int_pop":
+		return cg.generateHeapIntPop(call)
+	case "heap_int_peek":
+		return cg.generateHeapIntPeek(call)
+	case "heap_int_len":
+		return cg.generateHeapIntLen(call)
+
+	// Net/socket functions
+	case "socket":
+		return cg.generateSocket(call)
+	case "close":
+		return cg.generateClose(call)
+
+	// File I/O functions
+	case "open":
+		return cg.generateOpen(call)
+	case "read":
+		return cg.generateRead(call)
+	case "write":
+		return cg.generateWrite(call)
+
+	// Time functions
+	case "now":
+		return cg.generateNow(call)
+	case "millis":
+		return cg.generateMillis(call)
+	case "nanos":
+		return cg.generateNanos(call)
+	case "sleep":
+		return cg.generateSleep(call)
+
+	// HTTP pool functions
+	case "pool_new":
+		return cg.generatePoolNew(call)
+	case "pool_get":
+		return cg.generatePoolGet(call)
+	case "pool_put":
+		return cg.generatePoolPut(call)
+	case "pool_close":
+		return cg.generatePoolClose(call)
+
+	// JSON module functions
+	case "json_parse":
+		return cg.generateJSONParse(call)
+	case "json_stringify":
+		return cg.generateJSONStringify(call)
+	case "json_get":
+		return cg.generateJSONGet(call)
+	case "json_type":
+		return cg.generateJSONGetType(call)
+	case "json_int":
+		return cg.generateJSONGetInt(call)
+	case "json_str":
+		return cg.generateJSONGetString(call)
+	case "json_bool":
+		return cg.generateJSONGetBool(call)
+	case "json_array_len":
+		return cg.generateJSONArrayLen(call)
+	case "json_array_get":
+		return cg.generateJSONArrayGet(call)
+	case "json_new":
+		return cg.generateJSONNew(call)
+	case "json_free":
+		return cg.generateJSONFree(call)
+
+	// Formatting functions
+	case "sprintf":
+		return cg.generateSprintf(call)
+	case "snprintf":
+		return cg.generateSnprintf(call)
+	case "format_int":
+		return cg.generateFormatInt(call)
+	case "format_hex":
+		return cg.generateFormatHex(call)
+	case "format_bin":
+		return cg.generateFormatBinary(call)
+	case "pad_left":
+		return cg.generatePadLeft(call)
+	case "pad_right":
+		return cg.generatePadRight(call)
 	}
 
 	// Look up the function
@@ -641,13 +1061,20 @@ func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
 		return fmt.Errorf("assignment target must be an identifier, got %T", a.Target)
 	}
 
+	// First check local variables
 	variable, ok := cg.namedValues[id.Name]
-	if !ok {
-		return fmt.Errorf("undefined variable: %s", id.Name)
+	if ok {
+		cg.builder.CreateStore(val, variable.Alloca)
+		return nil
 	}
 
-	cg.builder.CreateStore(val, variable.Alloca)
-	return nil
+	// Then check global variables
+	if globalVar, gok := cg.globalVars[id.Name]; gok {
+		cg.builder.CreateStore(val, globalVar)
+		return nil
+	}
+
+	return fmt.Errorf("undefined variable: %s", id.Name)
 }
 
 // handleImport handles import statements

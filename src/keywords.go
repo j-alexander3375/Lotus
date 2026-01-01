@@ -121,6 +121,15 @@ const (
 	TokenEnum   // enum
 	TokenClass  // class
 
+	// Virtual functions and inheritance
+	TokenVirtual  // vrt (virtual function marker)
+	TokenOverride // override (method override marker)
+
+	// Scope and storage modifiers
+	TokenStatic // static (persistent storage, file-local scope)
+	TokenLocal  // lcl (explicitly local scope)
+	TokenGlobal // gbl (explicitly global scope)
+
 	// Memory management
 	TokenNew // new
 

@@ -30,6 +30,16 @@ func (b BaseNode) Loc() Location {
 // Statement Nodes
 // ============================================================================
 
+// StorageClass represents the storage class of a variable or function
+type StorageClass int
+
+const (
+	StorageAuto   StorageClass = iota // Default: local for function vars, global for top-level
+	StorageStatic                     // static: persistent storage, file-local scope
+	StorageLocal                      // lcl: explicitly local scope (stack allocated)
+	StorageGlobal                     // gbl: explicitly global scope (heap/data section)
+)
+
 // ReturnStatement represents a return statement with an optional value
 type ReturnStatement struct {
 	BaseNode
@@ -41,9 +51,10 @@ func (r *ReturnStatement) astNode() {}
 // VariableDeclaration represents a variable declaration with type and initial value
 type VariableDeclaration struct {
 	BaseNode
-	Name  string
-	Type  TokenType
-	Value ASTNode
+	Name    string
+	Type    TokenType
+	Value   ASTNode
+	Storage StorageClass // Storage class modifier (static, lcl, gbl)
 }
 
 func (v *VariableDeclaration) astNode() {}

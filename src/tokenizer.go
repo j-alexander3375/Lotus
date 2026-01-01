@@ -206,6 +206,16 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenFor, ""))
 			case "fn":
 				tokens = append(tokens, makeToken(TokenFn, ""))
+			case "vrt":
+				tokens = append(tokens, makeToken(TokenVirtual, ""))
+			case "override":
+				tokens = append(tokens, makeToken(TokenOverride, ""))
+			case "static":
+				tokens = append(tokens, makeToken(TokenStatic, ""))
+			case "lcl":
+				tokens = append(tokens, makeToken(TokenLocal, ""))
+			case "gbl":
+				tokens = append(tokens, makeToken(TokenGlobal, ""))
 			case "use":
 				tokens = append(tokens, makeToken(TokenUse, ""))
 			case "as":
@@ -480,6 +490,16 @@ func TokenValue(t Token) string {
 		return "enum"
 	case TokenClass:
 		return "class"
+	case TokenVirtual:
+		return "vrt"
+	case TokenOverride:
+		return "override"
+	case TokenStatic:
+		return "static"
+	case TokenLocal:
+		return "lcl"
+	case TokenGlobal:
+		return "gbl"
 	case TokenNew:
 		return "new"
 	case TokenPrintf:
