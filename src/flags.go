@@ -27,6 +27,12 @@ type CompilerOptions struct {
 	TimingInfo   bool // Show detailed phase timing (--timing)
 	ASTDump      bool // Print AST and exit (--ast-dump)
 
+	// LLVM backend options (LLVM is now default)
+	UseGCC       bool   // Use GCC/assembly backend instead of LLVM (--gcc)
+	EmitLLVMIR   bool   // Emit LLVM IR instead of binary (--emit-llvm)
+	OptLevel     int    // Optimization level (0-3) (-O)
+	TargetTriple string // Target triple for cross-compilation (--target)
+
 	// Documentation
 	ShowDocs    bool   // Show offline documentation (-docs, --docs)
 	DocsSection string // Specific documentation section to show
@@ -71,6 +77,12 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	fs.BoolVar(&opts.Quiet, "q", false, "suppress non-error output")
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress non-error output")
 	fs.BoolVar(&opts.TimingInfo, "timing", false, "show detailed phase timing")
+
+	// LLVM backend options (LLVM is default)
+	fs.BoolVar(&opts.UseGCC, "gcc", false, "use GCC/assembly backend instead of LLVM")
+	fs.BoolVar(&opts.EmitLLVMIR, "emit-llvm", false, "emit LLVM IR instead of binary")
+	fs.IntVar(&opts.OptLevel, "O", 0, "optimization level (0-3)")
+	fs.StringVar(&opts.TargetTriple, "target", "", "target triple for cross-compilation (e.g., x86_64-linux-gnu)")
 
 	// Execution options
 	fs.BoolVar(&opts.RunAfterBuild, "run", false, "build and run the compiled binary")
@@ -121,6 +133,12 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "  lotus -docs-section stdlib     # Show stdlib docs")
 		fmt.Fprintln(os.Stderr, "  lotus -Wall program.lts        # Enable all warnings")
 		fmt.Fprintln(os.Stderr, "  lotus -Werror program.lts      # Warnings as errors")
+		fmt.Fprintln(os.Stderr, "\nBackend Options:")
+		fmt.Fprintln(os.Stderr, "  lotus program.lts              # Compile with LLVM (default)")
+		fmt.Fprintln(os.Stderr, "  lotus --emit-llvm program.lts  # Emit LLVM IR")
+		fmt.Fprintln(os.Stderr, "  lotus -O2 program.lts          # LLVM with optimization")
+		fmt.Fprintln(os.Stderr, "  lotus --target=arm64 prog.lts  # Cross-compile to ARM64")
+		fmt.Fprintln(os.Stderr, "  lotus --gcc program.lts        # Use legacy GCC backend")
 	}
 
 	// Normalize args to accept various flag formats
@@ -142,6 +160,12 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 			norm = append(norm, "-docs")
 		case "--docs-section":
 			norm = append(norm, "-docs-section")
+		case "--gcc":
+			norm = append(norm, "-gcc")
+		case "--emit-llvm":
+			norm = append(norm, "-emit-llvm")
+		case "--target":
+			norm = append(norm, "-target")
 		default:
 			norm = append(norm, a)
 		}

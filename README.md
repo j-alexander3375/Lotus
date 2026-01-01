@@ -1,6 +1,6 @@
 # Lotus Compiler - Fresh Systems Language
 
-Lotus is a systems programming language with a few deliberate twists: module imports are string-based (use "io";), returns use ret, and declarations default to type-first bindings (int n = 42;). The compiler emits x86-64 assembly with a modular standard library.
+Lotus is a systems programming language with a few deliberate twists: module imports are string-based (use "io";), returns use ret, and declarations default to type-first bindings (int n = 42;). The compiler uses **LLVM** as its default backend for cross-platform compilation and advanced optimizations.
 
 ## Documentation
 
@@ -33,7 +33,8 @@ fn int main() {
 - Printf-style formatting verbs: %%, %d, %b, %o, %x/%X, %c, %q, %s, %v
 - Structs, enums, and classes with snake_case identifiers
 - Error handling via try/catch/finally and throw
-- Direct x86-64 GNU assembly output (System V AMD64 ABI)
+- **LLVM backend** (default) for cross-platform compilation (x86, ARM, RISC-V, WebAssembly)
+- Legacy GCC/assembly backend available with `--gcc` flag
 - **Enhanced error messages** with line/column tracking and "did you mean?" suggestions
 - **Semantic analysis** with unused variable and shadowing detection
 

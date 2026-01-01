@@ -27,13 +27,14 @@ func NewCompiler(opts *CompilerOptions) *Compiler {
 
 // CompileFile compiles a single Lotus source file through the full pipeline:
 // Source → Tokens → AST → Assembly → Binary
+// Or with LLVM: Source → Tokens → AST → LLVM IR → Binary
 func (c *Compiler) CompileFile(inputPath string) error {
 	// Initialize stats tracking
 	c.Stats = NewCompilationStats(inputPath)
 
 	if c.Options.Verbose {
-		log.Printf("Compiling: input=%s output=%s includes=%v trimpath=%q",
-			inputPath, c.Options.OutPath, c.Options.IncludeDirs, c.Options.Trimpath)
+		log.Printf("Compiling: input=%s output=%s includes=%v trimpath=%q gcc=%v",
+			inputPath, c.Options.OutPath, c.Options.IncludeDirs, c.Options.Trimpath, c.Options.UseGCC)
 	}
 
 	// Phase 1: Read source file
@@ -63,7 +64,19 @@ func (c *Compiler) CompileFile(inputPath string) error {
 		return nil
 	}
 
-	// Phase 3: Syntax analysis and code generation
+	// Check if GCC backend is requested (LLVM is now the default)
+	if c.Options.UseGCC {
+		// Legacy GCC/assembly backend
+		return c.compileWithGCC(inputPath, tokens)
+	}
+
+	// Default: Use LLVM backend
+	return c.compileWithLLVM(inputPath, tokens)
+}
+
+// compileWithGCC compiles using the legacy GCC/assembly backend
+func (c *Compiler) compileWithGCC(inputPath string, tokens []Token) error {
+	// Phase 3: Syntax analysis and code generation (direct assembly)
 	codegenStart := time.Now()
 	asm, err := GenerateAssembly(tokens)
 	codegenDuration := time.Since(codegenStart)
@@ -93,6 +106,168 @@ func (c *Compiler) CompileFile(inputPath string) error {
 
 	c.printStats()
 	return nil
+}
+
+// compileWithLLVM compiles using the LLVM backend
+func (c *Compiler) compileWithLLVM(inputPath string, tokens []Token) error {
+	if c.Options.Verbose {
+		log.Printf("Using LLVM backend with optimization level %d", c.Options.OptLevel)
+	}
+
+	// Parse tokens to AST
+	codegenStart := time.Now()
+	parser := NewParser(tokens)
+	statements, err := parser.Parse()
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	// Create LLVM code generator
+	moduleName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+	llvmGen := NewLLVMCodeGenerator(moduleName)
+	defer llvmGen.Dispose()
+
+	// Generate LLVM IR
+	if err := llvmGen.Generate(statements); err != nil {
+		return fmt.Errorf("LLVM codegen error: %w", err)
+	}
+
+	// Apply optimizations
+	if c.Options.OptLevel > 0 {
+		llvmGen.Optimize(c.Options.OptLevel)
+	}
+
+	codegenDuration := time.Since(codegenStart)
+	ir := llvmGen.GetIR()
+	c.Stats.RecordCodegen(codegenDuration, strings.Count(ir, "\n"), len(ir), 0, 0)
+
+	// Handle LLVM IR output mode (--emit-llvm flag)
+	if c.Options.EmitLLVMIR {
+		return c.writeLLVMIR(ir)
+	}
+
+	// Compile to object file and link
+	if err := c.buildBinaryWithLLVM(llvmGen); err != nil {
+		return err
+	}
+
+	// Optionally run the compiled binary
+	if c.Options.RunAfterBuild {
+		c.printStats()
+		return c.runBinary()
+	}
+
+	c.printStats()
+	return nil
+}
+
+// writeLLVMIR writes LLVM IR to a file
+func (c *Compiler) writeLLVMIR(ir string) error {
+	irOut := c.Options.OutPath
+
+	// Auto-generate .ll extension if needed
+	if irOut == "a.out" {
+		irOut = "a.ll"
+	} else if filepath.Ext(irOut) == "" {
+		irOut = irOut + ".ll"
+	}
+
+	if err := os.WriteFile(irOut, []byte(ir), 0644); err != nil {
+		return fmt.Errorf("failed to write LLVM IR file: %w", err)
+	}
+
+	if c.Options.Verbose {
+		log.Printf("LLVM IR written to: %s", irOut)
+	}
+
+	return nil
+}
+
+// buildBinaryWithLLVM compiles LLVM IR to a binary
+func (c *Compiler) buildBinaryWithLLVM(llvmGen *LLVMCodeGenerator) error {
+	// Determine target triple
+	targetTriple := c.Options.TargetTriple
+	if targetTriple == "" {
+		// Use default host triple
+		targetTriple = getDefaultTargetTriple()
+	}
+
+	// Write LLVM IR to temp file
+	tmpIR := filepath.Join(os.TempDir(), "lotus_tmp.ll")
+	if err := os.WriteFile(tmpIR, []byte(llvmGen.GetIR()), 0644); err != nil {
+		return fmt.Errorf("failed to write temporary LLVM IR: %w", err)
+	}
+	defer os.Remove(tmpIR)
+
+	// Use clang to compile LLVM IR to binary
+	assembleStart := time.Now()
+	optFlag := fmt.Sprintf("-O%d", c.Options.OptLevel)
+	cmd := exec.Command("clang", optFlag, "-o", c.Options.OutPath, tmpIR)
+
+	if c.Options.TargetTriple != "" {
+		cmd.Args = append(cmd.Args, "-target", c.Options.TargetTriple)
+	}
+
+	if c.Options.Verbose {
+		log.Printf("Compiling with clang: %s", strings.Join(cmd.Args, " "))
+	}
+
+	out, err := cmd.CombinedOutput()
+	assembleDuration := time.Since(assembleStart)
+	c.Stats.RecordAssemble(assembleDuration)
+
+	if err != nil {
+		if len(out) > 0 {
+			return fmt.Errorf("LLVM compilation failed:\n%s", string(out))
+		}
+		return fmt.Errorf("LLVM compilation failed: %w", err)
+	}
+
+	// Record output file info
+	if info, statErr := os.Stat(c.Options.OutPath); statErr == nil {
+		c.Stats.RecordLink(0, c.Options.OutPath, int(info.Size()))
+	}
+
+	if c.Options.Verbose {
+		log.Printf("Binary written to: %s", c.Options.OutPath)
+	}
+
+	return nil
+}
+
+// getDefaultTargetTriple returns the default target triple for the host system
+func getDefaultTargetTriple() string {
+	// Map Go's GOOS/GOARCH to LLVM target triples
+	arch := runtime.GOARCH
+	osName := runtime.GOOS
+
+	var llvmArch string
+	switch arch {
+	case "amd64":
+		llvmArch = "x86_64"
+	case "arm64":
+		llvmArch = "aarch64"
+	case "arm":
+		llvmArch = "arm"
+	case "386":
+		llvmArch = "i386"
+	default:
+		llvmArch = arch
+	}
+
+	var llvmOS string
+	switch osName {
+	case "linux":
+		llvmOS = "linux-gnu"
+	case "darwin":
+		llvmOS = "apple-darwin"
+	case "windows":
+		llvmOS = "windows-msvc"
+	default:
+		llvmOS = osName
+	}
+
+	return fmt.Sprintf("%s-unknown-%s", llvmArch, llvmOS)
 }
 
 // printStats outputs timing and statistics if enabled
