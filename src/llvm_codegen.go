@@ -16,6 +16,12 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
+// LLVMVariable holds an alloca and its element type for correct loading
+type LLVMVariable struct {
+	Alloca      llvm.Value
+	ElementType llvm.Type
+}
+
 // LLVMCodeGenerator generates LLVM IR from Lotus AST
 type LLVMCodeGenerator struct {
 	context llvm.Context
@@ -26,9 +32,9 @@ type LLVMCodeGenerator struct {
 	currentFn llvm.Value
 
 	// Symbol tables
-	namedValues   map[string]llvm.Value // Local variables
-	globalStrings map[string]llvm.Value // String constants
-	functions     map[string]llvm.Value // Declared functions
+	namedValues   map[string]LLVMVariable // Local variables with type info
+	globalStrings map[string]llvm.Value   // String constants
+	functions     map[string]llvm.Value   // Declared functions
 
 	// Import context for stdlib
 	imports *ImportContext
@@ -47,7 +53,7 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 		context:       ctx,
 		module:        mod,
 		builder:       builder,
-		namedValues:   make(map[string]llvm.Value),
+		namedValues:   make(map[string]LLVMVariable),
 		globalStrings: make(map[string]llvm.Value),
 		functions:     make(map[string]llvm.Value),
 		imports:       NewImportContext(),
@@ -199,7 +205,7 @@ func (cg *LLVMCodeGenerator) generateFunction(fn *FunctionDefinition) error {
 	}
 
 	cg.currentFn = llvmFn
-	cg.namedValues = make(map[string]llvm.Value) // Fresh scope
+	cg.namedValues = make(map[string]LLVMVariable) // Fresh scope
 
 	// Create entry block
 	entry := llvm.AddBasicBlock(llvmFn, "entry")
@@ -207,9 +213,10 @@ func (cg *LLVMCodeGenerator) generateFunction(fn *FunctionDefinition) error {
 
 	// Allocate space for parameters and store them
 	for i, param := range fn.Parameters {
-		alloca := cg.builder.CreateAlloca(cg.tokenTypeToLLVM(param.Type), param.Name)
+		paramType := cg.tokenTypeToLLVM(param.Type)
+		alloca := cg.builder.CreateAlloca(paramType, param.Name)
 		cg.builder.CreateStore(llvmFn.Param(i), alloca)
-		cg.namedValues[param.Name] = alloca
+		cg.namedValues[param.Name] = LLVMVariable{Alloca: alloca, ElementType: paramType}
 	}
 
 	// Generate function body
@@ -246,7 +253,7 @@ func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
 		cg.builder.CreateStore(val, alloca)
 	}
 
-	cg.namedValues[v.Name] = alloca
+	cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: varType}
 	return nil
 }
 
@@ -282,11 +289,11 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 		return llvm.ConstInt(cg.context.Int1Type(), val, false), nil
 
 	case *Identifier:
-		alloca, ok := cg.namedValues[e.Name]
+		variable, ok := cg.namedValues[e.Name]
 		if !ok {
 			return llvm.Value{}, fmt.Errorf("undefined variable: %s", e.Name)
 		}
-		return cg.builder.CreateLoad(alloca.Type().ElementType(), alloca, e.Name), nil
+		return cg.builder.CreateLoad(variable.ElementType, variable.Alloca, e.Name), nil
 
 	case *BinaryOp:
 		return cg.generateBinaryExpr(e)
@@ -634,12 +641,12 @@ func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
 		return fmt.Errorf("assignment target must be an identifier, got %T", a.Target)
 	}
 
-	alloca, ok := cg.namedValues[id.Name]
+	variable, ok := cg.namedValues[id.Name]
 	if !ok {
 		return fmt.Errorf("undefined variable: %s", id.Name)
 	}
 
-	cg.builder.CreateStore(val, alloca)
+	cg.builder.CreateStore(val, variable.Alloca)
 	return nil
 }
 
@@ -783,9 +790,13 @@ func (cg *LLVMCodeGenerator) CompileToObject(targetTriple string, outputPath str
 
 // Dispose cleans up LLVM resources
 func (cg *LLVMCodeGenerator) Dispose() {
+	// Only dispose the builder - the module is owned by the context
+	// and disposing the context will clean up everything
 	cg.builder.Dispose()
-	cg.module.Dispose()
-	cg.context.Dispose()
+	// Note: Don't dispose module separately - it's owned by context
+	// cg.module.Dispose() // This can cause double-free
+	// Note: Don't dispose context in defer - causes issues with go-llvm
+	// The context will be cleaned up when the process exits
 }
 
 // Helper to write bytes to file
