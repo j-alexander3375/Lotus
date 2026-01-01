@@ -17,15 +17,15 @@ import (
 
 // FormatFlags represents printf format flags
 type FormatFlags struct {
-	LeftAlign  bool // '-' flag
-	ShowSign   bool // '+' flag
-	SpaceSign  bool // ' ' flag
-	AltForm    bool // '#' flag
-	ZeroPad    bool // '0' flag
-	Width      int  // minimum field width
-	Precision  int  // precision for floats/strings
-	HasWidth   bool
-	HasPrec    bool
+	LeftAlign bool // '-' flag
+	ShowSign  bool // '+' flag
+	SpaceSign bool // ' ' flag
+	AltForm   bool // '#' flag
+	ZeroPad   bool // '0' flag
+	Width     int  // minimum field width
+	Precision int  // precision for floats/strings
+	HasWidth  bool
+	HasPrec   bool
 }
 
 // ============================================================================

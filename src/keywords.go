@@ -45,6 +45,7 @@ const (
 	TokenTypeChar   // type keyword: char (Unicode character, 32-bit)
 	TokenTypeBool   // type keyword: bool
 	TokenTypeFloat  // type keyword: float
+	TokenTypeVoid   // type keyword: void (for functions with no return value)
 
 	// Built-in print functions
 	TokenPrintString
@@ -129,6 +130,12 @@ const (
 	TokenStatic // static (persistent storage, file-local scope)
 	TokenLocal  // lcl (explicitly local scope)
 	TokenGlobal // gbl (explicitly global scope)
+
+	// Functional programming
+	TokenPartial // partial (partial function application / currying)
+	TokenWrap    // wrap (wrapper/decorator definition)
+	TokenAt      // @ (decorator application)
+	TokenPipe2   // |> (pipe operator for function chaining)
 
 	// Memory management
 	TokenNew // new

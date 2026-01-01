@@ -116,6 +116,12 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 		return p.parseLocalDeclaration()
 	case TokenGlobal:
 		return p.parseGlobalDeclaration()
+	case TokenPartial:
+		return p.parsePartialApplication()
+	case TokenWrap:
+		return p.parseWrapperDefinition()
+	case TokenAt:
+		return p.parseDecoratedFunction()
 	case TokenUse:
 		return p.parseImportStatement()
 	case TokenRet:
@@ -515,7 +521,7 @@ func isTypeToken(t TokenType) bool {
 	switch t {
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
 		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
-		TokenTypeString, TokenTypeBool, TokenTypeFloat:
+		TokenTypeString, TokenTypeBool, TokenTypeFloat, TokenTypeVoid:
 		return true
 	default:
 		return false
@@ -556,7 +562,34 @@ func (p *Parser) parseFunctionCall() (*FunctionCall, error) {
 
 // parseExpression parses an expression with operator precedence
 func (p *Parser) parseExpression() (ASTNode, error) {
-	return p.parseLogicalOr()
+	return p.parsePipeExpression()
+}
+
+// parsePipeExpression handles |> pipe operator (lowest precedence)
+// value |> fn1 |> fn2 becomes fn2(fn1(value))
+func (p *Parser) parsePipeExpression() (ASTNode, error) {
+	left, err := p.parseLogicalOr()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.current().Type == TokenPipe2 {
+		p.advance() // skip |>
+
+		// Next must be a function name
+		if p.current().Type != TokenIdentifier {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected function name after '|>'")
+		}
+		funcName := p.current().Value
+		p.advance()
+
+		left = &PipeExpression{
+			Left:     left,
+			Function: funcName,
+		}
+	}
+
+	return left, nil
 }
 
 // parseLogicalOr handles || operator
@@ -910,6 +943,8 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 			return nil, err
 		}
 		return expr, nil
+	case TokenPartial:
+		return p.parsePartialApplication()
 	default:
 		return nil, p.formatErrorWithSuggestion(FormatUnexpectedToken(p.current().Type, p.current().Value, "in expression"), SuggestForTypo(p.current().Value))
 	}
@@ -1129,4 +1164,190 @@ func (p *Parser) parseGlobalDeclaration() (ASTNode, error) {
 	}
 	varDecl.Storage = StorageGlobal
 	return varDecl, nil
+}
+
+// parsePartialApplication parses a partial function application
+// Syntax: partial(fn_name, arg1, arg2, ...)(remaining_args)
+// Returns the result of calling the function with all arguments
+func (p *Parser) parsePartialApplication() (ASTNode, error) {
+	// 'partial' keyword
+	if err := p.expect(TokenPartial); err != nil {
+		return nil, err
+	}
+
+	// Expect '('
+	if err := p.expect(TokenLParen); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '(' after 'partial'")
+	}
+
+	// First argument must be a function name (identifier)
+	if p.current().Type != TokenIdentifier {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected function name as first argument to 'partial'")
+	}
+	funcName := p.current().Value
+	p.advance()
+
+	// Parse bound arguments
+	var boundArgs []ASTNode
+	for p.current().Type == TokenComma {
+		p.advance() // skip comma
+		arg, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		boundArgs = append(boundArgs, arg)
+	}
+
+	// Expect ')'
+	if err := p.expect(TokenRParen); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after partial arguments")
+	}
+
+	// Check if this is immediately called: partial(fn, args)(more_args)
+	if p.current().Type == TokenLParen {
+		p.advance() // skip '('
+
+		// Parse remaining arguments
+		var remainingArgs []ASTNode
+		for p.current().Type != TokenRParen {
+			arg, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			remainingArgs = append(remainingArgs, arg)
+			if p.current().Type == TokenComma {
+				p.advance()
+			}
+		}
+
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after call arguments")
+		}
+
+		// Combine bound args with remaining args and create a FunctionCall
+		allArgs := append(boundArgs, remainingArgs...)
+		return &FunctionCall{
+			Name: funcName,
+			Args: allArgs,
+		}, nil
+	}
+
+	// Return just the partial application (for storing in a variable later)
+	return &PartialApplication{
+		FunctionName: funcName,
+		BoundArgs:    boundArgs,
+	}, nil
+}
+
+// parseWrapperDefinition parses a wrapper/decorator definition
+// Syntax: wrap fn wrapper_name(fn wrapped) { ... }
+func (p *Parser) parseWrapperDefinition() (ASTNode, error) {
+	// 'wrap' keyword
+	if err := p.expect(TokenWrap); err != nil {
+		return nil, err
+	}
+
+	// 'fn' keyword
+	if err := p.expect(TokenFn); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'fn' after 'wrap'")
+	}
+
+	// Wrapper name
+	if p.current().Type != TokenIdentifier {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected wrapper name")
+	}
+	wrapperName := p.current().Value
+	p.advance()
+
+	// Expect '('
+	if err := p.expect(TokenLParen); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '(' after wrapper name")
+	}
+
+	// Expect 'fn' keyword for wrapped function parameter
+	if err := p.expect(TokenFn); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'fn' for wrapped function parameter")
+	}
+
+	// Wrapped function parameter name
+	if p.current().Type != TokenIdentifier {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected wrapped function parameter name")
+	}
+	wrappedArg := p.current().Value
+	p.advance()
+
+	// Expect ')'
+	if err := p.expect(TokenRParen); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after wrapper parameters")
+	}
+
+	// Parse body
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '{' for wrapper body")
+	}
+
+	var body []ASTNode
+	for p.current().Type != TokenRBrace && p.current().Type != TokenEOF {
+		// Skip newlines inside wrapper body
+		if p.current().Type == TokenNewline {
+			p.advance()
+			continue
+		}
+		stmt, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+		body = append(body, stmt)
+		// Skip optional semicolons
+		for p.current().Type == TokenSemi {
+			p.advance()
+		}
+	}
+
+	if err := p.expect(TokenRBrace); err != nil {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '}' after wrapper body")
+	}
+
+	return &WrapperDefinition{
+		Name:       wrapperName,
+		WrappedArg: wrappedArg,
+		Body:       body,
+	}, nil
+}
+
+// parseDecoratedFunction parses a decorated function
+// Syntax: @decorator1 @decorator2 fn name() { ... }
+func (p *Parser) parseDecoratedFunction() (ASTNode, error) {
+	var decorators []string
+
+	// Collect all decorators
+	for p.current().Type == TokenAt {
+		p.advance() // skip '@'
+
+		if p.current().Type != TokenIdentifier {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected decorator name after '@'")
+		}
+		decorators = append(decorators, p.current().Value)
+		p.advance()
+
+		// Skip newlines between decorators
+		for p.current().Type == TokenNewline {
+			p.advance()
+		}
+	}
+
+	// Now parse the function
+	if p.current().Type != TokenFn {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'fn' after decorators")
+	}
+
+	funcDef, err := p.parseFunctionDefinition()
+	if err != nil {
+		return nil, err
+	}
+
+	return &DecoratedFunction{
+		Decorators: decorators,
+		Function:   funcDef,
+	}, nil
 }

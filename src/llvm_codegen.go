@@ -42,6 +42,16 @@ type LLVMCodeGenerator struct {
 	vtables        map[string]llvm.Value // Class name -> vtable global
 	virtualMethods map[string]bool       // Set of virtual method names
 
+	// Type registries for LLVM
+	structTypes map[string]llvm.Type           // Struct name -> LLVM struct type
+	structDefs  map[string]*StructDefinition   // Struct name -> definition
+	enumDefs    map[string]*EnumDefinition     // Enum name -> definition
+	classDefs   map[string]*ClassDefinition    // Class name -> definition
+	classTypes  map[string]llvm.Type           // Class name -> LLVM struct type
+
+	// Partial applications (currying)
+	partialApplications map[string]*PartialApplication // Function name -> partial info
+
 	// Import context for stdlib
 	imports *ImportContext
 
@@ -56,18 +66,24 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 	builder := ctx.NewBuilder()
 
 	cg := &LLVMCodeGenerator{
-		context:        ctx,
-		module:         mod,
-		builder:        builder,
-		namedValues:    make(map[string]LLVMVariable),
-		globalStrings:  make(map[string]llvm.Value),
-		functions:      make(map[string]llvm.Value),
-		globalVars:     make(map[string]llvm.Value),
-		staticVars:     make(map[string]llvm.Value),
-		vtables:        make(map[string]llvm.Value),
-		virtualMethods: make(map[string]bool),
-		imports:        NewImportContext(),
-		stringCounter:  0,
+		context:             ctx,
+		module:              mod,
+		builder:             builder,
+		namedValues:         make(map[string]LLVMVariable),
+		globalStrings:       make(map[string]llvm.Value),
+		functions:           make(map[string]llvm.Value),
+		globalVars:          make(map[string]llvm.Value),
+		staticVars:          make(map[string]llvm.Value),
+		vtables:             make(map[string]llvm.Value),
+		virtualMethods:      make(map[string]bool),
+		structTypes:         make(map[string]llvm.Type),
+		structDefs:          make(map[string]*StructDefinition),
+		enumDefs:            make(map[string]*EnumDefinition),
+		classDefs:           make(map[string]*ClassDefinition),
+		classTypes:          make(map[string]llvm.Type),
+		imports:             NewImportContext(),
+		partialApplications: make(map[string]*PartialApplication),
+		stringCounter:       0,
 	}
 
 	// Declare external C library functions
@@ -215,6 +231,9 @@ func (cg *LLVMCodeGenerator) tryGetConstantValue(expr ASTNode, targetType llvm.T
 		return llvm.ConstInt(targetType, 0, false)
 	case *FloatLiteral:
 		return llvm.ConstFloat(targetType, float64(e.Value)/1000.0)
+	case *StringLiteral:
+		// Create a global string constant using the builder-free method
+		return cg.createGlobalStringConstant(e.Value)
 	default:
 		return llvm.Value{} // Not a constant
 	}
@@ -264,6 +283,8 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 		return cg.generateFunction(s)
 	case *VariableDeclaration:
 		return cg.generateVarDecl(s)
+	case *ConstantDeclaration:
+		return cg.generateConstDecl(s)
 	case *ReturnStatement:
 		return cg.generateReturn(s)
 	case *FunctionCall:
@@ -279,6 +300,27 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 		return cg.generateAssignment(s)
 	case *ImportStatement:
 		return cg.handleImport(s)
+	case *WrapperDefinition:
+		return cg.generateWrapper(s)
+	case *DecoratedFunction:
+		return cg.generateDecoratedFunction(s)
+	case *PartialApplication:
+		_, err := cg.generatePartialApplication(s)
+		return err
+	case *CompoundAssignment:
+		return cg.generateCompoundAssignment(s)
+	case *IncrementOp:
+		return cg.generateIncrementOp(s)
+	case *StructDefinition:
+		return cg.generateStructDef(s)
+	case *EnumDefinition:
+		return cg.generateEnumDef(s)
+	case *ClassDefinition:
+		return cg.generateClassDef(s)
+	case *ArrayDeclaration:
+		return cg.generateArrayDecl(s)
+	case *FreeCall:
+		return cg.generateFreeStmt(s)
 	default:
 		return fmt.Errorf("unsupported statement type: %T", stmt)
 	}
@@ -316,10 +358,11 @@ func (cg *LLVMCodeGenerator) generateFunction(fn *FunctionDefinition) error {
 	// Add implicit return if needed
 	lastBlock := cg.builder.GetInsertBlock()
 	if lastBlock.LastInstruction().IsNil() || lastBlock.LastInstruction().InstructionOpcode() != llvm.Ret {
-		retType := llvmFn.Type().ElementType().ReturnType()
-		if retType.TypeKind() == llvm.VoidTypeKind {
+		// Use the function definition's return type instead of querying LLVM
+		if fn.ReturnType == TokenTypeVoid || fn.ReturnType == TokenRet || fn.ReturnType == TokenReturn {
 			cg.builder.CreateRetVoid()
 		} else {
+			retType := cg.tokenTypeToLLVM(fn.ReturnType)
 			cg.builder.CreateRet(llvm.ConstNull(retType))
 		}
 	}
@@ -344,6 +387,32 @@ func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
 	default:
 		return cg.generateLocalVar(v, varType)
 	}
+}
+
+// generateConstDecl generates a constant declaration
+// Constants are implemented as global variables with constant initializers
+func (cg *LLVMCodeGenerator) generateConstDecl(c *ConstantDeclaration) error {
+	constType := cg.tokenTypeToLLVM(c.Type)
+
+	// Create a global constant
+	global := llvm.AddGlobal(cg.module, constType, c.Name)
+	global.SetLinkage(llvm.InternalLinkage)
+	global.SetGlobalConstant(true)
+
+	// Get the constant value
+	if c.Value != nil {
+		constVal := cg.tryGetConstantValue(c.Value, constType)
+		if constVal.IsNil() {
+			return fmt.Errorf("constant %s must have a compile-time constant value", c.Name)
+		}
+		global.SetInitializer(constVal)
+	} else {
+		return fmt.Errorf("constant %s must have a value", c.Name)
+	}
+
+	// Store in global vars map so it can be accessed
+	cg.globalVars[c.Name] = global
+	return nil
 }
 
 // generateLocalVar generates a stack-allocated local variable
@@ -504,6 +573,25 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 		}
 		return llvm.ConstInt(cg.context.Int1Type(), val, false), nil
 
+	case *FloatLiteral:
+		// FloatLiteral stores value as int64 * 1000 for precision
+		return llvm.ConstFloat(cg.context.DoubleType(), float64(e.Value)/1000.0), nil
+
+	case *CharLiteral:
+		// CharLiteral stores a single Unicode character as string
+		charVal := uint64(0)
+		if len(e.Value) > 0 {
+			runes := []rune(e.Value)
+			charVal = uint64(runes[0])
+		}
+		return llvm.ConstInt(cg.context.Int32Type(), charVal, false), nil
+
+	case *NullLiteral:
+		return llvm.ConstNull(llvm.PointerType(cg.context.Int8Type(), 0)), nil
+
+	case *TernaryOp:
+		return cg.generateTernary(e)
+
 	case *Identifier:
 		// First check local variables
 		variable, ok := cg.namedValues[e.Name]
@@ -534,6 +622,48 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 
 	case *FunctionCall:
 		return cg.generateCall(e)
+
+	case *PartialApplication:
+		return cg.generatePartialApplication(e)
+
+	case *PipeExpression:
+		return cg.generatePipeExpression(e)
+
+	case *pipeValueWrapper:
+		return e.value, nil
+
+	case *ArrayAccess:
+		return cg.generateArrayAccess(e)
+
+	case *ArrayLiteral:
+		return cg.generateArrayLiteral(e)
+
+	case *FieldAccess:
+		return cg.generateFieldAccess(e)
+
+	case *StructLiteral:
+		return cg.generateStructLiteral(e)
+
+	case *EnumLiteral:
+		return cg.generateEnumLiteral(e)
+
+	case *ClassLiteral:
+		return cg.generateClassLiteral(e)
+
+	case *MethodCall:
+		return cg.generateMethodCall(e)
+
+	case *Reference:
+		return cg.generateReference(e)
+
+	case *Dereference:
+		return cg.generateDereference(e)
+
+	case *SizeofExpr:
+		return cg.generateSizeof(e)
+
+	case *MallocCall:
+		return cg.generateMallocExpr(e)
 
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported expression type: %T", expr)
@@ -703,6 +833,18 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateMax(call)
 	case "sqrt":
 		return cg.generateSqrt(call)
+	case "pow":
+		return cg.generatePow(call)
+
+	// Number conversion functions
+	case "toUint32":
+		return cg.generateToUint32(call)
+	case "toBool":
+		return cg.generateToBool(call)
+	case "toInt":
+		return cg.generateToInt(call)
+	case "toFloat":
+		return cg.generateToFloat(call)
 
 	// String stdlib functions
 	case "len":
@@ -711,6 +853,28 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateConcat(call)
 	case "contains":
 		return cg.generateContains(call)
+	case "copy":
+		return cg.generateStrCopy(call)
+	case "compare":
+		return cg.generateStrCompare(call)
+	case "indexOf":
+		return cg.generateIndexOf(call)
+	case "substring":
+		return cg.generateSubstring(call)
+	case "toUpper":
+		return cg.generateToUpper(call)
+	case "toLower":
+		return cg.generateToLower(call)
+	case "trim":
+		return cg.generateTrim(call)
+	case "split":
+		return cg.generateSplit(call)
+	case "replace":
+		return cg.generateReplace(call)
+	case "startsWith":
+		return cg.generateStartsWith(call)
+	case "endsWith":
+		return cg.generateEndsWith(call)
 
 	// Memory stdlib functions
 	case "malloc":
@@ -861,6 +1025,28 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generatePadLeft(call)
 	case "pad_right":
 		return cg.generatePadRight(call)
+
+	// Random functions
+	case "rand":
+		return cg.generateRand(call)
+	case "rand_range":
+		return cg.generateRandRange(call)
+	case "seed":
+		return cg.generateSeed(call)
+	case "rand_float":
+		return cg.generateRandFloat(call)
+	case "rand_bool":
+		return cg.generateRandBool(call)
+	case "rand_bytes":
+		return cg.generateRandBytes(call)
+	case "shuffle":
+		return cg.generateShuffle(call)
+	case "choice":
+		return cg.generateChoice(call)
+	case "rand_n":
+		return cg.generateRandN(call)
+	case "rand_string":
+		return cg.generateRandString(call)
 	}
 
 	// Look up the function
@@ -879,7 +1065,13 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		args[i] = val
 	}
 
-	return cg.builder.CreateCall(fn.GlobalValueType(), fn, args, "calltmp"), nil
+	// Check if function returns void - void calls cannot have names
+	fnType := fn.GlobalValueType()
+	retType := fnType.ReturnType()
+	if retType.TypeKind() == llvm.VoidTypeKind {
+		return cg.builder.CreateCall(fnType, fn, args, ""), nil
+	}
+	return cg.builder.CreateCall(fnType, fn, args, "calltmp"), nil
 }
 
 // generatePrint generates a print/println call
@@ -1096,6 +1288,34 @@ func (cg *LLVMCodeGenerator) createGlobalString(s string) llvm.Value {
 	return globalStr
 }
 
+// createGlobalStringConstant creates a global string constant without using the builder
+// This is safe to call at module level (outside any function)
+func (cg *LLVMCodeGenerator) createGlobalStringConstant(s string) llvm.Value {
+	if val, ok := cg.globalStrings[s]; ok {
+		return val
+	}
+
+	name := fmt.Sprintf(".str.%d", cg.stringCounter)
+	cg.stringCounter++
+
+	// Create the string data as a constant
+	strData := llvm.ConstString(s, true) // true = null terminate
+
+	// Create global for the string data
+	strGlobal := llvm.AddGlobal(cg.module, strData.Type(), name)
+	strGlobal.SetInitializer(strData)
+	strGlobal.SetLinkage(llvm.PrivateLinkage)
+	strGlobal.SetGlobalConstant(true)
+
+	// Get pointer to the string (GEP to first element)
+	zero := llvm.ConstInt(cg.context.Int32Type(), 0, false)
+	indices := []llvm.Value{zero, zero}
+	ptr := llvm.ConstGEP(strData.Type(), strGlobal, indices)
+
+	cg.globalStrings[s] = ptr
+	return ptr
+}
+
 // toLLVMType converts a Lotus type string to LLVM type
 func (cg *LLVMCodeGenerator) toLLVMType(typeStr string) llvm.Type {
 	switch typeStr {
@@ -1150,7 +1370,7 @@ func (cg *LLVMCodeGenerator) tokenTypeToLLVM(tokenType TokenType) llvm.Type {
 		return llvm.PointerType(cg.context.Int8Type(), 0)
 	case TokenTypeChar:
 		return cg.context.Int32Type() // Unicode code point (32-bit)
-	case TokenRet, TokenReturn:
+	case TokenTypeVoid, TokenRet, TokenReturn:
 		return cg.context.VoidType() // void return type
 	default:
 		// Default to i64 for unknown types (matches int behavior)
@@ -1214,6 +1434,244 @@ func (cg *LLVMCodeGenerator) CompileToObject(targetTriple string, outputPath str
 	// Write to file
 	return writeFile(outputPath, mb.Bytes())
 }
+
+// ============================================================================
+// CURRYING AND WRAPPERS
+// ============================================================================
+
+// wrapperDefs stores wrapper definitions for later application
+var wrapperDefs = make(map[string]*WrapperDefinition)
+
+// generateWrapper generates code for a wrapper definition
+// wrap fn timing(fn wrapped) { ... }
+func (cg *LLVMCodeGenerator) generateWrapper(w *WrapperDefinition) error {
+	// Store the wrapper definition for later use when decorators are applied
+	wrapperDefs[w.Name] = w
+	return nil
+}
+
+// generateDecoratedFunction generates a function with decorators applied
+// @timing @logging fn foo() { ... }
+// This creates: foo() -> timing's body -> logging's body -> __wrapped_foo()
+func (cg *LLVMCodeGenerator) generateDecoratedFunction(d *DecoratedFunction) error {
+	// First, generate the underlying function with a modified name
+	originalName := d.Function.Name
+	wrappedName := "__wrapped_" + originalName
+
+	// Create a copy of the function with the wrapped name
+	wrappedFn := &FunctionDefinition{
+		BaseNode:   d.Function.BaseNode,
+		Name:       wrappedName,
+		ReturnType: d.Function.ReturnType,
+		Parameters: d.Function.Parameters,
+		Body:       d.Function.Body,
+		IsVirtual:  d.Function.IsVirtual,
+		IsOverride: d.Function.IsOverride,
+		IsStatic:   d.Function.IsStatic,
+		Storage:    d.Function.Storage,
+	}
+
+	// Declare and generate the wrapped function
+	cg.declareFunction(wrappedFn)
+	if err := cg.generateFunction(wrappedFn); err != nil {
+		return err
+	}
+
+	// Build the decorator chain from inside out
+	// @timing @logging fn foo() means: foo calls timing's body, which calls logging's body, which calls __wrapped_foo
+	// We create intermediate functions for each decorator level
+	
+	currentCallTarget := wrappedName
+	
+	// Process decorators from innermost to outermost
+	// For @timing @logging fn foo():
+	// - First create __logging_foo which applies logging and calls __wrapped_foo
+	// - Then create foo which applies timing and calls __logging_foo
+	for i := len(d.Decorators) - 1; i >= 0; i-- {
+		decoratorName := d.Decorators[i]
+		wrapperDef, ok := wrapperDefs[decoratorName]
+		if !ok {
+			return fmt.Errorf("undefined wrapper: %s", decoratorName)
+		}
+
+		// Determine the name for this level of wrapping
+		var thisLevelName string
+		if i == 0 {
+			// Outermost decorator - use the original function name
+			thisLevelName = originalName
+		} else {
+			// Intermediate level - create a helper function
+			thisLevelName = fmt.Sprintf("__%s_%s", decoratorName, originalName)
+		}
+
+		// Create a function definition for this level
+		levelFn := &FunctionDefinition{
+			BaseNode:   d.Function.BaseNode,
+			Name:       thisLevelName,
+			ReturnType: d.Function.ReturnType,
+			Parameters: d.Function.Parameters,
+		}
+
+		// Declare the function
+		cg.declareFunction(levelFn)
+
+		llvmFn, ok := cg.functions[thisLevelName]
+		if !ok {
+			return fmt.Errorf("function %s not declared", thisLevelName)
+		}
+
+		cg.currentFn = llvmFn
+		cg.namedValues = make(map[string]LLVMVariable)
+
+		// Create entry block
+		entry := llvm.AddBasicBlock(llvmFn, "entry")
+		cg.builder.SetInsertPointAtEnd(entry)
+
+		// Allocate space for parameters
+		for j, param := range d.Function.Parameters {
+			paramType := cg.tokenTypeToLLVM(param.Type)
+			alloca := cg.builder.CreateAlloca(paramType, param.Name)
+			cg.builder.CreateStore(llvmFn.Param(j), alloca)
+			cg.namedValues[param.Name] = LLVMVariable{
+				Alloca:      alloca,
+				ElementType: paramType,
+			}
+		}
+
+		// Generate the wrapper body, replacing wrapped() calls with currentCallTarget
+		for _, stmt := range wrapperDef.Body {
+			if err := cg.generateDecoratorStatement(stmt, currentCallTarget, wrapperDef.WrappedArg); err != nil {
+				return err
+			}
+		}
+
+		// Add return if needed
+		if d.Function.ReturnType == TokenTypeVoid {
+			cg.builder.CreateRetVoid()
+		} else {
+			retType := cg.tokenTypeToLLVM(d.Function.ReturnType)
+			cg.builder.CreateRet(llvm.ConstNull(retType))
+		}
+
+		// Update current call target for next decorator level
+		currentCallTarget = thisLevelName
+	}
+
+	return nil
+}
+
+// generateDecoratorStatement generates a statement from a wrapper body,
+// replacing calls to the wrapped function parameter with the actual wrapped function
+func (cg *LLVMCodeGenerator) generateDecoratorStatement(stmt ASTNode, wrappedFnName string, wrappedArgName string) error {
+	switch s := stmt.(type) {
+	case *FunctionCall:
+		// Check if this is calling the wrapped function
+		if s.Name == wrappedArgName {
+			// Call the actual wrapped function instead
+			fn, ok := cg.functions[wrappedFnName]
+			if !ok {
+				return fmt.Errorf("undefined function: %s", wrappedFnName)
+			}
+			fnType := fn.GlobalValueType()
+			retType := fnType.ReturnType()
+			if retType.TypeKind() == llvm.VoidTypeKind {
+				cg.builder.CreateCall(fnType, fn, []llvm.Value{}, "")
+			} else {
+				cg.builder.CreateCall(fnType, fn, []llvm.Value{}, "wrappedcall")
+			}
+			return nil
+		}
+		// Regular function call
+		_, err := cg.generateCall(s)
+		return err
+	default:
+		// For other statements, use normal generation
+		return cg.generateStatement(stmt)
+	}
+}
+
+// generatePartialApplication generates code for partial function application
+// partial(fn_name, arg1, arg2, ...) creates a closure
+func (cg *LLVMCodeGenerator) generatePartialApplication(p *PartialApplication) (llvm.Value, error) {
+	// For a simple implementation, we store bound args in a heap-allocated struct
+	// and return a pointer to it. When called, it retrieves the args.
+
+	// This is a simplified implementation that works for common cases:
+	// We create a small struct containing:
+	// - Function pointer (as i64)
+	// - Number of bound args
+	// - Bound arg values
+
+	// Allocate closure struct: [fn_ptr:8][num_bound:8][arg0:8][arg1:8]...
+	numBound := len(p.BoundArgs)
+	structSize := llvm.ConstInt(cg.context.Int64Type(), uint64(16+numBound*8), false)
+
+	malloc := cg.functions["malloc"]
+	closurePtr := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{structSize}, "closurealloc")
+	closureInt := cg.builder.CreatePtrToInt(closurePtr, cg.context.Int64Type(), "closureint")
+
+	// Store function pointer (as identifier for now)
+	// We'll use a hash of the function name as the identifier
+	fnHash := uint64(0)
+	for _, c := range p.FunctionName {
+		fnHash = fnHash*31 + uint64(c)
+	}
+	fnPtrConst := llvm.ConstInt(cg.context.Int64Type(), fnHash, false)
+	fnPtrAddr := cg.builder.CreateIntToPtr(closureInt, llvm.PointerType(cg.context.Int64Type(), 0), "fnptraddr")
+	cg.builder.CreateStore(fnPtrConst, fnPtrAddr)
+
+	// Store number of bound args
+	eight := llvm.ConstInt(cg.context.Int64Type(), 8, false)
+	numBoundOffset := cg.builder.CreateAdd(closureInt, eight, "numboundoffset")
+	numBoundPtr := cg.builder.CreateIntToPtr(numBoundOffset, llvm.PointerType(cg.context.Int64Type(), 0), "numboundptr")
+	numBoundVal := llvm.ConstInt(cg.context.Int64Type(), uint64(numBound), false)
+	cg.builder.CreateStore(numBoundVal, numBoundPtr)
+
+	// Store bound arguments
+	for i, arg := range p.BoundArgs {
+		argVal, err := cg.generateExpression(arg)
+		if err != nil {
+			return llvm.Value{}, err
+		}
+
+		offset := llvm.ConstInt(cg.context.Int64Type(), uint64(16+i*8), false)
+		argOffset := cg.builder.CreateAdd(closureInt, offset, fmt.Sprintf("arg%doffset", i))
+		argPtr := cg.builder.CreateIntToPtr(argOffset, llvm.PointerType(cg.context.Int64Type(), 0), fmt.Sprintf("arg%dptr", i))
+		cg.builder.CreateStore(argVal, argPtr)
+	}
+
+	// Register this partial for later lookup when it's called
+	// Store the mapping: closureInt -> (functionName, boundArgs)
+	cg.partialApplications[p.FunctionName] = p
+
+	return closureInt, nil
+}
+
+// generatePipeExpression generates code for the pipe operator
+// value |> fn becomes fn(value)
+func (cg *LLVMCodeGenerator) generatePipeExpression(p *PipeExpression) (llvm.Value, error) {
+	// Evaluate the left side
+	leftVal, err := cg.generateExpression(p.Left)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Create a function call with the left value as the first argument
+	call := &FunctionCall{
+		Name: p.Function,
+		Args: []ASTNode{&pipeValueWrapper{value: leftVal}},
+	}
+
+	return cg.generateCall(call)
+}
+
+// pipeValueWrapper wraps an already-computed LLVM value to be used as a function argument
+type pipeValueWrapper struct {
+	BaseNode
+	value llvm.Value
+}
+
+func (p *pipeValueWrapper) astNode() {}
 
 // Dispose cleans up LLVM resources
 func (cg *LLVMCodeGenerator) Dispose() {

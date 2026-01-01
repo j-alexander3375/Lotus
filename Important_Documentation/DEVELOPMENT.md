@@ -1,6 +1,85 @@
 # Lotus Compiler - Development Summary
 
-## Latest Phase: LLVM Backend Integration ✅
+## Latest Phase: Functional Programming Features ✅
+
+### Current Accomplishments (January 2026 - Phase 9)
+
+1. **Pipe Operator (`|>`)**
+   - Chain function calls: `value |> fn1 |> fn2` becomes `fn2(fn1(value))`
+   - New token `TokenPipe2` for `|>` operator
+   - `PipeExpression` AST node for pipe chains
+   - Parser support for lowest-precedence pipe operator
+   - LLVM code generation for pipe expressions
+
+2. **Wrappers/Decorators (`wrap fn` and `@`)**
+   - Define wrappers: `wrap fn timing(fn wrapped) { ... }`
+   - Apply decorators: `@timing @logging fn void greet() { ... }`
+   - New tokens: `TokenWrap`, `TokenAt`
+   - `WrapperDefinition` and `DecoratedFunction` AST nodes
+   - Multiple decorator stacking with correct call order
+   - LLVM code generation creates wrapper chain functions
+
+3. **Currying (`partial`)**
+   - Partial function application: `partial(add, 5)(3)` = `add(5, 3)`
+   - New token `TokenPartial`
+   - `PartialApplication` AST node
+   - LLVM code generation with closure struct allocation
+
+4. **Void Return Type**
+   - `fn void foo()` for functions with no return value
+   - New token `TokenTypeVoid`
+   - Proper void handling in LLVM code generation
+
+5. **Random Module**
+   - `rand()` - Random int64
+   - `rand_range(min, max)` - Random int in [min, max]
+   - `rand_n(n)` - Random int in [0, n)
+   - `seed(n)` - Set PRNG seed
+   - `rand_float()` - Random float [0.0, 1.0)
+   - `rand_bool()` - Random boolean
+   - `rand_bytes(buf, len)` - Fill buffer with random bytes
+   - `shuffle(arr, len)` - Fisher-Yates shuffle
+   - `choice(arr, len)` - Random element from array
+   - `rand_string(buf, len)` - Random alphanumeric string
+   - Uses xorshift64 PRNG for fast, high-quality randomness
+
+6. **Extended String Functions**
+   - `copy(str)` - Create copy of string
+   - `compare(s1, s2)` - strcmp wrapper
+   - `indexOf(haystack, needle)` - Find substring position
+   - `substring(str, start, len)` - Extract substring
+   - `toUpper(str)` - Convert to uppercase
+   - `toLower(str)` - Convert to lowercase
+   - `trim(str)` - Remove leading/trailing whitespace
+   - `startsWith(str, prefix)` - Check prefix
+   - `endsWith(str, suffix)` - Check suffix
+   - `split(str, delim)` - Split string (first token)
+   - `replace(str, old, new)` - Replace first occurrence
+
+7. **Type Conversion Functions**
+   - `toUint32(val)` - Convert to uint32
+   - `toBool(val)` - Convert to boolean
+   - `toInt(val)` - Convert float to int
+   - `toFloat(val)` - Convert int to float
+
+8. **LLVM Advanced Features** (`llvm_advanced.go`)
+   - Ternary operator: `cond ? then : else`
+   - Compound assignment: `+=`, `-=`, `*=`, `/=`, `%=`
+   - Increment/decrement: `++`, `--`
+   - Array declarations and access
+   - Struct definitions and field access
+   - Enum definitions and enum literals
+   - Class definitions with methods
+   - Pointer operations: reference (`&`), dereference (`*`)
+   - `sizeof` expression
+   - `malloc`/`free` integration
+
+9. **Math Module Addition**
+   - `pow(base, exp)` - Power function using LLVM intrinsic
+
+---
+
+## Previous Phase: LLVM Backend Integration ✅
 
 ### Current Accomplishments (December 2025 - Phase 8)
 

@@ -37,6 +37,7 @@ var StandardLibrary = map[string]*StdlibModule{
 	"http":        createHTTPModule(),
 	"file":        createFileModule(),
 	"time":        createTimeModule(),
+	"random":      createRandomModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -534,6 +535,26 @@ func createTimeModule() *StdlibModule {
 			"clock":     {Name: "clock", Module: "time", NumArgs: 0, CodeGen: generateTimeClock},         // clock() -> clock_ticks
 			"gmtime":    {Name: "gmtime", Module: "time", NumArgs: 2, CodeGen: generateTimeGMTime},       // gmtime(timestamp, tm_buf) -> void
 			"localtime": {Name: "localtime", Module: "time", NumArgs: 2, CodeGen: generateTimeLocalTime}, // localtime(timestamp, tm_buf) -> void
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createRandomModule creates the random number generation module
+func createRandomModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "random",
+		Functions: map[string]*StdlibFunction{
+			"rand":        {Name: "rand", Module: "random", NumArgs: 0, CodeGen: generateRandomRand},              // rand() -> random int
+			"rand_range":  {Name: "rand_range", Module: "random", NumArgs: 2, CodeGen: generateRandomRandRange},   // rand_range(min, max) -> random int in [min, max]
+			"seed":        {Name: "seed", Module: "random", NumArgs: 1, CodeGen: generateRandomSeed},              // seed(n) -> void
+			"rand_float":  {Name: "rand_float", Module: "random", NumArgs: 0, CodeGen: generateRandomRandFloat},   // rand_float() -> random float [0.0, 1.0)
+			"rand_bool":   {Name: "rand_bool", Module: "random", NumArgs: 0, CodeGen: generateRandomRandBool},     // rand_bool() -> random boolean
+			"rand_bytes":  {Name: "rand_bytes", Module: "random", NumArgs: 2, CodeGen: generateRandomRandBytes},   // rand_bytes(buf, len) -> fills buffer with random bytes
+			"shuffle":     {Name: "shuffle", Module: "random", NumArgs: 2, CodeGen: generateRandomShuffle},        // shuffle(arr, len) -> shuffles array in place
+			"choice":      {Name: "choice", Module: "random", NumArgs: 2, CodeGen: generateRandomChoice},          // choice(arr, len) -> random element from array
+			"rand_n":      {Name: "rand_n", Module: "random", NumArgs: 1, CodeGen: generateRandomRandN},           // rand_n(n) -> random int in [0, n)
+			"rand_string": {Name: "rand_string", Module: "random", NumArgs: 2, CodeGen: generateRandomRandString}, // rand_string(buf, len) -> random alphanumeric string
 		},
 		Types: map[string]TokenType{},
 	}
@@ -7597,4 +7618,64 @@ func generateTimeLocalTime(cg *CodeGenerator, args []ASTNode) {
 	// For now, localtime is the same as gmtime (UTC)
 	// Full implementation would need timezone support
 	generateTimeGMTime(cg, args)
+}
+
+// ============================================================================
+// RANDOM MODULE - Code Generation Stubs (legacy GCC backend)
+// ============================================================================
+
+// generateRandomRand() -> random int
+func generateRandomRand(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRandomRandRange(min, max) -> random int in [min, max]
+func generateRandomRandRange(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_range() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRandomSeed(n) -> void
+func generateRandomSeed(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # seed() - stub\n")
+}
+
+// generateRandomRandFloat() -> random float [0.0, 1.0)
+func generateRandomRandFloat(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_float() - stub\n")
+	cg.textSection.WriteString("    xorpd %xmm0, %xmm0\n")
+}
+
+// generateRandomRandBool() -> random boolean
+func generateRandomRandBool(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_bool() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRandomRandBytes(buf, len) -> fills buffer with random bytes
+func generateRandomRandBytes(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_bytes() - stub\n")
+}
+
+// generateRandomShuffle(arr, len) -> shuffles array in place
+func generateRandomShuffle(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # shuffle() - stub\n")
+}
+
+// generateRandomChoice(arr, len) -> random element from array
+func generateRandomChoice(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # choice() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRandomRandN(n) -> random int in [0, n)
+func generateRandomRandN(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_n() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRandomRandString(buf, len) -> random alphanumeric string
+func generateRandomRandString(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # rand_string() - stub\n")
 }

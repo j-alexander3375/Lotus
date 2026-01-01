@@ -163,3 +163,44 @@ type FunctionCall struct {
 }
 
 func (f *FunctionCall) astNode() {}
+
+// PartialApplication represents partial function application (currying)
+// partial(fn_name, arg1, arg2, ...) returns a closure capturing the provided args
+type PartialApplication struct {
+	BaseNode
+	FunctionName string    // The function to partially apply
+	BoundArgs    []ASTNode // Arguments already bound
+}
+
+func (p *PartialApplication) astNode() {}
+
+// WrapperDefinition defines a wrapper/decorator function
+// wrap fn timing(fn wrapped) { ... before ...; wrapped(); ... after ... }
+type WrapperDefinition struct {
+	BaseNode
+	Name       string              // Wrapper name (e.g., "timing")
+	WrappedArg string              // Name of the wrapped function parameter
+	Body       []ASTNode           // Wrapper body
+}
+
+func (w *WrapperDefinition) astNode() {}
+
+// DecoratedFunction represents a function with one or more decorators
+// @timing @logging fn foo() { ... }
+type DecoratedFunction struct {
+	BaseNode
+	Decorators []string           // List of decorator names to apply
+	Function   *FunctionDefinition // The wrapped function
+}
+
+func (d *DecoratedFunction) astNode() {}
+
+// PipeExpression represents the pipe operator for function chaining
+// value |> fn1 |> fn2 becomes fn2(fn1(value))
+type PipeExpression struct {
+	BaseNode
+	Left     ASTNode // The value being piped
+	Function string  // The function to pipe into
+}
+
+func (p *PipeExpression) astNode() {}

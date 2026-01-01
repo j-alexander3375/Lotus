@@ -31,6 +31,8 @@
 - **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
 - **Structs, enums, classes** - snake_case identifiers with full OOP support
 - **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
+- **Functional programming** - Pipe operator (`|>`), wrappers/decorators (`@`), currying (`partial`)
+- **Void return type** - `fn void foo()` for functions with no return value
 
 ### Compiler Features
 - **LLVM backend** (default) - Cross-platform: x86, ARM, RISC-V, WebAssembly
@@ -43,9 +45,10 @@
 - **io** - printf, println, file operations
 - **mem** - malloc, free, sizeof, memcpy
 - **math** - abs, min, max, sqrt, pow, gcd, lcm
-- **str** - len, concat, compare, indexOf, contains
+- **str** - len, concat, compare, indexOf, contains, toUpper, toLower, trim, split, replace
 - **json** - parse, stringify, get, array operations
 - **format** - sprintf, snprintf, pad_left, pad_right
+- **random** - rand, rand_range, seed, rand_float, rand_bool, shuffle, choice
 
 ## Quick Start
 
@@ -204,6 +207,37 @@ fn int risky_operation() {
 }
 ```
 
+### Functional Programming
+
+```lotus
+// Pipe operator - chain function calls
+int result = 5 |> double |> addOne;  // Becomes addOne(double(5))
+
+// Wrappers (decorators) - wrap functions with common behavior
+wrap fn logging(fn wrapped) {
+    printf("[LOG] Entering function\n");
+    wrapped();
+    printf("[LOG] Exiting function\n");
+}
+
+// Apply wrapper to a function
+@logging
+fn void greet() {
+    printf("Hello, World!\n");
+}
+
+// Currying with partial application
+fn int add(int a, int b) {
+    ret a + b;
+}
+
+fn int main() {
+    // Call partially applied function
+    int result = partial(add, 5)(3);  // 8
+    ret 0;
+}
+```
+
 ## Standard Library
 
 ### io Module
@@ -243,6 +277,22 @@ use "str";
 int length = len("Hello");           // 5
 bool has = contains("Hello", "ell"); // true
 int pos = indexOf("Hello", "l");     // 2
+string upper = toUpper("hello");     // "HELLO"
+string lower = toLower("WORLD");     // "world"
+string trimmed = trim("  hi  ");     // "hi"
+```
+
+### random Module
+```lotus
+use "random";
+
+seed(12345);                         // Set random seed
+int r = rand();                      // Random int
+int n = rand_range(1, 100);          // Random int in [1, 100]
+int m = rand_n(10);                  // Random int in [0, 10)
+bool b = rand_bool();                // Random boolean
+shuffle(arr, 10);                    // Shuffle array in place
+int pick = choice(arr, 10);          // Random element from array
 ```
 
 ## Compiler Options

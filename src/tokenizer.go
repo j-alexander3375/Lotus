@@ -188,6 +188,8 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenTypeBool, ""))
 			case "float":
 				tokens = append(tokens, makeToken(TokenTypeFloat, ""))
+			case "void":
+				tokens = append(tokens, makeToken(TokenTypeVoid, ""))
 			case "struct":
 				tokens = append(tokens, makeToken(TokenStruct, ""))
 			case "enum":
@@ -216,6 +218,10 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenLocal, ""))
 			case "gbl":
 				tokens = append(tokens, makeToken(TokenGlobal, ""))
+			case "partial":
+				tokens = append(tokens, makeToken(TokenPartial, ""))
+			case "wrap":
+				tokens = append(tokens, makeToken(TokenWrap, ""))
 			case "use":
 				tokens = append(tokens, makeToken(TokenUse, ""))
 			case "as":
@@ -404,10 +410,15 @@ func Tokenize(input string) []Token {
 			tokens = append(tokens, makeToken(TokenRBrace, ""))
 		} else if c == ',' {
 			tokens = append(tokens, makeToken(TokenComma, ""))
+		} else if c == '@' {
+			tokens = append(tokens, makeToken(TokenAt, ""))
 		} else if c == '|' {
-			// Check for ||
+			// Check for || or |>
 			if i+1 < len(runes) && runes[i+1] == '|' {
 				tokens = append(tokens, makeToken(TokenOr, ""))
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '>' {
+				tokens = append(tokens, makeToken(TokenPipe2, ""))
 				i++
 			} else {
 				tokens = append(tokens, makeToken(TokenPipe, ""))
@@ -608,6 +619,14 @@ func TokenValue(t Token) string {
 		return "for"
 	case TokenFn:
 		return "fn"
+	case TokenPartial:
+		return "partial"
+	case TokenWrap:
+		return "wrap"
+	case TokenAt:
+		return "@"
+	case TokenPipe2:
+		return "|>"
 	default:
 		return "unknown"
 	}
