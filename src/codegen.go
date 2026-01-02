@@ -96,6 +96,12 @@ func GenerateAssembly(tokens []Token) (string, error) {
 	// Phase 2: Optimize AST (constant folding, strength reduction, etc.)
 	statements = OptimizeAST(statements)
 
+	// Phase 2.5: Dead code elimination
+	statements = EliminateDeadCode(statements)
+
+	// Phase 2.6: Unused function elimination
+	statements = EliminateUnusedFunctions(statements)
+
 	// Phase 3: Generate code from optimized AST
 	gen := NewCodeGenerator()
 	gen.dataSection.WriteString(DataSectionDirective + "\n")

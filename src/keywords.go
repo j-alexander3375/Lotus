@@ -9,24 +9,29 @@ type TokenType int
 // Token type constants - organized by category
 const (
 	// Keywords and control flow
-	TokenRet    TokenType = iota
-	TokenReturn           // return
-	TokenConst            // const
-	TokenIf               // if
-	TokenElse             // else
-	TokenWhile            // while
-	TokenFor              // for
-	TokenFn               // fn
-	TokenUse              // use (imports)
-	TokenAs               // as (aliasing)
+	TokenRet      TokenType = iota
+	TokenReturn             // return
+	TokenConst              // const
+	TokenIf                 // if
+	TokenElse               // else
+	TokenWhile              // while
+	TokenFor                // for
+	TokenBreak              // break
+	TokenContinue           // continue
+	TokenFn                 // fn
+	TokenInline             // inline (inline function hint)
+	TokenLambda             // => (lambda arrow)
+	TokenUse                // use (imports)
+	TokenAs                 // as (aliasing)
 
 	// Literals
-	TokenInt        // integer literal
-	TokenString     // string literal
-	TokenChar       // character literal (single Unicode character)
-	TokenBool       // bool literal
-	TokenFloat      // float literal
-	TokenIdentifier // variable name
+	TokenInt                // integer literal
+	TokenString             // string literal
+	TokenInterpolatedString // interpolated string: $"Hello {name}"
+	TokenChar               // character literal (single Unicode character)
+	TokenBool               // bool literal
+	TokenFloat              // float literal
+	TokenIdentifier         // variable name
 
 	// Type keywords - integers
 	TokenTypeInt    // type keyword: int
@@ -46,6 +51,7 @@ const (
 	TokenTypeBool   // type keyword: bool
 	TokenTypeFloat  // type keyword: float
 	TokenTypeVoid   // type keyword: void (for functions with no return value)
+	TokenTypeFn     // type keyword: fn (for function types / first-class functions)
 
 	// Built-in print functions
 	TokenPrintString
@@ -137,8 +143,26 @@ const (
 	TokenAt      // @ (decorator application)
 	TokenPipe2   // |> (pipe operator for function chaining)
 
+	// Pattern matching
+	TokenMatch   // match (pattern matching expression)
+	TokenCase    // case (pattern case)
+	TokenDefault // default (default case)
+	TokenWhen    // when (guard clause)
+	TokenTo      // to (range pattern: 1 to 10)
+	TokenRange   // .. (range operator: 1..10)
+
+	// Union/Option types
+	TokenUnion  // union (union type definition)
+	TokenOption // option (optional type)
+	TokenSome   // Some (option with value)
+	TokenNone   // None (empty option)
+
 	// Memory management
 	TokenNew // new
+
+	// Type casting and reinterpretation
+	TokenBitcast   // bitcast (reinterpret bits as different type)
+	TokenTransmute // transmute (alias for bitcast)
 
 	// Error handling
 	TokenTry     // try

@@ -12,6 +12,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"tinygo.org/x/go-llvm"
 )
@@ -31,6 +32,10 @@ type LLVMCodeGenerator struct {
 	// Current function being generated
 	currentFn llvm.Value
 
+	// Loop context for break/continue
+	loopExitBlock     llvm.BasicBlock // Target for break
+	loopContinueBlock llvm.BasicBlock // Target for continue
+
 	// Symbol tables
 	namedValues   map[string]LLVMVariable // Local variables with type info
 	globalStrings map[string]llvm.Value   // String constants
@@ -43,11 +48,12 @@ type LLVMCodeGenerator struct {
 	virtualMethods map[string]bool       // Set of virtual method names
 
 	// Type registries for LLVM
-	structTypes map[string]llvm.Type           // Struct name -> LLVM struct type
-	structDefs  map[string]*StructDefinition   // Struct name -> definition
-	enumDefs    map[string]*EnumDefinition     // Enum name -> definition
-	classDefs   map[string]*ClassDefinition    // Class name -> definition
-	classTypes  map[string]llvm.Type           // Class name -> LLVM struct type
+	structTypes map[string]llvm.Type         // Struct name -> LLVM struct type
+	structDefs  map[string]*StructDefinition // Struct name -> definition
+	enumDefs    map[string]*EnumDefinition   // Enum name -> definition
+	unionDefs   map[string]*UnionDefinition  // Union name -> definition
+	classDefs   map[string]*ClassDefinition  // Class name -> definition
+	classTypes  map[string]llvm.Type         // Class name -> LLVM struct type
 
 	// Partial applications (currying)
 	partialApplications map[string]*PartialApplication // Function name -> partial info
@@ -79,6 +85,7 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 		structTypes:         make(map[string]llvm.Type),
 		structDefs:          make(map[string]*StructDefinition),
 		enumDefs:            make(map[string]*EnumDefinition),
+		unionDefs:           make(map[string]*UnionDefinition),
 		classDefs:           make(map[string]*ClassDefinition),
 		classTypes:          make(map[string]llvm.Type),
 		imports:             NewImportContext(),
@@ -296,6 +303,10 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 		return cg.generateWhile(s)
 	case *ForLoop:
 		return cg.generateFor(s)
+	case *BreakStatement:
+		return cg.generateBreak(s)
+	case *ContinueStatement:
+		return cg.generateContinue(s)
 	case *Assignment:
 		return cg.generateAssignment(s)
 	case *ImportStatement:
@@ -315,6 +326,8 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 		return cg.generateStructDef(s)
 	case *EnumDefinition:
 		return cg.generateEnumDef(s)
+	case *UnionDefinition:
+		return cg.generateUnionDef(s)
 	case *ClassDefinition:
 		return cg.generateClassDef(s)
 	case *ArrayDeclaration:
@@ -417,6 +430,54 @@ func (cg *LLVMCodeGenerator) generateConstDecl(c *ConstantDeclaration) error {
 
 // generateLocalVar generates a stack-allocated local variable
 func (cg *LLVMCodeGenerator) generateLocalVar(v *VariableDeclaration, varType llvm.Type) error {
+	// Special handling for array declarations (int[] arr = [...])
+	if v.IsArray {
+		if v.Value == nil {
+			return fmt.Errorf("array variable %s must be initialized", v.Name)
+		}
+
+		// Check if the value is an array literal
+		if arrLit, ok := v.Value.(*ArrayLiteral); ok {
+			// Determine element type
+			elemType := varType // The base type (e.g., int64 for int[])
+			arrayType := llvm.ArrayType(elemType, len(arrLit.Elements))
+
+			// Allocate array on stack
+			alloca := cg.builder.CreateAlloca(arrayType, v.Name)
+
+			// Store each element
+			for i, elem := range arrLit.Elements {
+				val, err := cg.generateExpression(elem)
+				if err != nil {
+					return err
+				}
+				indices := []llvm.Value{
+					llvm.ConstInt(cg.context.Int32Type(), 0, false),
+					llvm.ConstInt(cg.context.Int32Type(), uint64(i), false),
+				}
+				elemPtr := cg.builder.CreateGEP(arrayType, alloca, indices, fmt.Sprintf("elem%dptr", i))
+				cg.builder.CreateStore(val, elemPtr)
+			}
+
+			// Store with array type so we know how to access it later
+			cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: arrayType}
+			return nil
+		}
+
+		// For other expressions that return array pointers
+		val, err := cg.generateExpression(v.Value)
+		if err != nil {
+			return err
+		}
+
+		// Create alloca for pointer type
+		ptrType := llvm.PointerType(varType, 0)
+		alloca := cg.builder.CreateAlloca(ptrType, v.Name)
+		cg.builder.CreateStore(val, alloca)
+		cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: ptrType}
+		return nil
+	}
+
 	alloca := cg.builder.CreateAlloca(varType, v.Name)
 
 	if v.Value != nil {
@@ -566,6 +627,9 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 	case *StringLiteral:
 		return cg.createGlobalString(e.Value), nil
 
+	case *InterpolatedString:
+		return cg.generateInterpolatedString(e)
+
 	case *BoolLiteral:
 		val := uint64(0)
 		if e.Value {
@@ -665,6 +729,18 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 	case *MallocCall:
 		return cg.generateMallocExpr(e)
 
+	case *LambdaExpression:
+		return cg.generateLambdaExpression(e)
+
+	case *FunctionReference:
+		return cg.generateFunctionReference(e)
+
+	case *MatchExpression:
+		return cg.generateMatchExpression(e)
+
+	case *BitCastExpression:
+		return cg.generateBitCast(e)
+
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -681,17 +757,35 @@ func (cg *LLVMCodeGenerator) generateBinaryExpr(b *BinaryOp) (llvm.Value, error)
 		return llvm.Value{}, err
 	}
 
+	// Check if we're dealing with floating-point types
+	isFloat := left.Type().TypeKind() == llvm.DoubleTypeKind || left.Type().TypeKind() == llvm.FloatTypeKind
+
 	switch b.Operator {
 	// Arithmetic
 	case TokenPlus:
+		if isFloat {
+			return cg.builder.CreateFAdd(left, right, "faddtmp"), nil
+		}
 		return cg.builder.CreateAdd(left, right, "addtmp"), nil
 	case TokenMinus:
+		if isFloat {
+			return cg.builder.CreateFSub(left, right, "fsubtmp"), nil
+		}
 		return cg.builder.CreateSub(left, right, "subtmp"), nil
 	case TokenStar:
+		if isFloat {
+			return cg.builder.CreateFMul(left, right, "fmultmp"), nil
+		}
 		return cg.builder.CreateMul(left, right, "multmp"), nil
 	case TokenSlash:
+		if isFloat {
+			return cg.builder.CreateFDiv(left, right, "fdivtmp"), nil
+		}
 		return cg.builder.CreateSDiv(left, right, "divtmp"), nil
 	case TokenPercent:
+		if isFloat {
+			return cg.builder.CreateFRem(left, right, "fremtmp"), nil
+		}
 		return cg.builder.CreateSRem(left, right, "modtmp"), nil
 
 	// Bitwise
@@ -952,6 +1046,14 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	case "heap_int_len":
 		return cg.generateHeapIntLen(call)
 
+	// First-class function support
+	case "call":
+		return cg.generateIndirectCall(call)
+	case "call1":
+		return cg.generateIndirectCall1(call)
+	case "call2":
+		return cg.generateIndirectCall2(call)
+
 	// Net/socket functions
 	case "socket":
 		return cg.generateSocket(call)
@@ -1047,6 +1149,20 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateRandN(call)
 	case "rand_string":
 		return cg.generateRandString(call)
+
+	// Regex functions
+	case "regex::match":
+		return cg.generateRegexMatch(call)
+	case "regex::find":
+		return cg.generateRegexFind(call)
+	case "regex::replace":
+		return cg.generateRegexReplace(call)
+	case "regex::replace_all":
+		return cg.generateRegexReplaceAll(call)
+	case "regex::split":
+		return cg.generateRegexSplit(call)
+	case "regex::find_all":
+		return cg.generateRegexFindAll(call)
 	}
 
 	// Look up the function
@@ -1076,7 +1192,15 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 
 // generatePrint generates a print/println call
 func (cg *LLVMCodeGenerator) generatePrint(call *FunctionCall) (llvm.Value, error) {
+	isPrintln := call.Name == "println"
+
 	if len(call.Args) == 0 {
+		// println() with no args just prints a newline
+		if isPrintln {
+			formatStr := cg.createGlobalString("\n")
+			printf := cg.functions["printf"]
+			return cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr}, "printftmp"), nil
+		}
 		return llvm.Value{}, nil
 	}
 
@@ -1085,8 +1209,48 @@ func (cg *LLVMCodeGenerator) generatePrint(call *FunctionCall) (llvm.Value, erro
 		return llvm.Value{}, err
 	}
 
-	puts := cg.functions["puts"]
-	return cg.builder.CreateCall(puts.GlobalValueType(), puts, []llvm.Value{arg}, "putstmp"), nil
+	// Check argument type to determine how to print
+	argType := arg.Type()
+	printf := cg.functions["printf"]
+
+	var formatStr llvm.Value
+	var result llvm.Value
+
+	if argType.TypeKind() == llvm.PointerTypeKind {
+		// String - use printf with %s format (not puts, as puts adds newline)
+		if isPrintln {
+			formatStr = cg.createGlobalString("%s\n")
+		} else {
+			formatStr = cg.createGlobalString("%s")
+		}
+		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
+	} else if argType.TypeKind() == llvm.IntegerTypeKind {
+		// Integer - use printf with %ld format
+		if isPrintln {
+			formatStr = cg.createGlobalString("%ld\n")
+		} else {
+			formatStr = cg.createGlobalString("%ld")
+		}
+		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
+	} else if argType.TypeKind() == llvm.DoubleTypeKind || argType.TypeKind() == llvm.FloatTypeKind {
+		// Float - use printf with %f format
+		if isPrintln {
+			formatStr = cg.createGlobalString("%f\n")
+		} else {
+			formatStr = cg.createGlobalString("%f")
+		}
+		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
+	} else {
+		// Default: try to print as integer
+		if isPrintln {
+			formatStr = cg.createGlobalString("%ld\n")
+		} else {
+			formatStr = cg.createGlobalString("%ld")
+		}
+		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
+	}
+
+	return result, nil
 }
 
 // generatePrintf generates a printf call
@@ -1162,6 +1326,14 @@ func (cg *LLVMCodeGenerator) generateWhile(w *WhileLoop) error {
 	bodyBlock := llvm.AddBasicBlock(cg.currentFn, "whilebody")
 	exitBlock := llvm.AddBasicBlock(cg.currentFn, "whileexit")
 
+	// Save previous loop context
+	prevExit := cg.loopExitBlock
+	prevContinue := cg.loopContinueBlock
+
+	// Set up loop context for break/continue
+	cg.loopExitBlock = exitBlock
+	cg.loopContinueBlock = condBlock
+
 	// Jump to condition
 	cg.builder.CreateBr(condBlock)
 
@@ -1185,6 +1357,11 @@ func (cg *LLVMCodeGenerator) generateWhile(w *WhileLoop) error {
 
 	// Exit block
 	cg.builder.SetInsertPointAtEnd(exitBlock)
+
+	// Restore previous loop context
+	cg.loopExitBlock = prevExit
+	cg.loopContinueBlock = prevContinue
+
 	return nil
 }
 
@@ -1201,6 +1378,15 @@ func (cg *LLVMCodeGenerator) generateFor(f *ForLoop) error {
 	bodyBlock := llvm.AddBasicBlock(cg.currentFn, "forbody")
 	postBlock := llvm.AddBasicBlock(cg.currentFn, "forpost")
 	exitBlock := llvm.AddBasicBlock(cg.currentFn, "forexit")
+
+	// Save previous loop context
+	prevExit := cg.loopExitBlock
+	prevContinue := cg.loopContinueBlock
+
+	// Set up loop context for break/continue
+	// continue goes to post (update), break goes to exit
+	cg.loopExitBlock = exitBlock
+	cg.loopContinueBlock = postBlock
 
 	cg.builder.CreateBr(condBlock)
 
@@ -1237,6 +1423,39 @@ func (cg *LLVMCodeGenerator) generateFor(f *ForLoop) error {
 
 	// Exit
 	cg.builder.SetInsertPointAtEnd(exitBlock)
+
+	// Restore previous loop context
+	cg.loopExitBlock = prevExit
+	cg.loopContinueBlock = prevContinue
+
+	return nil
+}
+
+// generateBreak generates a break statement (jumps to loop exit)
+func (cg *LLVMCodeGenerator) generateBreak(b *BreakStatement) error {
+	if cg.loopExitBlock.IsNil() {
+		return fmt.Errorf("break statement outside of loop")
+	}
+	cg.builder.CreateBr(cg.loopExitBlock)
+
+	// Create an unreachable block for any code after break
+	unreachable := llvm.AddBasicBlock(cg.currentFn, "afterbreak")
+	cg.builder.SetInsertPointAtEnd(unreachable)
+
+	return nil
+}
+
+// generateContinue generates a continue statement (jumps to loop continue point)
+func (cg *LLVMCodeGenerator) generateContinue(c *ContinueStatement) error {
+	if cg.loopContinueBlock.IsNil() {
+		return fmt.Errorf("continue statement outside of loop")
+	}
+	cg.builder.CreateBr(cg.loopContinueBlock)
+
+	// Create an unreachable block for any code after continue
+	unreachable := llvm.AddBasicBlock(cg.currentFn, "aftercontinue")
+	cg.builder.SetInsertPointAtEnd(unreachable)
+
 	return nil
 }
 
@@ -1480,9 +1699,9 @@ func (cg *LLVMCodeGenerator) generateDecoratedFunction(d *DecoratedFunction) err
 	// Build the decorator chain from inside out
 	// @timing @logging fn foo() means: foo calls timing's body, which calls logging's body, which calls __wrapped_foo
 	// We create intermediate functions for each decorator level
-	
+
 	currentCallTarget := wrappedName
-	
+
 	// Process decorators from innermost to outermost
 	// For @timing @logging fn foo():
 	// - First create __logging_foo which applies logging and calls __wrapped_foo
@@ -1672,6 +1891,521 @@ type pipeValueWrapper struct {
 }
 
 func (p *pipeValueWrapper) astNode() {}
+
+// generateLambdaExpression generates a lambda (anonymous function)
+// Lambdas are compiled to internal functions and return a function pointer
+func (cg *LLVMCodeGenerator) generateLambdaExpression(l *LambdaExpression) (llvm.Value, error) {
+	// Generate a unique name for the lambda
+	cg.stringCounter++
+	lambdaName := fmt.Sprintf("__lambda_%d", cg.stringCounter)
+
+	// Build the parameter types
+	paramTypes := make([]llvm.Type, len(l.Parameters))
+	for i, param := range l.Parameters {
+		paramTypes[i] = cg.tokenTypeToLLVM(param.Type)
+	}
+
+	// Determine return type from the lambda
+	returnType := cg.context.Int64Type() // Default to int64
+	if l.ReturnType != 0 {
+		returnType = cg.tokenTypeToLLVM(l.ReturnType)
+	}
+
+	// Create the function type
+	funcType := llvm.FunctionType(returnType, paramTypes, false)
+	lambdaFn := llvm.AddFunction(cg.module, lambdaName, funcType)
+	lambdaFn.SetLinkage(llvm.InternalLinkage)
+
+	// Save current state
+	savedFn := cg.currentFn
+	savedValues := cg.namedValues
+	savedInsertBlock := cg.builder.GetInsertBlock()
+
+	// Set up for lambda body generation
+	cg.currentFn = lambdaFn
+	cg.namedValues = make(map[string]LLVMVariable)
+
+	// Create entry block
+	entry := llvm.AddBasicBlock(lambdaFn, "entry")
+	cg.builder.SetInsertPointAtEnd(entry)
+
+	// Allocate parameters
+	for i, param := range l.Parameters {
+		paramVal := lambdaFn.Param(i)
+		paramType := cg.tokenTypeToLLVM(param.Type)
+		alloca := cg.builder.CreateAlloca(paramType, param.Name)
+		cg.builder.CreateStore(paramVal, alloca)
+		cg.namedValues[param.Name] = LLVMVariable{
+			Alloca:      alloca,
+			ElementType: paramType,
+		}
+	}
+
+	// Generate lambda body
+	if l.Expression != nil {
+		// Single expression lambda: return the expression result
+		val, err := cg.generateExpression(l.Expression)
+		if err != nil {
+			return llvm.Value{}, err
+		}
+		cg.builder.CreateRet(val)
+	} else if len(l.Body) > 0 {
+		// Block body lambda
+		for _, stmt := range l.Body {
+			if err := cg.generateStatement(stmt); err != nil {
+				return llvm.Value{}, err
+			}
+		}
+		// If no explicit return, add a default return
+		if cg.builder.GetInsertBlock().LastInstruction().IsNil() ||
+			cg.builder.GetInsertBlock().LastInstruction().InstructionOpcode() != llvm.Ret {
+			if returnType.TypeKind() == llvm.VoidTypeKind {
+				cg.builder.CreateRetVoid()
+			} else {
+				cg.builder.CreateRet(llvm.ConstInt(returnType, 0, false))
+			}
+		}
+	} else {
+		// Empty lambda, return default
+		cg.builder.CreateRet(llvm.ConstInt(returnType, 0, false))
+	}
+
+	// Restore state
+	cg.currentFn = savedFn
+	cg.namedValues = savedValues
+	if !savedInsertBlock.IsNil() {
+		cg.builder.SetInsertPointAtEnd(savedInsertBlock)
+	}
+
+	// Store function in registry
+	cg.functions[lambdaName] = lambdaFn
+
+	// Return the function pointer as an i64 (for first-class function support)
+	return cg.builder.CreatePtrToInt(lambdaFn, cg.context.Int64Type(), "lambdaptr"), nil
+}
+
+// generateFunctionReference generates a reference to a function as a value
+// Syntax: fn functionName -> returns function pointer as int64
+func (cg *LLVMCodeGenerator) generateFunctionReference(f *FunctionReference) (llvm.Value, error) {
+	// Look up the function
+	fn, ok := cg.functions[f.FunctionName]
+	if !ok {
+		return llvm.Value{}, fmt.Errorf("undefined function: %s", f.FunctionName)
+	}
+
+	// Convert function pointer to int64 for first-class function support
+	return cg.builder.CreatePtrToInt(fn, cg.context.Int64Type(), "fnptr"), nil
+}
+
+// generateCallIndirect generates a call through a function pointer
+// Used when calling a function stored in a variable (first-class functions)
+func (cg *LLVMCodeGenerator) generateCallIndirect(fnPtr llvm.Value, args []llvm.Value, retType llvm.Type) (llvm.Value, error) {
+	// Convert int64 back to function pointer
+	argTypes := make([]llvm.Type, len(args))
+	for i, arg := range args {
+		argTypes[i] = arg.Type()
+	}
+	funcType := llvm.FunctionType(retType, argTypes, false)
+	funcPtrType := llvm.PointerType(funcType, 0)
+
+	fnPtrCast := cg.builder.CreateIntToPtr(fnPtr, funcPtrType, "fnptrcast")
+	return cg.builder.CreateCall(funcType, fnPtrCast, args, "callind"), nil
+}
+
+// generateIndirectCall generates call(fnPtr) - calls a function with no args
+func (cg *LLVMCodeGenerator) generateIndirectCall(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) < 1 {
+		return llvm.Value{}, fmt.Errorf("call requires at least 1 argument (function pointer)")
+	}
+
+	fnPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	return cg.generateCallIndirect(fnPtr, []llvm.Value{}, cg.context.Int64Type())
+}
+
+// generateIndirectCall1 generates call1(fnPtr, arg1) - calls a function with 1 arg
+func (cg *LLVMCodeGenerator) generateIndirectCall1(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) < 2 {
+		return llvm.Value{}, fmt.Errorf("call1 requires 2 arguments (function pointer, arg1)")
+	}
+
+	fnPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	arg1, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	return cg.generateCallIndirect(fnPtr, []llvm.Value{arg1}, cg.context.Int64Type())
+}
+
+// generateIndirectCall2 generates call2(fnPtr, arg1, arg2) - calls a function with 2 args
+func (cg *LLVMCodeGenerator) generateIndirectCall2(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) < 3 {
+		return llvm.Value{}, fmt.Errorf("call2 requires 3 arguments (function pointer, arg1, arg2)")
+	}
+
+	fnPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	arg1, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	arg2, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	return cg.generateCallIndirect(fnPtr, []llvm.Value{arg1, arg2}, cg.context.Int64Type())
+}
+
+// generateInterpolatedString generates LLVM IR for string interpolation
+// Converts $"Hello {name}" into sprintf calls to build the final string
+func (cg *LLVMCodeGenerator) generateInterpolatedString(s *InterpolatedString) (llvm.Value, error) {
+	// Build format string and collect arguments
+	var formatBuf strings.Builder
+	var args []llvm.Value
+
+	for _, part := range s.Parts {
+		if part.IsExpr {
+			// Generate the expression value
+			val, err := cg.generateExpression(part.Expr)
+			if err != nil {
+				return llvm.Value{}, err
+			}
+
+			// Determine format specifier based on type
+			valType := val.Type()
+			switch valType.TypeKind() {
+			case llvm.IntegerTypeKind:
+				if valType.IntTypeWidth() == 1 {
+					// Boolean - convert to "true"/"false" would be complex, just use %d
+					formatBuf.WriteString("%d")
+				} else {
+					formatBuf.WriteString("%ld")
+				}
+				args = append(args, val)
+			case llvm.DoubleTypeKind, llvm.FloatTypeKind:
+				formatBuf.WriteString("%f")
+				args = append(args, val)
+			case llvm.PointerTypeKind:
+				// Assume it's a string pointer
+				formatBuf.WriteString("%s")
+				args = append(args, val)
+			default:
+				formatBuf.WriteString("%ld")
+				args = append(args, val)
+			}
+		} else {
+			// Escape any % in literal text
+			for _, r := range part.Text {
+				if r == '%' {
+					formatBuf.WriteString("%%")
+				} else {
+					formatBuf.WriteRune(r)
+				}
+			}
+		}
+	}
+
+	// Allocate a buffer for the result (fixed size for simplicity)
+	bufSize := 1024
+	i8Type := cg.context.Int8Type()
+	bufType := llvm.ArrayType(i8Type, bufSize)
+	buf := cg.builder.CreateAlloca(bufType, "interp.buf")
+	bufPtr := cg.builder.CreateBitCast(buf, llvm.PointerType(i8Type, 0), "interp.ptr")
+
+	// Create format string
+	formatStr := cg.createGlobalString(formatBuf.String())
+
+	// Call sprintf(buf, format, args...)
+	sprintfFn := cg.module.NamedFunction("sprintf")
+	if sprintfFn.IsNil() {
+		// Declare sprintf if not already declared
+		sprintfType := llvm.FunctionType(
+			cg.context.Int32Type(),
+			[]llvm.Type{llvm.PointerType(i8Type, 0), llvm.PointerType(i8Type, 0)},
+			true, // variadic
+		)
+		sprintfFn = llvm.AddFunction(cg.module, "sprintf", sprintfType)
+	}
+
+	// Build call arguments: buf, format, args...
+	callArgs := []llvm.Value{bufPtr, formatStr}
+	callArgs = append(callArgs, args...)
+
+	cg.builder.CreateCall(sprintfFn.GlobalValueType(), sprintfFn, callArgs, "")
+
+	// Return pointer to buffer
+	return bufPtr, nil
+}
+
+// generateBitCast generates LLVM IR for bitwise type reinterpretation
+// bitcast<TargetType>(value) reinterprets the raw bits of value as TargetType
+func (cg *LLVMCodeGenerator) generateBitCast(bc *BitCastExpression) (llvm.Value, error) {
+	// Generate the value to cast
+	value, err := cg.generateExpression(bc.Value)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Get the target LLVM type
+	var targetType llvm.Type
+	switch bc.TargetType {
+	case "int", "int64":
+		targetType = cg.context.Int64Type()
+	case "int32":
+		targetType = cg.context.Int32Type()
+	case "int16":
+		targetType = cg.context.Int16Type()
+	case "int8":
+		targetType = cg.context.Int8Type()
+	case "uint", "uint64":
+		targetType = cg.context.Int64Type()
+	case "uint32":
+		targetType = cg.context.Int32Type()
+	case "uint16":
+		targetType = cg.context.Int16Type()
+	case "uint8":
+		targetType = cg.context.Int8Type()
+	case "float":
+		targetType = cg.context.DoubleType()
+	case "float32":
+		targetType = cg.context.FloatType()
+	default:
+		return llvm.Value{}, fmt.Errorf("unsupported bitcast target type: %s", bc.TargetType)
+	}
+
+	sourceType := value.Type()
+	sourceKind := sourceType.TypeKind()
+	targetKind := targetType.TypeKind()
+
+	// Get sizes for validation
+	sourceSize := cg.getTypeSizeInBits(sourceType)
+	targetSize := cg.getTypeSizeInBits(targetType)
+
+	// Validate same bit width
+	if sourceSize != targetSize {
+		return llvm.Value{}, fmt.Errorf("bitcast requires types of same size: source is %d bits, target is %d bits", sourceSize, targetSize)
+	}
+
+	// Perform the bitcast based on type combinations
+	switch {
+	// Float to Integer
+	case sourceKind == llvm.DoubleTypeKind && targetKind == llvm.IntegerTypeKind:
+		return cg.builder.CreateBitCast(value, targetType, "bitcast_f2i"), nil
+	case sourceKind == llvm.FloatTypeKind && targetKind == llvm.IntegerTypeKind:
+		return cg.builder.CreateBitCast(value, targetType, "bitcast_f2i"), nil
+
+	// Integer to Float
+	case sourceKind == llvm.IntegerTypeKind && targetKind == llvm.DoubleTypeKind:
+		return cg.builder.CreateBitCast(value, targetType, "bitcast_i2f"), nil
+	case sourceKind == llvm.IntegerTypeKind && targetKind == llvm.FloatTypeKind:
+		return cg.builder.CreateBitCast(value, targetType, "bitcast_i2f"), nil
+
+	// Integer to Integer (different signedness or same size)
+	case sourceKind == llvm.IntegerTypeKind && targetKind == llvm.IntegerTypeKind:
+		// For same-size integers, just use the value directly (no actual cast needed)
+		return value, nil
+
+	// Pointer to Integer
+	case sourceKind == llvm.PointerTypeKind && targetKind == llvm.IntegerTypeKind:
+		return cg.builder.CreatePtrToInt(value, targetType, "bitcast_p2i"), nil
+
+	// Integer to Pointer
+	case sourceKind == llvm.IntegerTypeKind && targetKind == llvm.PointerTypeKind:
+		return cg.builder.CreateIntToPtr(value, targetType, "bitcast_i2p"), nil
+
+	default:
+		// Generic bitcast for other combinations
+		return cg.builder.CreateBitCast(value, targetType, "bitcast"), nil
+	}
+}
+
+// getTypeSizeInBits returns the size of a type in bits
+func (cg *LLVMCodeGenerator) getTypeSizeInBits(t llvm.Type) int {
+	switch t.TypeKind() {
+	case llvm.IntegerTypeKind:
+		return int(t.IntTypeWidth())
+	case llvm.FloatTypeKind:
+		return 32
+	case llvm.DoubleTypeKind:
+		return 64
+	case llvm.PointerTypeKind:
+		return 64 // Assuming 64-bit pointers
+	default:
+		return 0
+	}
+}
+
+// generateMatchExpression generates LLVM IR for pattern matching
+func (cg *LLVMCodeGenerator) generateMatchExpression(m *MatchExpression) (llvm.Value, error) {
+	// Generate the value to match
+	matchValue, err := cg.generateExpression(m.Value)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	fn := cg.currentFn
+	mergeBlock := llvm.AddBasicBlock(fn, "match.end")
+
+	// Result PHI accumulator
+	type phiEntry struct {
+		value llvm.Value
+		block llvm.BasicBlock
+	}
+	var results []phiEntry
+
+	// Create all case test blocks upfront
+	numCases := len(m.Cases)
+	testBlocks := make([]llvm.BasicBlock, numCases)
+	bodyBlocks := make([]llvm.BasicBlock, numCases)
+	for i := 0; i < numCases; i++ {
+		testBlocks[i] = llvm.AddBasicBlock(fn, fmt.Sprintf("match.test%d", i))
+		bodyBlocks[i] = llvm.AddBasicBlock(fn, fmt.Sprintf("match.body%d", i))
+	}
+
+	// Branch to first test block
+	if numCases > 0 {
+		cg.builder.CreateBr(testBlocks[0])
+	} else {
+		cg.builder.CreateBr(mergeBlock)
+		cg.builder.SetInsertPointAtEnd(mergeBlock)
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	// Process each case
+	for i, matchCase := range m.Cases {
+		// The "next" block is either the next test or merge
+		var nextTestBlock llvm.BasicBlock
+		if i < numCases-1 {
+			nextTestBlock = testBlocks[i+1]
+		} else {
+			nextTestBlock = mergeBlock
+		}
+
+		// Generate test block
+		cg.builder.SetInsertPointAtEnd(testBlocks[i])
+
+		if matchCase.IsDefault {
+			// Default always matches - go directly to body
+			cg.builder.CreateBr(bodyBlocks[i])
+		} else {
+			switch p := matchCase.Pattern.(type) {
+			case *WildcardPattern:
+				// Wildcard always matches
+				cg.builder.CreateBr(bodyBlocks[i])
+
+			case *LiteralPattern:
+				patternValue, err := cg.generateExpression(p.Value)
+				if err != nil {
+					return llvm.Value{}, err
+				}
+				condition := cg.builder.CreateICmp(llvm.IntEQ, matchValue, patternValue, "match.cmp")
+				cg.builder.CreateCondBr(condition, bodyBlocks[i], nextTestBlock)
+
+			case *RangePattern:
+				// Range pattern: check if value >= start AND value <= end
+				startValue, err := cg.generateExpression(p.Start)
+				if err != nil {
+					return llvm.Value{}, err
+				}
+				endValue, err := cg.generateExpression(p.End)
+				if err != nil {
+					return llvm.Value{}, err
+				}
+				geStart := cg.builder.CreateICmp(llvm.IntSGE, matchValue, startValue, "range.ge")
+				leEnd := cg.builder.CreateICmp(llvm.IntSLE, matchValue, endValue, "range.le")
+				inRange := cg.builder.CreateAnd(geStart, leEnd, "range.in")
+				cg.builder.CreateCondBr(inRange, bodyBlocks[i], nextTestBlock)
+
+			case *BindingPattern:
+				// Binding patterns always match, but we set up the binding in the body
+				cg.builder.CreateBr(bodyBlocks[i])
+
+			default:
+				return llvm.Value{}, fmt.Errorf("unsupported pattern type: %T", matchCase.Pattern)
+			}
+		}
+
+		// Generate body block
+		cg.builder.SetInsertPointAtEnd(bodyBlocks[i])
+
+		// Set up binding pattern variable if needed
+		if bp, ok := matchCase.Pattern.(*BindingPattern); ok {
+			alloca := cg.builder.CreateAlloca(matchValue.Type(), bp.Name)
+			cg.builder.CreateStore(matchValue, alloca)
+			cg.namedValues[bp.Name] = LLVMVariable{Alloca: alloca, ElementType: matchValue.Type()}
+		}
+
+		// Handle guard if present
+		if matchCase.Guard != nil {
+			guardValue, err := cg.generateExpression(matchCase.Guard)
+			if err != nil {
+				return llvm.Value{}, err
+			}
+			if guardValue.Type().IntTypeWidth() > 1 {
+				guardValue = cg.builder.CreateICmp(llvm.IntNE, guardValue,
+					llvm.ConstInt(guardValue.Type(), 0, false), "guard.bool")
+			}
+			guardedBlock := llvm.AddBasicBlock(fn, fmt.Sprintf("match.guarded%d", i))
+			cg.builder.CreateCondBr(guardValue, guardedBlock, nextTestBlock)
+			cg.builder.SetInsertPointAtEnd(guardedBlock)
+		}
+
+		// Generate case body statements
+		bodyTerminated := false
+		for _, stmt := range matchCase.Body {
+			if ret, ok := stmt.(*ReturnStatement); ok && ret.Value != nil {
+				result, err := cg.generateExpression(ret.Value)
+				if err != nil {
+					return llvm.Value{}, err
+				}
+				results = append(results, phiEntry{result, cg.builder.GetInsertBlock()})
+				cg.builder.CreateBr(mergeBlock)
+				bodyTerminated = true
+				break
+			}
+			if err := cg.generateStatement(stmt); err != nil {
+				return llvm.Value{}, err
+			}
+		}
+
+		// If body didn't terminate, add default result and branch to merge
+		if !bodyTerminated {
+			results = append(results, phiEntry{llvm.ConstInt(cg.context.Int64Type(), 0, false), cg.builder.GetInsertBlock()})
+			cg.builder.CreateBr(mergeBlock)
+		}
+	}
+
+	// Set insert point to merge block
+	cg.builder.SetInsertPointAtEnd(mergeBlock)
+
+	// Create PHI node for result
+	if len(results) > 0 {
+		phi := cg.builder.CreatePHI(results[0].value.Type(), "match.result")
+		incomingValues := make([]llvm.Value, len(results))
+		incomingBlocks := make([]llvm.BasicBlock, len(results))
+		for i, r := range results {
+			incomingValues[i] = r.value
+			incomingBlocks[i] = r.block
+		}
+		phi.AddIncoming(incomingValues, incomingBlocks)
+		return phi, nil
+	}
+
+	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+}
 
 // Dispose cleans up LLVM resources
 func (cg *LLVMCodeGenerator) Dispose() {

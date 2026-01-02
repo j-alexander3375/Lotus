@@ -32,6 +32,20 @@ type ForLoop struct {
 
 func (f *ForLoop) astNode() {}
 
+// BreakStatement represents a break statement to exit a loop
+type BreakStatement struct {
+	BaseNode
+}
+
+func (b *BreakStatement) astNode() {}
+
+// ContinueStatement represents a continue statement to skip to next iteration
+type ContinueStatement struct {
+	BaseNode
+}
+
+func (c *ContinueStatement) astNode() {}
+
 // Comparison represents a comparison expression
 type Comparison struct {
 	BaseNode
@@ -61,6 +75,97 @@ type TernaryOp struct {
 }
 
 func (t *TernaryOp) astNode() {}
+
+// ============================================================================
+// PATTERN MATCHING
+// ============================================================================
+
+// MatchExpression represents a pattern matching expression
+// Syntax: match expr { case pattern => body, ... }
+type MatchExpression struct {
+	BaseNode
+	Value ASTNode     // The value to match against
+	Cases []MatchCase // List of cases
+}
+
+func (m *MatchExpression) astNode() {}
+
+// MatchCase represents a single case in a match expression
+type MatchCase struct {
+	Pattern   ASTNode   // The pattern to match (literal, identifier, wildcard)
+	Guard     ASTNode   // Optional guard condition (when clause)
+	Body      []ASTNode // Body to execute if matched
+	IsDefault bool      // True if this is the default case
+}
+
+// Pattern types for matching
+type WildcardPattern struct {
+	BaseNode
+}
+
+func (w *WildcardPattern) astNode() {}
+
+type LiteralPattern struct {
+	BaseNode
+	Value ASTNode // IntLiteral, StringLiteral, etc.
+}
+
+func (l *LiteralPattern) astNode() {}
+
+type BindingPattern struct {
+	BaseNode
+	Name string // Variable name to bind the matched value
+}
+
+func (b *BindingPattern) astNode() {}
+
+type RangePattern struct {
+	BaseNode
+	Start ASTNode // Start of range (inclusive)
+	End   ASTNode // End of range (inclusive)
+}
+
+func (r *RangePattern) astNode() {}
+
+// ============================================================================
+// UNION AND OPTION TYPES
+// ============================================================================
+
+// UnionDefinition represents a union type definition
+// Syntax: union Name { Variant1(Type), Variant2(Type1, Type2), Variant3 }
+type UnionDefinition struct {
+	BaseNode
+	Name     string
+	Variants []UnionVariant
+}
+
+func (u *UnionDefinition) astNode() {}
+
+// UnionVariant represents a variant of a union type
+type UnionVariant struct {
+	Name   string      // Variant name
+	Fields []TokenType // Field types (can be empty for unit variants)
+}
+
+// OptionExpression represents Some(value) or None
+type OptionExpression struct {
+	BaseNode
+	IsSome bool    // true for Some, false for None
+	Value  ASTNode // The value (only for Some)
+}
+
+func (o *OptionExpression) astNode() {}
+
+// UnionLiteral represents instantiation of a union variant
+// Syntax: VariantName(args...) or VariantName
+type UnionLiteral struct {
+	BaseNode
+	UnionName   string    // The union type name
+	VariantName string    // The variant being constructed
+	Args        []ASTNode // Constructor arguments
+}
+
+func (u *UnionLiteral) astNode() {}
 
 // generateIfStatement generates assembly for if/else statements
 func (cg *CodeGenerator) generateIfStatement(ifStmt *IfStatement) {

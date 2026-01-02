@@ -12,10 +12,32 @@ type FunctionDefinition struct {
 	IsVirtual  bool         // true if marked with 'vrt' keyword
 	IsOverride bool         // true if marked with 'override' keyword
 	IsStatic   bool         // true if marked with 'static' keyword
+	IsInline   bool         // true if marked with 'inline' keyword
 	Storage    StorageClass // Storage class (static makes function file-local)
 }
 
 func (f *FunctionDefinition) astNode() {}
+
+// LambdaExpression represents an anonymous function / lambda
+// Syntax: |params| => expr  or  |params| => { body }
+type LambdaExpression struct {
+	BaseNode
+	Parameters []FunctionParam
+	ReturnType TokenType
+	Body       []ASTNode // For block body { ... }
+	Expression ASTNode   // For single expression body (either Body or Expression is set)
+}
+
+func (l *LambdaExpression) astNode() {}
+
+// FunctionReference represents a reference to a function as a value
+// Syntax: fn funcName or &funcName
+type FunctionReference struct {
+	BaseNode
+	FunctionName string
+}
+
+func (f *FunctionReference) astNode() {}
 
 // FunctionParam represents a function parameter
 type FunctionParam struct {

@@ -37,6 +37,9 @@ type CompilerOptions struct {
 	ShowDocs    bool   // Show offline documentation (-docs, --docs)
 	DocsSection string // Specific documentation section to show
 
+	// Language Server Protocol
+	LSPMode bool // Run as LSP server (--lsp)
+
 	// Warning and error control
 	Wall           bool // Enable all warnings (-Wall)
 	Werror         bool // Treat warnings as errors (-Werror)
@@ -103,6 +106,9 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	fs.BoolVar(&opts.ShowDocs, "docs", false, "show offline documentation")
 	fs.StringVar(&opts.DocsSection, "docs-section", "", "show specific docs section (syntax, stdlib, types, examples)")
 
+	// Language Server Protocol
+	fs.BoolVar(&opts.LSPMode, "lsp", false, "run as Language Server Protocol server")
+
 	// Warning flags
 	fs.BoolVar(&opts.Wall, "Wall", false, "enable all warnings")
 	fs.BoolVar(&opts.Werror, "Werror", false, "treat warnings as errors")
@@ -166,6 +172,10 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 			norm = append(norm, "-emit-llvm")
 		case "--target":
 			norm = append(norm, "-target")
+		case "--lsp":
+			norm = append(norm, "-lsp")
+		case "--version":
+			norm = append(norm, "-version")
 		default:
 			norm = append(norm, a)
 		}

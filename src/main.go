@@ -28,6 +28,11 @@ func run() int {
 		return 0
 	}
 
+	if opts.LSPMode {
+		RunLSPServer()
+		return 0
+	}
+
 	if opts.ShowDocs || opts.DocsSection != "" {
 		PrintDocs(opts.DocsSection)
 		return 0

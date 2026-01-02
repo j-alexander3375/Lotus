@@ -33,12 +33,14 @@
 - **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
 - **Functional programming** - Pipe operator (`|>`), wrappers/decorators (`@`), currying (`partial`)
 - **Void return type** - `fn void foo()` for functions with no return value
+- **Type reinterpretation** - `bitcast<Type>(expr)` for low-level bit manipulation
 
 ### Compiler Features
 - **LLVM backend** (default) - Cross-platform: x86, ARM, RISC-V, WebAssembly
 - **Advanced optimizations** - Dead code elimination, constant folding, inlining
 - **Enhanced diagnostics** - Line/column tracking, "did you mean?" suggestions
 - **Semantic analysis** - Unused variable detection, shadowing warnings
+- **Language Server Protocol** - Real-time IDE support with `lotus --lsp`
 - **Legacy GCC backend** - Available with `--gcc` flag
 
 ### Standard Library Modules

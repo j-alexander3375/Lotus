@@ -545,8 +545,21 @@ func emitPrintValue(cg *CodeGenerator, expr ASTNode) {
 	}
 }
 
+// FormatSpec represents a parsed format specifier like %5d, %-10s, %08x
+type FormatSpec struct {
+	Specifier rune // d, s, x, etc.
+	Width     int  // minimum width (0 = no width)
+	Precision int  // precision for floats (-1 = default)
+	LeftAlign bool // '-' flag: left align
+	ZeroPad   bool // '0' flag: pad with zeros
+	ShowSign  bool // '+' flag: always show sign
+	SpaceSign bool // ' ' flag: space for positive numbers
+	AltFormat bool // '#' flag: alternate format (0x prefix, etc.)
+}
+
 // parsePlaceholders splits a format string into text parts and placeholder runes
 // Supports %%, %d, %s, %b, %o, %x, %X, %c, %q, %v
+// Legacy function for backward compatibility
 func parsePlaceholders(s string) ([]string, []rune) {
 	var texts []string
 	var placeholders []rune
@@ -561,11 +574,23 @@ func parsePlaceholders(s string) ([]string, []rune) {
 					i++
 					continue
 				}
-				if strings.ContainsRune("dsboxXcvq", next) {
+				if strings.ContainsRune("dsboxXcvqf", next) {
 					texts = append(texts, sb.String())
 					sb.Reset()
 					placeholders = append(placeholders, next)
 					i++
+					continue
+				}
+				// Check for width/flag specifiers like %5d, %-10s, %08x
+				j := i + 1
+				for j < len(runes) && (runes[j] == '-' || runes[j] == '+' || runes[j] == ' ' || runes[j] == '#' || runes[j] == '0' || (runes[j] >= '1' && runes[j] <= '9') || runes[j] == '.') {
+					j++
+				}
+				if j < len(runes) && strings.ContainsRune("dsboxXcvqf", runes[j]) {
+					texts = append(texts, sb.String())
+					sb.Reset()
+					placeholders = append(placeholders, runes[j])
+					i = j
 					continue
 				}
 			}
@@ -574,4 +599,87 @@ func parsePlaceholders(s string) ([]string, []rune) {
 	}
 	texts = append(texts, sb.String())
 	return texts, placeholders
+}
+
+// parseFormatSpecs parses a format string into text parts and detailed format specs
+// Supports full printf-style format specifiers: %[flags][width][.precision]specifier
+func parseFormatSpecs(s string) ([]string, []FormatSpec) {
+	var texts []string
+	var specs []FormatSpec
+	var sb strings.Builder
+	runes := []rune(s)
+
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '%' {
+			if i+1 < len(runes) {
+				next := runes[i+1]
+				if next == '%' {
+					sb.WriteRune('%')
+					i++
+					continue
+				}
+
+				// Parse format specifier
+				spec := FormatSpec{Precision: -1}
+				j := i + 1
+
+				// Parse flags: -, +, space, #, 0
+				for j < len(runes) {
+					switch runes[j] {
+					case '-':
+						spec.LeftAlign = true
+						j++
+					case '+':
+						spec.ShowSign = true
+						j++
+					case ' ':
+						spec.SpaceSign = true
+						j++
+					case '#':
+						spec.AltFormat = true
+						j++
+					case '0':
+						if spec.Width == 0 { // Only treat as flag if no width yet
+							spec.ZeroPad = true
+							j++
+						} else {
+							goto parseWidth
+						}
+					default:
+						goto parseWidth
+					}
+				}
+
+			parseWidth:
+				// Parse width
+				for j < len(runes) && runes[j] >= '0' && runes[j] <= '9' {
+					spec.Width = spec.Width*10 + int(runes[j]-'0')
+					j++
+				}
+
+				// Parse precision
+				if j < len(runes) && runes[j] == '.' {
+					j++
+					spec.Precision = 0
+					for j < len(runes) && runes[j] >= '0' && runes[j] <= '9' {
+						spec.Precision = spec.Precision*10 + int(runes[j]-'0')
+						j++
+					}
+				}
+
+				// Parse specifier
+				if j < len(runes) && strings.ContainsRune("dsboxXcvqfeEgG", runes[j]) {
+					spec.Specifier = runes[j]
+					texts = append(texts, sb.String())
+					sb.Reset()
+					specs = append(specs, spec)
+					i = j
+					continue
+				}
+			}
+		}
+		sb.WriteRune(runes[i])
+	}
+	texts = append(texts, sb.String())
+	return texts, specs
 }

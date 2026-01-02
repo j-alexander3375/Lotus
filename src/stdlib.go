@@ -38,6 +38,8 @@ var StandardLibrary = map[string]*StdlibModule{
 	"file":        createFileModule(),
 	"time":        createTimeModule(),
 	"random":      createRandomModule(),
+	"regex":       createRegexModule(),
+	"json":        createJSONModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -555,6 +557,129 @@ func createRandomModule() *StdlibModule {
 			"choice":      {Name: "choice", Module: "random", NumArgs: 2, CodeGen: generateRandomChoice},          // choice(arr, len) -> random element from array
 			"rand_n":      {Name: "rand_n", Module: "random", NumArgs: 1, CodeGen: generateRandomRandN},           // rand_n(n) -> random int in [0, n)
 			"rand_string": {Name: "rand_string", Module: "random", NumArgs: 2, CodeGen: generateRandomRandString}, // rand_string(buf, len) -> random alphanumeric string
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createRegexModule creates the regular expression module
+// Uses POSIX regex functions from libc (regcomp, regexec, regfree)
+func createRegexModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "regex",
+		Functions: map[string]*StdlibFunction{
+			"match": {
+				Name:    "match",
+				Module:  "regex",
+				NumArgs: 2,
+				CodeGen: generateRegexMatch,
+			}, // match(pattern, string) -> bool - check if pattern matches string
+			"find": {
+				Name:    "find",
+				Module:  "regex",
+				NumArgs: 2,
+				CodeGen: generateRegexFind,
+			}, // find(pattern, string) -> int - return position of first match or -1
+			"replace": {
+				Name:    "replace",
+				Module:  "regex",
+				NumArgs: 3,
+				CodeGen: generateRegexReplace,
+			}, // replace(pattern, replacement, string) -> string - replace first match
+			"replace_all": {
+				Name:    "replace_all",
+				Module:  "regex",
+				NumArgs: 3,
+				CodeGen: generateRegexReplaceAll,
+			}, // replace_all(pattern, replacement, string) -> string - replace all matches
+			"split": {
+				Name:    "split",
+				Module:  "regex",
+				NumArgs: 2,
+				CodeGen: generateRegexSplit,
+			}, // split(pattern, string) -> array - split string by pattern
+			"find_all": {
+				Name:    "find_all",
+				Module:  "regex",
+				NumArgs: 2,
+				CodeGen: generateRegexFindAll,
+			}, // find_all(pattern, string) -> array - find all matches
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createJSONModule creates the JSON parsing and serialization module
+func createJSONModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "json",
+		Functions: map[string]*StdlibFunction{
+			"parse": {
+				Name:    "parse",
+				Module:  "json",
+				NumArgs: 1,
+				CodeGen: generateJSONParse,
+			}, // parse(json_string) -> json_value - parse JSON string
+			"stringify": {
+				Name:    "stringify",
+				Module:  "json",
+				NumArgs: 1,
+				CodeGen: generateJSONStringify,
+			}, // stringify(value) -> string - convert value to JSON string
+			"get": {
+				Name:    "get",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONGet,
+			}, // get(json, key) -> value - get value by key from JSON object
+			"get_int": {
+				Name:    "get_int",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONGetInt,
+			}, // get_int(json, key) -> int - get integer value by key
+			"get_string": {
+				Name:    "get_string",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONGetString,
+			}, // get_string(json, key) -> string - get string value by key
+			"get_bool": {
+				Name:    "get_bool",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONGetBool,
+			}, // get_bool(json, key) -> bool - get boolean value by key
+			"get_array": {
+				Name:    "get_array",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONGetArray,
+			}, // get_array(json, key) -> array - get array by key
+			"array_len": {
+				Name:    "array_len",
+				Module:  "json",
+				NumArgs: 1,
+				CodeGen: generateJSONArrayLen,
+			}, // array_len(json_array) -> int - get length of JSON array
+			"array_get": {
+				Name:    "array_get",
+				Module:  "json",
+				NumArgs: 2,
+				CodeGen: generateJSONArrayGet,
+			}, // array_get(json_array, index) -> value - get element from JSON array
+			"is_null": {
+				Name:    "is_null",
+				Module:  "json",
+				NumArgs: 1,
+				CodeGen: generateJSONIsNull,
+			}, // is_null(json_value) -> bool - check if value is null
+			"is_valid": {
+				Name:    "is_valid",
+				Module:  "json",
+				NumArgs: 1,
+				CodeGen: generateJSONIsValid,
+			}, // is_valid(json_string) -> bool - check if string is valid JSON
 		},
 		Types: map[string]TokenType{},
 	}
@@ -7678,4 +7803,114 @@ func generateRandomRandN(cg *CodeGenerator, args []ASTNode) {
 // generateRandomRandString(buf, len) -> random alphanumeric string
 func generateRandomRandString(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    # rand_string() - stub\n")
+}
+
+// ============================================================================
+// REGEX MODULE - Code Generation Stubs (legacy GCC backend)
+// ============================================================================
+
+// generateRegexMatch(pattern, string) -> bool - check if pattern matches string
+func generateRegexMatch(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::match() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n") // Return false by default
+}
+
+// generateRegexFind(pattern, string) -> int - return position of first match or -1
+func generateRegexFind(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::find() - stub\n")
+	cg.textSection.WriteString("    movq $-1, %rax\n") // Return -1 (not found)
+}
+
+// generateRegexReplace(pattern, replacement, string) -> string - replace first match
+func generateRegexReplace(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::replace() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRegexReplaceAll(pattern, replacement, string) -> string - replace all matches
+func generateRegexReplaceAll(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::replace_all() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRegexSplit(pattern, string) -> array - split string by pattern
+func generateRegexSplit(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::split() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateRegexFindAll(pattern, string) -> array - find all matches
+func generateRegexFindAll(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # regex::find_all() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// ============================================================================
+// JSON MODULE - Code Generation Stubs (legacy GCC backend)
+// ============================================================================
+
+// generateJSONParse(json_string) -> json_value - parse JSON string
+func generateJSONParse(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::parse() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONStringify(value) -> string - convert value to JSON string
+func generateJSONStringify(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::stringify() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONGet(json, key) -> value - get value by key from JSON object
+func generateJSONGet(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::get() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONGetInt(json, key) -> int - get integer value by key
+func generateJSONGetInt(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::get_int() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONGetString(json, key) -> string - get string value by key
+func generateJSONGetString(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::get_string() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONGetBool(json, key) -> bool - get boolean value by key
+func generateJSONGetBool(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::get_bool() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONGetArray(json, key) -> array - get array by key
+func generateJSONGetArray(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::get_array() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONArrayLen(json_array) -> int - get length of JSON array
+func generateJSONArrayLen(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::array_len() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONArrayGet(json_array, index) -> value - get element from JSON array
+func generateJSONArrayGet(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::array_get() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONIsNull(json_value) -> bool - check if value is null
+func generateJSONIsNull(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::is_null() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateJSONIsValid(json_string) -> bool - check if string is valid JSON
+func generateJSONIsValid(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # json::is_valid() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
 }

@@ -55,6 +55,7 @@ type VariableDeclaration struct {
 	Type    TokenType
 	Value   ASTNode
 	Storage StorageClass // Storage class modifier (static, lcl, gbl)
+	IsArray bool         // Whether this is an array type declaration (e.g., int[])
 }
 
 func (v *VariableDeclaration) astNode() {}
@@ -110,6 +111,22 @@ type StringLiteral struct {
 }
 
 func (s *StringLiteral) astNode() {}
+
+// InterpolatedString represents a string with embedded expressions
+// Example: $"Hello {name}, you are {age} years old"
+type InterpolatedString struct {
+	BaseNode
+	Parts []InterpolatedPart // Alternating text and expression parts
+}
+
+func (i *InterpolatedString) astNode() {}
+
+// InterpolatedPart is either a text segment or an expression
+type InterpolatedPart struct {
+	IsExpr bool    // true if this is an expression, false if text
+	Text   string  // The text content (if IsExpr is false)
+	Expr   ASTNode // The expression (if IsExpr is true)
+}
 
 // CharLiteral represents a single Unicode character (32-bit code point)
 type CharLiteral struct {
@@ -178,9 +195,9 @@ func (p *PartialApplication) astNode() {}
 // wrap fn timing(fn wrapped) { ... before ...; wrapped(); ... after ... }
 type WrapperDefinition struct {
 	BaseNode
-	Name       string              // Wrapper name (e.g., "timing")
-	WrappedArg string              // Name of the wrapped function parameter
-	Body       []ASTNode           // Wrapper body
+	Name       string    // Wrapper name (e.g., "timing")
+	WrappedArg string    // Name of the wrapped function parameter
+	Body       []ASTNode // Wrapper body
 }
 
 func (w *WrapperDefinition) astNode() {}
@@ -189,7 +206,7 @@ func (w *WrapperDefinition) astNode() {}
 // @timing @logging fn foo() { ... }
 type DecoratedFunction struct {
 	BaseNode
-	Decorators []string           // List of decorator names to apply
+	Decorators []string            // List of decorator names to apply
 	Function   *FunctionDefinition // The wrapped function
 }
 
@@ -204,3 +221,14 @@ type PipeExpression struct {
 }
 
 func (p *PipeExpression) astNode() {}
+
+// BitCastExpression represents a bitwise type reinterpretation
+// bitcast<TargetType>(value) - reinterprets the bits of value as TargetType
+// Example: bitcast<int64>(floatVal) to access float bits as integer
+type BitCastExpression struct {
+	BaseNode
+	TargetType string  // The target type to cast to (e.g., "int64", "float")
+	Value      ASTNode // The expression to bitcast
+}
+
+func (b *BitCastExpression) astNode() {}

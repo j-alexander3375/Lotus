@@ -122,6 +122,11 @@ func (c *Compiler) compileWithLLVM(inputPath string, tokens []Token) error {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
+	// Apply AST-level optimizations
+	statements = OptimizeAST(statements)
+	statements = EliminateDeadCode(statements)
+	statements = EliminateUnusedFunctions(statements)
+
 	// Create LLVM code generator
 	moduleName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
 	llvmGen := NewLLVMCodeGenerator(moduleName)

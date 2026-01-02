@@ -507,3 +507,442 @@ func (s *OptimizationStats) String() string {
 	}
 	return ""
 }
+
+// ============================================================================
+// DEAD CODE ELIMINATION
+// ============================================================================
+//
+// Dead code elimination removes code that can never be executed or has no effect:
+// 1. Code after unconditional return/break/continue statements
+// 2. Empty if/else branches
+// 3. Unreachable code in if(false) branches
+// 4. Unused variable assignments (when variable is never read)
+
+// EliminateDeadCode removes unreachable code from a list of statements.
+// It processes each function and removes dead code within function bodies.
+func EliminateDeadCode(statements []ASTNode) []ASTNode {
+	result := make([]ASTNode, 0, len(statements))
+	for _, stmt := range statements {
+		cleaned := eliminateDeadCodeInNode(stmt)
+		if cleaned != nil {
+			result = append(result, cleaned)
+		}
+	}
+	return result
+}
+
+// eliminateDeadCodeInNode removes dead code from a single AST node.
+func eliminateDeadCodeInNode(node ASTNode) ASTNode {
+	if node == nil {
+		return nil
+	}
+
+	switch n := node.(type) {
+	case *FunctionDefinition:
+		n.Body = eliminateDeadCodeInBlock(n.Body)
+		return n
+
+	case *IfStatement:
+		// Check if condition is constant
+		if cond := evaluateConstantBool(n.Condition); cond != nil {
+			if *cond {
+				// if(true) - just use the then body as statements
+				// For now, keep the structure but eliminate else
+				n.ElseBody = nil
+			} else {
+				// if(false) - eliminate then body, use else body
+				n.ThenBody = n.ElseBody
+				n.ElseBody = nil
+				n.Condition = &BoolLiteral{Value: true}
+			}
+		}
+		n.ThenBody = eliminateDeadCodeInBlock(n.ThenBody)
+		n.ElseBody = eliminateDeadCodeInBlock(n.ElseBody)
+
+		// Remove empty if statements
+		if len(n.ThenBody) == 0 && len(n.ElseBody) == 0 {
+			return nil
+		}
+		return n
+
+	case *WhileLoop:
+		// Check for while(false) - dead loop
+		if cond := evaluateConstantBool(n.Condition); cond != nil && !*cond {
+			return nil // while(false) never executes
+		}
+		n.Body = eliminateDeadCodeInBlock(n.Body)
+		return n
+
+	case *ForLoop:
+		// Check for for(;false;) - dead loop
+		if cond := evaluateConstantBool(n.Condition); cond != nil && !*cond {
+			// Only the init statement might have side effects
+			if n.Init != nil {
+				return n.Init
+			}
+			return nil
+		}
+		n.Body = eliminateDeadCodeInBlock(n.Body)
+		return n
+
+	case *TryStatement:
+		n.TryBlock = eliminateDeadCodeInBlock(n.TryBlock)
+		for _, clause := range n.CatchClauses {
+			clause.Body = eliminateDeadCodeInBlock(clause.Body)
+		}
+		n.FinallyBlock = eliminateDeadCodeInBlock(n.FinallyBlock)
+		return n
+
+	default:
+		return node
+	}
+}
+
+// eliminateDeadCodeInBlock removes dead code from a block of statements.
+// Specifically, it removes any code that appears after a return, break, or continue.
+func eliminateDeadCodeInBlock(block []ASTNode) []ASTNode {
+	if block == nil {
+		return nil
+	}
+
+	result := make([]ASTNode, 0, len(block))
+	for _, stmt := range block {
+		// First, recursively process the statement
+		cleaned := eliminateDeadCodeInNode(stmt)
+		if cleaned == nil {
+			continue
+		}
+		result = append(result, cleaned)
+
+		// Check if this is a terminating statement
+		if isTerminatingStatement(cleaned) {
+			// Everything after this is dead code
+			break
+		}
+	}
+	return result
+}
+
+// isTerminatingStatement returns true if the statement unconditionally
+// terminates the current block (return, break, continue, throw).
+func isTerminatingStatement(stmt ASTNode) bool {
+	switch s := stmt.(type) {
+	case *ReturnStatement:
+		return true
+	case *BreakStatement:
+		return true
+	case *ContinueStatement:
+		return true
+	case *ThrowStatement:
+		return true
+	case *IfStatement:
+		// if both branches terminate, the whole if terminates
+		if len(s.ThenBody) > 0 && len(s.ElseBody) > 0 {
+			thenTerminates := len(s.ThenBody) > 0 && isTerminatingStatement(s.ThenBody[len(s.ThenBody)-1])
+			elseTerminates := len(s.ElseBody) > 0 && isTerminatingStatement(s.ElseBody[len(s.ElseBody)-1])
+			return thenTerminates && elseTerminates
+		}
+		return false
+	}
+	return false
+}
+
+// ============================================================================
+// UNUSED VARIABLE DETECTION
+// ============================================================================
+
+// VariableUsage tracks how a variable is used in the code.
+type VariableUsage struct {
+	Name       string
+	DeclNode   ASTNode // The declaration node
+	WriteCount int     // Number of times written to
+	ReadCount  int     // Number of times read from
+}
+
+// ============================================================================
+// UNUSED FUNCTION ELIMINATION
+// ============================================================================
+
+// EliminateUnusedFunctions removes functions that are never called.
+// It preserves "main" and any functions called directly or indirectly from main.
+func EliminateUnusedFunctions(statements []ASTNode) []ASTNode {
+	// Collect all function definitions
+	functions := make(map[string]*FunctionDefinition)
+	var nonFunctions []ASTNode
+
+	for _, stmt := range statements {
+		if fn, ok := stmt.(*FunctionDefinition); ok {
+			functions[fn.Name] = fn
+		} else {
+			nonFunctions = append(nonFunctions, stmt)
+		}
+	}
+
+	// Find all called functions starting from "main"
+	calledFunctions := make(map[string]bool)
+	if mainFn, ok := functions["main"]; ok {
+		markCalledFunctions(mainFn, functions, calledFunctions)
+	}
+
+	// Always keep main
+	calledFunctions["main"] = true
+
+	// Build result with only used functions
+	result := make([]ASTNode, 0, len(statements))
+	result = append(result, nonFunctions...)
+	for name, fn := range functions {
+		if calledFunctions[name] {
+			result = append(result, fn)
+		}
+	}
+
+	return result
+}
+
+// markCalledFunctions recursively marks all functions called from the given function.
+func markCalledFunctions(fn *FunctionDefinition, allFunctions map[string]*FunctionDefinition, called map[string]bool) {
+	if fn == nil || called[fn.Name] {
+		return
+	}
+	called[fn.Name] = true
+
+	// Find all function calls in this function's body
+	callsInBody := findFunctionCalls(fn.Body)
+	for _, callName := range callsInBody {
+		if calledFn, ok := allFunctions[callName]; ok {
+			markCalledFunctions(calledFn, allFunctions, called)
+		}
+	}
+}
+
+// findFunctionCalls finds all function names called in a list of statements.
+func findFunctionCalls(statements []ASTNode) []string {
+	var calls []string
+	for _, stmt := range statements {
+		calls = append(calls, findCallsInNode(stmt)...)
+	}
+	return calls
+}
+
+// findCallsInNode finds all function calls in a single AST node.
+func findCallsInNode(node ASTNode) []string {
+	if node == nil {
+		return nil
+	}
+
+	var calls []string
+	switch n := node.(type) {
+	case *FunctionCall:
+		calls = append(calls, n.Name)
+		for _, arg := range n.Args {
+			calls = append(calls, findCallsInNode(arg)...)
+		}
+	case *VariableDeclaration:
+		calls = append(calls, findCallsInNode(n.Value)...)
+	case *Assignment:
+		calls = append(calls, findCallsInNode(n.Value)...)
+	case *ReturnStatement:
+		calls = append(calls, findCallsInNode(n.Value)...)
+	case *IfStatement:
+		calls = append(calls, findCallsInNode(n.Condition)...)
+		calls = append(calls, findFunctionCalls(n.ThenBody)...)
+		calls = append(calls, findFunctionCalls(n.ElseBody)...)
+	case *WhileLoop:
+		calls = append(calls, findCallsInNode(n.Condition)...)
+		calls = append(calls, findFunctionCalls(n.Body)...)
+	case *ForLoop:
+		if n.Init != nil {
+			calls = append(calls, findCallsInNode(n.Init)...)
+		}
+		calls = append(calls, findCallsInNode(n.Condition)...)
+		if n.Update != nil {
+			calls = append(calls, findCallsInNode(n.Update)...)
+		}
+		calls = append(calls, findFunctionCalls(n.Body)...)
+	case *BinaryOp:
+		calls = append(calls, findCallsInNode(n.Left)...)
+		calls = append(calls, findCallsInNode(n.Right)...)
+	case *UnaryOp:
+		calls = append(calls, findCallsInNode(n.Operand)...)
+	case *Comparison:
+		calls = append(calls, findCallsInNode(n.Left)...)
+		calls = append(calls, findCallsInNode(n.Right)...)
+	case *LogicalOp:
+		calls = append(calls, findCallsInNode(n.Left)...)
+		calls = append(calls, findCallsInNode(n.Right)...)
+	case *TernaryOp:
+		calls = append(calls, findCallsInNode(n.Condition)...)
+		calls = append(calls, findCallsInNode(n.TrueExpr)...)
+		calls = append(calls, findCallsInNode(n.FalseExpr)...)
+	case *PipeExpression:
+		calls = append(calls, findCallsInNode(n.Left)...)
+		calls = append(calls, n.Function) // The function being piped into
+	case *MatchExpression:
+		calls = append(calls, findCallsInNode(n.Value)...)
+		for _, c := range n.Cases {
+			calls = append(calls, findFunctionCalls(c.Body)...)
+		}
+	}
+	return calls
+}
+
+// FindUnusedVariables analyzes statements and returns a list of unused variable names.
+func FindUnusedVariables(statements []ASTNode) []string {
+	usage := make(map[string]*VariableUsage)
+
+	// First pass: collect all variable declarations
+	collectVariableDeclarations(statements, usage)
+
+	// Second pass: count reads and writes
+	countVariableUsage(statements, usage)
+
+	// Find unused variables (declared but never read)
+	var unused []string
+	for name, u := range usage {
+		if u.ReadCount == 0 {
+			unused = append(unused, name)
+		}
+	}
+	return unused
+}
+
+// collectVariableDeclarations finds all variable declarations in the statements.
+func collectVariableDeclarations(statements []ASTNode, usage map[string]*VariableUsage) {
+	for _, stmt := range statements {
+		collectDeclsInNode(stmt, usage)
+	}
+}
+
+func collectDeclsInNode(node ASTNode, usage map[string]*VariableUsage) {
+	if node == nil {
+		return
+	}
+
+	switch n := node.(type) {
+	case *VariableDeclaration:
+		usage[n.Name] = &VariableUsage{Name: n.Name, DeclNode: n, WriteCount: 1}
+	case *FunctionDefinition:
+		// Create a new scope for function parameters
+		for _, param := range n.Parameters {
+			usage[param.Name] = &VariableUsage{Name: param.Name, DeclNode: nil, WriteCount: 1}
+		}
+		collectVariableDeclarations(n.Body, usage)
+	case *IfStatement:
+		collectVariableDeclarations(n.ThenBody, usage)
+		collectVariableDeclarations(n.ElseBody, usage)
+	case *WhileLoop:
+		collectVariableDeclarations(n.Body, usage)
+	case *ForLoop:
+		if n.Init != nil {
+			collectDeclsInNode(n.Init, usage)
+		}
+		collectVariableDeclarations(n.Body, usage)
+	}
+}
+
+// countVariableUsage counts reads and writes to variables.
+func countVariableUsage(statements []ASTNode, usage map[string]*VariableUsage) {
+	for _, stmt := range statements {
+		countUsageInNode(stmt, usage)
+	}
+}
+
+func countUsageInNode(node ASTNode, usage map[string]*VariableUsage) {
+	if node == nil {
+		return
+	}
+
+	switch n := node.(type) {
+	case *Identifier:
+		if u, ok := usage[n.Name]; ok {
+			u.ReadCount++
+		}
+	case *Assignment:
+		if id, ok := n.Target.(*Identifier); ok {
+			if u, exists := usage[id.Name]; exists {
+				u.WriteCount++
+			}
+		}
+		countUsageInExpr(n.Value, usage)
+	case *CompoundAssignment:
+		if id, ok := n.Target.(*Identifier); ok {
+			if u, exists := usage[id.Name]; exists {
+				u.WriteCount++
+				u.ReadCount++ // Also reads for compound assignment
+			}
+		}
+		countUsageInExpr(n.Value, usage)
+	case *VariableDeclaration:
+		countUsageInExpr(n.Value, usage)
+	case *ReturnStatement:
+		countUsageInExpr(n.Value, usage)
+	case *FunctionCall:
+		for _, arg := range n.Args {
+			countUsageInExpr(arg, usage)
+		}
+	case *FunctionDefinition:
+		countVariableUsage(n.Body, usage)
+	case *IfStatement:
+		countUsageInExpr(n.Condition, usage)
+		countVariableUsage(n.ThenBody, usage)
+		countVariableUsage(n.ElseBody, usage)
+	case *WhileLoop:
+		countUsageInExpr(n.Condition, usage)
+		countVariableUsage(n.Body, usage)
+	case *ForLoop:
+		if n.Init != nil {
+			countUsageInNode(n.Init, usage)
+		}
+		countUsageInExpr(n.Condition, usage)
+		if n.Update != nil {
+			countUsageInNode(n.Update, usage)
+		}
+		countVariableUsage(n.Body, usage)
+	case *BinaryOp:
+		countUsageInExpr(n.Left, usage)
+		countUsageInExpr(n.Right, usage)
+	case *Comparison:
+		countUsageInExpr(n.Left, usage)
+		countUsageInExpr(n.Right, usage)
+	case *LogicalOp:
+		countUsageInExpr(n.Left, usage)
+		countUsageInExpr(n.Right, usage)
+	}
+}
+
+func countUsageInExpr(expr ASTNode, usage map[string]*VariableUsage) {
+	if expr == nil {
+		return
+	}
+
+	switch e := expr.(type) {
+	case *Identifier:
+		if u, ok := usage[e.Name]; ok {
+			u.ReadCount++
+		}
+	case *BinaryOp:
+		countUsageInExpr(e.Left, usage)
+		countUsageInExpr(e.Right, usage)
+	case *UnaryOp:
+		countUsageInExpr(e.Operand, usage)
+	case *BitwiseOp:
+		countUsageInExpr(e.Left, usage)
+		countUsageInExpr(e.Right, usage)
+	case *Comparison:
+		countUsageInExpr(e.Left, usage)
+		countUsageInExpr(e.Right, usage)
+	case *LogicalOp:
+		countUsageInExpr(e.Left, usage)
+		countUsageInExpr(e.Right, usage)
+	case *FunctionCall:
+		for _, arg := range e.Args {
+			countUsageInExpr(arg, usage)
+		}
+	case *ArrayAccess:
+		countUsageInExpr(e.Index, usage)
+	case *TernaryOp:
+		countUsageInExpr(e.Condition, usage)
+		countUsageInExpr(e.TrueExpr, usage)
+		countUsageInExpr(e.FalseExpr, usage)
+	}
+}

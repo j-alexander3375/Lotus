@@ -154,7 +154,7 @@ func (cg *LLVMCodeGenerator) generateIncrementOp(inc *IncrementOp) error {
 
 func (cg *LLVMCodeGenerator) generateArrayDecl(a *ArrayDeclaration) error {
 	elemType := cg.tokenTypeToLLVM(a.ElemType)
-	
+
 	// Get size - if Size is an IntLiteral, use its value, otherwise default to 0
 	arraySize := 0
 	if a.Size != nil {
@@ -165,7 +165,7 @@ func (cg *LLVMCodeGenerator) generateArrayDecl(a *ArrayDeclaration) error {
 	if arraySize == 0 && len(a.Initial) > 0 {
 		arraySize = len(a.Initial)
 	}
-	
+
 	arrayType := llvm.ArrayType(elemType, arraySize)
 
 	alloca := cg.builder.CreateAlloca(arrayType, a.Name)
@@ -464,6 +464,78 @@ func (cg *LLVMCodeGenerator) generateEnumLiteral(e *EnumLiteral) (llvm.Value, er
 }
 
 // ============================================================================
+// UNION TYPES
+// ============================================================================
+
+func (cg *LLVMCodeGenerator) generateUnionDef(u *UnionDefinition) error {
+	// A union type is represented as a tagged union:
+	// - First field is the tag (int64) indicating which variant is active
+	// - Second field is the data payload (sized to hold the largest variant)
+
+	// Calculate max size of all variants
+	maxSize := int64(0)
+	for i, variant := range u.Variants {
+		size := int64(0)
+		for _, field := range variant.Fields {
+			size += cg.getTypeSize(cg.tokenTypeToLLVM(field))
+		}
+		if size > maxSize {
+			maxSize = size
+		}
+		// Store variant index for later lookup
+		variantName := fmt.Sprintf("%s.%s", u.Name, variant.Name)
+		// We'll store the variant tag in enumDefs for easy lookup
+		cg.enumDefs[variantName] = &EnumDefinition{
+			Name:   u.Name,
+			Values: []EnumValue{{Name: variant.Name, Value: i}},
+		}
+	}
+
+	// Create union struct type: { tag: i64, data: [maxSize x i8] }
+	unionFields := []llvm.Type{
+		cg.context.Int64Type(), // tag
+	}
+	if maxSize > 0 {
+		unionFields = append(unionFields, llvm.ArrayType(cg.context.Int8Type(), int(maxSize)))
+	}
+
+	unionType := cg.context.StructType(unionFields, false)
+	cg.structTypes[u.Name] = unionType
+
+	// Store union definition for later use
+	if cg.unionDefs == nil {
+		cg.unionDefs = make(map[string]*UnionDefinition)
+	}
+	cg.unionDefs[u.Name] = u
+
+	return nil
+}
+
+// getTypeSize returns the size in bytes of an LLVM type
+func (cg *LLVMCodeGenerator) getTypeSize(t llvm.Type) int64 {
+	switch t.TypeKind() {
+	case llvm.IntegerTypeKind:
+		return int64(t.IntTypeWidth() / 8)
+	case llvm.FloatTypeKind:
+		return 4
+	case llvm.DoubleTypeKind:
+		return 8
+	case llvm.PointerTypeKind:
+		return 8 // 64-bit pointers
+	case llvm.ArrayTypeKind:
+		return int64(t.ArrayLength()) * cg.getTypeSize(t.ElementType())
+	case llvm.StructTypeKind:
+		size := int64(0)
+		for i := 0; i < t.StructElementTypesCount(); i++ {
+			size += cg.getTypeSize(t.StructElementTypes()[i])
+		}
+		return size
+	default:
+		return 8 // Default to 8 bytes
+	}
+}
+
+// ============================================================================
 // CLASS OPERATIONS
 // ============================================================================
 
@@ -684,7 +756,7 @@ func (cg *LLVMCodeGenerator) generateDereference(d *Dereference) (llvm.Value, er
 func (cg *LLVMCodeGenerator) generateSizeof(s *SizeofExpr) (llvm.Value, error) {
 	// SizeofExpr has TypeOrExpr which can be an identifier (type name) or expression
 	var size uint64 = 8 // Default to pointer size
-	
+
 	if s.TypeOrExpr != nil {
 		if id, ok := s.TypeOrExpr.(*Identifier); ok {
 			// sizeof(type)

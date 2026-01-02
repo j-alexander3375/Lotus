@@ -36,6 +36,45 @@ func Tokenize(input string) []Token {
 			continue
 		}
 
+		// Interpolated string: $"Hello {name}"
+		if c == '$' && i+1 < len(runes) && runes[i+1] == '"' {
+			col++
+			i++ // skip $
+			i++ // skip opening "
+			buf.Reset()
+			for i < len(runes) && runes[i] != '"' {
+				if runes[i] == '\\' && i+1 < len(runes) {
+					i++
+					switch runes[i] {
+					case 'n':
+						buf.WriteRune('\n')
+					case 't':
+						buf.WriteRune('\t')
+					case '\\':
+						buf.WriteRune('\\')
+					case '"':
+						buf.WriteRune('"')
+					case '{':
+						buf.WriteRune('{')
+					case '}':
+						buf.WriteRune('}')
+					default:
+						buf.WriteRune(runes[i])
+					}
+				} else {
+					buf.WriteRune(runes[i])
+				}
+				i++
+			}
+			if i >= len(runes) {
+				fmt.Fprintf(os.Stderr, "Unterminated interpolated string literal\n")
+				return []Token{}
+			}
+			tokens = append(tokens, makeToken(TokenInterpolatedString, buf.String()))
+			buf.Reset()
+			continue
+		}
+
 		if c == '"' {
 			// String literal (UTF-8 aware)
 			col++
@@ -206,8 +245,14 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenWhile, ""))
 			case "for":
 				tokens = append(tokens, makeToken(TokenFor, ""))
+			case "break":
+				tokens = append(tokens, makeToken(TokenBreak, ""))
+			case "continue":
+				tokens = append(tokens, makeToken(TokenContinue, ""))
 			case "fn":
 				tokens = append(tokens, makeToken(TokenFn, ""))
+			case "inline":
+				tokens = append(tokens, makeToken(TokenInline, ""))
 			case "vrt":
 				tokens = append(tokens, makeToken(TokenVirtual, ""))
 			case "override":
@@ -236,6 +281,28 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenThrow, ""))
 			case "null":
 				tokens = append(tokens, makeToken(TokenNull, ""))
+			case "bitcast":
+				tokens = append(tokens, makeToken(TokenBitcast, ""))
+			case "transmute":
+				tokens = append(tokens, makeToken(TokenTransmute, ""))
+			case "match":
+				tokens = append(tokens, makeToken(TokenMatch, ""))
+			case "case":
+				tokens = append(tokens, makeToken(TokenCase, ""))
+			case "default":
+				tokens = append(tokens, makeToken(TokenDefault, ""))
+			case "when":
+				tokens = append(tokens, makeToken(TokenWhen, ""))
+			case "to":
+				tokens = append(tokens, makeToken(TokenTo, ""))
+			case "union":
+				tokens = append(tokens, makeToken(TokenUnion, ""))
+			case "option":
+				tokens = append(tokens, makeToken(TokenOption, ""))
+			case "Some":
+				tokens = append(tokens, makeToken(TokenSome, ""))
+			case "None":
+				tokens = append(tokens, makeToken(TokenNone, ""))
 			case "Printf":
 				tokens = append(tokens, makeToken(TokenPrintf, ""))
 			case "FPrintf":
@@ -261,16 +328,61 @@ func Tokenize(input string) []Token {
 			}
 			buf.Reset()
 		} else if unicode.IsDigit(c) {
-			// Number literal (int or float)
+			// Number literal (int or float, including hex/octal/binary)
 			buf.WriteRune(c)
 			i++
 			isFloat := false
-			for i < len(runes) && (unicode.IsDigit(runes[i]) || runes[i] == '.') {
-				if runes[i] == '.' {
-					isFloat = true
+			isHex := false
+			isOctal := false
+			isBinary := false
+
+			// Check for hex, octal, or binary prefix
+			if c == '0' && i < len(runes) {
+				if runes[i] == 'x' || runes[i] == 'X' {
+					// Hex literal: 0x...
+					buf.WriteRune(runes[i])
+					i++
+					isHex = true
+					for i < len(runes) && (unicode.IsDigit(runes[i]) || (runes[i] >= 'a' && runes[i] <= 'f') || (runes[i] >= 'A' && runes[i] <= 'F')) {
+						buf.WriteRune(runes[i])
+						i++
+					}
+				} else if runes[i] == 'o' || runes[i] == 'O' {
+					// Octal literal: 0o...
+					buf.WriteRune(runes[i])
+					i++
+					isOctal = true
+					for i < len(runes) && (runes[i] >= '0' && runes[i] <= '7') {
+						buf.WriteRune(runes[i])
+						i++
+					}
+				} else if runes[i] == 'b' || runes[i] == 'B' {
+					// Binary literal: 0b...
+					buf.WriteRune(runes[i])
+					i++
+					isBinary = true
+					for i < len(runes) && (runes[i] == '0' || runes[i] == '1') {
+						buf.WriteRune(runes[i])
+						i++
+					}
 				}
-				buf.WriteRune(runes[i])
-				i++
+			}
+
+			// If not hex/octal/binary, parse as decimal
+			if !isHex && !isOctal && !isBinary {
+				for i < len(runes) && (unicode.IsDigit(runes[i]) || runes[i] == '.') {
+					// Check for range operator '..' - don't consume it as part of float
+					if runes[i] == '.' {
+						// Look ahead for another dot
+						if i+1 < len(runes) && runes[i+1] == '.' {
+							// This is a range operator, stop parsing number
+							break
+						}
+						isFloat = true
+					}
+					buf.WriteRune(runes[i])
+					i++
+				}
 			}
 			i-- // Compensate for the loop increment
 
@@ -287,9 +399,12 @@ func Tokenize(input string) []Token {
 		} else if c == ';' {
 			tokens = append(tokens, makeToken(TokenSemi, ""))
 		} else if c == '=' {
-			// Check for ==
+			// Check for ==, =>
 			if i+1 < len(runes) && runes[i+1] == '=' {
 				tokens = append(tokens, makeToken(TokenEqual, ""))
+				i++
+			} else if i+1 < len(runes) && runes[i+1] == '>' {
+				tokens = append(tokens, makeToken(TokenLambda, ""))
 				i++
 			} else {
 				tokens = append(tokens, makeToken(TokenAssign, ""))
@@ -397,7 +512,13 @@ func Tokenize(input string) []Token {
 		} else if c == ']' {
 			tokens = append(tokens, makeToken(TokenRBracket, ""))
 		} else if c == '.' {
-			tokens = append(tokens, makeToken(TokenDot, ""))
+			// Check for range operator '..'
+			if i+1 < len(runes) && runes[i+1] == '.' {
+				tokens = append(tokens, makeToken(TokenRange, ""))
+				i++ // skip second dot
+			} else {
+				tokens = append(tokens, makeToken(TokenDot, ""))
+			}
 		} else if c == ':' {
 			tokens = append(tokens, makeToken(TokenColon, ""))
 		} else if c == '(' {
