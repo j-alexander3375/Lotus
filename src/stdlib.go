@@ -325,8 +325,12 @@ func createNetModule() *StdlibModule {
 			"send":         {Name: "send", Module: "net", NumArgs: 3, CodeGen: generateNetSend},
 			"recv":         {Name: "recv", Module: "net", NumArgs: 3, CodeGen: generateNetRecv},
 			"close":        {Name: "close", Module: "net", NumArgs: 1, CodeGen: generateNetClose},
+			// TCP server support
+			"bind_ipv4":  {Name: "bind_ipv4", Module: "net", NumArgs: 3, CodeGen: generateNetBindIPv4},
+			"listen":     {Name: "listen", Module: "net", NumArgs: 2, CodeGen: generateNetListen},
+			"accept":     {Name: "accept", Module: "net", NumArgs: 1, CodeGen: generateNetAccept},
+			"setsockopt": {Name: "setsockopt", Module: "net", NumArgs: 4, CodeGen: generateNetSetSockOpt},
 			// UDP support
-			"bind_ipv4":   {Name: "bind_ipv4", Module: "net", NumArgs: 3, CodeGen: generateNetBindIPv4},
 			"sendto_ipv4": {Name: "sendto_ipv4", Module: "net", NumArgs: 5, CodeGen: generateNetSendtoIPv4},
 			"recvfrom":    {Name: "recvfrom", Module: "net", NumArgs: 3, CodeGen: generateNetRecvfrom},
 			// IPv6 support
@@ -1429,6 +1433,47 @@ func generateNetBindIPv4(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    movq $49, %rax\n") // syscall 49 = bind
 	cg.textSection.WriteString("    syscall\n")
 	cg.textSection.WriteString("    addq $32, %rsp\n")
+}
+
+// listen(fd, backlog) -> 0 on success, negative on error
+func generateNetListen(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")         // fd
+	cg.generateExpressionToReg(args[1], "rsi")         // backlog
+	cg.textSection.WriteString("    movq $50, %rax\n") // syscall 50 = listen
+	cg.textSection.WriteString("    syscall\n")
+}
+
+// accept(fd) -> client fd or negative on error
+func generateNetAccept(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")          // fd
+	cg.textSection.WriteString("    xorq %rsi, %rsi\n") // addr = NULL
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // addrlen = NULL
+	cg.textSection.WriteString("    movq $43, %rax\n")  // syscall 43 = accept
+	cg.textSection.WriteString("    syscall\n")
+}
+
+// setsockopt(fd, level, optname, optval) -> 0 on success
+func generateNetSetSockOpt(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 4 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // fd
+	cg.generateExpressionToReg(args[1], "rsi") // level
+	cg.generateExpressionToReg(args[2], "rdx") // optname
+	// Store optval on stack and pass pointer
+	cg.generateExpressionToReg(args[3], "rax")
+	cg.textSection.WriteString("    pushq %rax\n")
+	cg.textSection.WriteString("    movq %rsp, %r10\n") // optval ptr
+	cg.textSection.WriteString("    movq $4, %r8\n")    // optlen = sizeof(int)
+	cg.textSection.WriteString("    movq $54, %rax\n")  // syscall 54 = setsockopt
+	cg.textSection.WriteString("    syscall\n")
+	cg.textSection.WriteString("    addq $8, %rsp\n")
 }
 
 // sendto_ipv4(fd, buf_ptr, buf_len, dest_ip_u32, dest_port) -> bytes sent

@@ -45,9 +45,12 @@
 
 ### Standard Library Modules
 - **io** - printf, println, file operations
-- **mem** - malloc, free, sizeof, memcpy
-- **math** - abs, min, max, sqrt, pow, gcd, lcm
+- **mem** - malloc, free, sizeof, memcpy, memset
+- **math** - abs, min, max, sqrt, pow, gcd, lcm, floor, ceil, round
 - **str** - len, concat, compare, indexOf, contains, toUpper, toLower, trim, split, replace
+- **hash** - djb2, fnv1a, crc32, murmur
+- **net** - socket, connect_ipv4, bind_ipv4, listen, accept, send, recv, setsockopt
+- **collections** - dynamic arrays, stacks, queues, deques, heaps
 - **json** - parse, stringify, get, array operations
 - **format** - sprintf, snprintf, pad_left, pad_right
 - **random** - rand, rand_range, seed, rand_float, rand_bool, shuffle, choice

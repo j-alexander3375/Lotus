@@ -37,11 +37,12 @@ type LLVMCodeGenerator struct {
 	loopContinueBlock llvm.BasicBlock // Target for continue
 
 	// Symbol tables
-	namedValues   map[string]LLVMVariable // Local variables with type info
-	globalStrings map[string]llvm.Value   // String constants
-	functions     map[string]llvm.Value   // Declared functions
-	globalVars    map[string]llvm.Value   // Global and static variables
-	staticVars    map[string]llvm.Value   // Static variables (function-local persistent)
+	namedValues     map[string]LLVMVariable // Local variables with type info
+	globalStrings   map[string]llvm.Value   // String constants
+	functions       map[string]llvm.Value   // Declared functions
+	globalVars      map[string]llvm.Value   // Global and static variables
+	staticVars      map[string]llvm.Value   // Static variables (function-local persistent)
+	stringConstants map[string]bool         // Track which globalVars are direct string ptrs (no load needed)
 
 	// Virtual function tables
 	vtables        map[string]llvm.Value // Class name -> vtable global
@@ -80,6 +81,7 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 		functions:           make(map[string]llvm.Value),
 		globalVars:          make(map[string]llvm.Value),
 		staticVars:          make(map[string]llvm.Value),
+		stringConstants:     make(map[string]bool),
 		vtables:             make(map[string]llvm.Value),
 		virtualMethods:      make(map[string]bool),
 		structTypes:         make(map[string]llvm.Type),
@@ -405,6 +407,20 @@ func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
 // generateConstDecl generates a constant declaration
 // Constants are implemented as global variables with constant initializers
 func (cg *LLVMCodeGenerator) generateConstDecl(c *ConstantDeclaration) error {
+	// Handle string constants specially - they are pointers to string data
+	if c.Type == TokenTypeString {
+		if strLit, ok := c.Value.(*StringLiteral); ok {
+			// Create the string constant and store the pointer
+			strPtr := cg.createGlobalStringConstant(strLit.Value)
+			// For string constants, we just store the pointer directly in globalVars
+			// It's already a pointer, so no need to create another global
+			cg.globalVars[c.Name] = strPtr
+			cg.stringConstants[c.Name] = true // Mark as direct pointer (no load needed)
+			return nil
+		}
+		return fmt.Errorf("string constant %s must be initialized with a string literal", c.Name)
+	}
+
 	constType := cg.tokenTypeToLLVM(c.Type)
 
 	// Create a global constant
@@ -662,6 +678,10 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 		if !ok {
 			// Then check global variables
 			if globalVar, gok := cg.globalVars[e.Name]; gok {
+				// String constants are direct pointers, no load needed
+				if cg.stringConstants[e.Name] {
+					return globalVar, nil
+				}
 				varType := globalVar.GlobalValueType()
 				return cg.builder.CreateLoad(varType, globalVar, e.Name), nil
 			}
@@ -929,6 +949,16 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateSqrt(call)
 	case "pow":
 		return cg.generatePow(call)
+	case "gcd":
+		return cg.generateGcd(call)
+	case "lcm":
+		return cg.generateLcm(call)
+	case "floor":
+		return cg.generateFloor(call)
+	case "ceil":
+		return cg.generateCeil(call)
+	case "round":
+		return cg.generateRound(call)
 
 	// Number conversion functions
 	case "toUint32":
@@ -939,6 +969,20 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateToInt(call)
 	case "toFloat":
 		return cg.generateToFloat(call)
+	case "toInt8":
+		return cg.generateToInt8(call)
+	case "toUint8":
+		return cg.generateToUint8(call)
+	case "toInt16":
+		return cg.generateToInt16(call)
+	case "toUint16":
+		return cg.generateToUint16(call)
+	case "toInt32":
+		return cg.generateToInt32(call)
+	case "toInt64":
+		return cg.generateToInt64(call)
+	case "toUint64":
+		return cg.generateToUint64(call)
 
 	// String stdlib functions
 	case "len":
@@ -975,6 +1019,20 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateMalloc(call)
 	case "free":
 		return cg.generateFree(call)
+	case "memset":
+		return cg.generateMemset(call)
+	case "memcpy":
+		return cg.generateMemcpy(call)
+
+	// Hash functions
+	case "djb2":
+		return cg.generateDjb2(call)
+	case "fnv1a":
+		return cg.generateFnv1a(call)
+	case "crc32":
+		return cg.generateCrc32(call)
+	case "murmur":
+		return cg.generateMurmur(call)
 
 	// Collections stdlib functions
 	case "array_int_new":
@@ -1059,6 +1117,20 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateSocket(call)
 	case "close":
 		return cg.generateClose(call)
+	case "connect_ipv4":
+		return cg.generateConnectIPv4(call)
+	case "send":
+		return cg.generateSend(call)
+	case "recv":
+		return cg.generateRecv(call)
+	case "bind_ipv4":
+		return cg.generateBindIPv4(call)
+	case "listen":
+		return cg.generateListen(call)
+	case "accept":
+		return cg.generateAccept(call)
+	case "setsockopt":
+		return cg.generateSetSockOpt(call)
 
 	// File I/O functions
 	case "open":
@@ -1077,6 +1149,8 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateNanos(call)
 	case "sleep":
 		return cg.generateSleep(call)
+	case "clock":
+		return cg.generateClock(call)
 
 	// HTTP pool functions
 	case "pool_new":
