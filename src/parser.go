@@ -152,7 +152,7 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 		return p.parseConstantDeclaration()
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
 		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
-		TokenTypeString, TokenTypeBool, TokenTypeFloat:
+		TokenTypeString, TokenTypeBool, TokenTypeFloat32, TokenTypeFloat64:
 		return p.parseVariableDeclaration()
 	case TokenPrintString, TokenPrintf, TokenFPrintf, TokenPrintln, TokenSPrint, TokenSPrintf, TokenSPrintln, TokenFatalf, TokenFatalln, TokenLogf, TokenLogln:
 		return p.parseFunctionCall()
@@ -858,7 +858,7 @@ func isTypeToken(t TokenType) bool {
 	switch t {
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
 		TokenTypeUint, TokenTypeUint8, TokenTypeUint16, TokenTypeUint32, TokenTypeUint64,
-		TokenTypeString, TokenTypeBool, TokenTypeFloat, TokenTypeVoid:
+		TokenTypeString, TokenTypeBool, TokenTypeChar, TokenTypeFloat32, TokenTypeFloat64, TokenTypeVoid:
 		return true
 	default:
 		return false
@@ -1704,7 +1704,7 @@ func (p *Parser) parseArrayLiteral() (*ArrayLiteral, error) {
 			case *IntLiteral:
 				elemType = TokenTypeInt64
 			case *FloatLiteral:
-				elemType = TokenTypeFloat
+				elemType = TokenTypeFloat64
 			case *StringLiteral, *InterpolatedString:
 				elemType = TokenTypeString
 			case *BoolLiteral:
@@ -1886,9 +1886,12 @@ func (p *Parser) parseTypeName() (string, error) {
 	case TokenTypeUint64:
 		p.advance()
 		return "uint64", nil
-	case TokenTypeFloat:
+	case TokenTypeFloat32:
 		p.advance()
-		return "float", nil
+		return "float32", nil
+	case TokenTypeFloat64:
+		p.advance()
+		return "float64", nil
 	case TokenTypeString:
 		p.advance()
 		return "string", nil

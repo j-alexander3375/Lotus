@@ -4,7 +4,6 @@ lotus
 a.out
 *.lts.bak
 *.backup
-*_test.go
 *.html
 *.py
 *.code-workspace
@@ -19,3 +18,5 @@ test_suite/
 examples/
 site/
 ext/
+# used for testing and workflow releases
+.claude/

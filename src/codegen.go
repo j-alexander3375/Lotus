@@ -179,7 +179,7 @@ func (cg *CodeGenerator) generateVariableDeclaration(decl *VariableDeclaration) 
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", lit.Value, cg.stackOffset))
 			return
 		}
-	case TokenTypeFloat:
+	case TokenTypeFloat32, TokenTypeFloat64:
 		if lit, ok := decl.Value.(*FloatLiteral); ok {
 			cg.textSection.WriteString(fmt.Sprintf("    # float %s\n", decl.Name))
 			cg.textSection.WriteString(fmt.Sprintf("    movq $%d, -%d(%%rbp)\n", lit.Value, cg.stackOffset))
@@ -248,6 +248,21 @@ func (cg *CodeGenerator) generateConstantDeclaration(decl *ConstantDeclaration) 
 			}
 
 			cg.textSection.WriteString(fmt.Sprintf("    # const int-type %s = %d\n", decl.Name, lit.Value))
+		}
+	case TokenTypeFloat32, TokenTypeFloat64:
+		if lit, ok := decl.Value.(*FloatLiteral); ok {
+			// Generate a label for the constant in data section
+			label := fmt.Sprintf(".const_%s", decl.Name)
+			cg.dataSection.WriteString(fmt.Sprintf("%s:\n    .quad %d\n", label, lit.Value))
+
+			// Store constant metadata for later reference
+			cg.constants[decl.Name] = Variable{
+				Name:   decl.Name,
+				Type:   decl.Type,
+				Offset: -1, // Constants don't use stack offsets
+			}
+
+			cg.textSection.WriteString(fmt.Sprintf("    # const float-type %s = %d\n", decl.Name, lit.Value))
 		}
 	case TokenTypeBool:
 		if lit, ok := decl.Value.(*BoolLiteral); ok {
