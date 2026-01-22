@@ -10,6 +10,6 @@ pkgbase = lotus-lang
 	depends = llvm
 	depends = clang
 	source = lotus-lang-1.5.2.tar.gz::https://github.com/j-alexander3375/Lotus/archive/refs/tags/1.5.2.tar.gz
-	sha256sums = SKIP
+	sha256sums = dea4b0bd5d58a5328c2be77d9e28086dd31a14f68ac20ebf8208fe73fb1577e6
 
 pkgname = lotus-lang
