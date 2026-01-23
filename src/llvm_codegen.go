@@ -258,21 +258,21 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	sdlSetRenderDrawColor.SetLinkage(llvm.ExternalLinkage)
 	cg.functions["SDL_SetRenderDrawColor"] = sdlSetRenderDrawColor
 
-	// SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2) -> bool (SDL3: returns bool)
-	sdlRenderDrawLineType := llvm.FunctionType(
+	// SDL_RenderLine(SDL_Renderer* renderer, float x1, float y1, float x2, float y2) -> bool (SDL3 uses floats)
+	sdlRenderLineType := llvm.FunctionType(
 		cg.context.Int1Type(), // bool in SDL3
 		[]llvm.Type{
 			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
-			cg.context.Int32Type(),                      // x1
-			cg.context.Int32Type(),                      // y1
-			cg.context.Int32Type(),                      // x2
-			cg.context.Int32Type(),                      // y2
+			cg.context.FloatType(),                      // x1
+			cg.context.FloatType(),                      // y1
+			cg.context.FloatType(),                      // x2
+			cg.context.FloatType(),                      // y2
 		},
 		false,
 	)
-	sdlRenderDrawLine := llvm.AddFunction(cg.module, "SDL_RenderDrawLine", sdlRenderDrawLineType)
-	sdlRenderDrawLine.SetLinkage(llvm.ExternalLinkage)
-	cg.functions["SDL_RenderDrawLine"] = sdlRenderDrawLine
+	sdlRenderLine := llvm.AddFunction(cg.module, "SDL_RenderLine", sdlRenderLineType)
+	sdlRenderLine.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderLine"] = sdlRenderLine
 
 	// SDL_RenderDrawRect(SDL_Renderer* renderer, const SDL_Rect* rect) -> bool (SDL3: returns bool)
 	// SDL_Rect is {int x, int y, int w, int h} = 16 bytes

@@ -4500,7 +4500,7 @@ func (cg *LLVMCodeGenerator) generateSDL3SetRenderDrawColor(call *FunctionCall) 
 	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlcolorext"), nil
 }
 
-// generateSDL3RenderDrawLine calls SDL_RenderDrawLine(renderer*, x1, y1, x2, y2) -> bool (SDL3: returns bool)
+// generateSDL3RenderDrawLine calls SDL_RenderLine(renderer*, x1, y1, x2, y2) -> bool (SDL3 uses floats)
 func (cg *LLVMCodeGenerator) generateSDL3RenderDrawLine(call *FunctionCall) (llvm.Value, error) {
 	if len(call.Args) != 5 {
 		return llvm.Value{}, fmt.Errorf("SDL3::render_draw_line requires 5 arguments")
@@ -4527,21 +4527,21 @@ func (cg *LLVMCodeGenerator) generateSDL3RenderDrawLine(call *FunctionCall) (llv
 		return llvm.Value{}, err
 	}
 
-	// Convert int64 to pointer and truncate coordinates to int32
+	// Convert int64 to pointer and convert coordinates to float for SDL3
 	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
-	x1_32 := cg.builder.CreateTrunc(x1, cg.context.Int32Type(), "x1_32")
-	y1_32 := cg.builder.CreateTrunc(y1, cg.context.Int32Type(), "y1_32")
-	x2_32 := cg.builder.CreateTrunc(x2, cg.context.Int32Type(), "x2_32")
-	y2_32 := cg.builder.CreateTrunc(y2, cg.context.Int32Type(), "y2_32")
+	x1f := cg.builder.CreateSIToFP(x1, cg.context.FloatType(), "x1f")
+	y1f := cg.builder.CreateSIToFP(y1, cg.context.FloatType(), "y1f")
+	x2f := cg.builder.CreateSIToFP(x2, cg.context.FloatType(), "x2f")
+	y2f := cg.builder.CreateSIToFP(y2, cg.context.FloatType(), "y2f")
 
-	sdlRenderDrawLine := cg.functions["SDL_RenderDrawLine"]
-	if sdlRenderDrawLine.IsNil() {
-		return llvm.Value{}, fmt.Errorf("SDL_RenderDrawLine not declared")
+	sdlRenderLine := cg.functions["SDL_RenderLine"]
+	if sdlRenderLine.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderLine not declared")
 	}
 
-	// SDL3 returns bool (Int1Type)
-	result := cg.builder.CreateCall(sdlRenderDrawLine.GlobalValueType(), sdlRenderDrawLine,
-		[]llvm.Value{renderer, x1_32, y1_32, x2_32, y2_32}, "sdlline")
+	// SDL3 returns bool
+	result := cg.builder.CreateCall(sdlRenderLine.GlobalValueType(), sdlRenderLine,
+		[]llvm.Value{renderer, x1f, y1f, x2f, y2f}, "sdlline")
 	// Convert bool to int64 (0 or 1)
 	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdllineext"), nil
 }
