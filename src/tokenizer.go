@@ -225,8 +225,10 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenTypeChar, ""))
 			case "bool":
 				tokens = append(tokens, makeToken(TokenTypeBool, ""))
-			case "float":
-				tokens = append(tokens, makeToken(TokenTypeFloat, ""))
+			case "float32":
+				tokens = append(tokens, makeToken(TokenTypeFloat32, ""))
+			case "float64":
+				tokens = append(tokens, makeToken(TokenTypeFloat64, ""))
 			case "void":
 				tokens = append(tokens, makeToken(TokenTypeVoid, ""))
 			case "struct":
@@ -614,8 +616,10 @@ func TokenValue(t Token) string {
 		return "string"
 	case TokenTypeBool:
 		return "bool"
-	case TokenTypeFloat:
-		return "float"
+	case TokenTypeFloat32:
+		return "float32"
+	case TokenTypeFloat64:
+		return "float64"
 	case TokenStruct:
 		return "struct"
 	case TokenEnum:

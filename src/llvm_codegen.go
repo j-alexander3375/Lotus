@@ -152,6 +152,191 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	exit := llvm.AddFunction(cg.module, "exit", exitType)
 	exit.SetLinkage(llvm.ExternalLinkage)
 	cg.functions["exit"] = exit
+
+	// SDL3 functions
+	// SDL_Init(Uint32 flags) -> bool (SDL3: returns bool, not int)
+	sdlInitType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	sdlInit := llvm.AddFunction(cg.module, "SDL_Init", sdlInitType)
+	sdlInit.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_Init"] = sdlInit
+
+	// SDL_Quit()
+	sdlQuitType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{},
+		false,
+	)
+	sdlQuit := llvm.AddFunction(cg.module, "SDL_Quit", sdlQuitType)
+	sdlQuit.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_Quit"] = sdlQuit
+
+	// SDL_CreateWindow(const char* title, int w, int h, Uint32 flags) -> SDL_Window* (SDL3: no x, y)
+	sdlCreateWindowType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0), // SDL_Window* as void*
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // title
+			cg.context.Int32Type(),                      // w
+			cg.context.Int32Type(),                      // h
+			cg.context.Int32Type(),                      // flags
+		},
+		false,
+	)
+	sdlCreateWindow := llvm.AddFunction(cg.module, "SDL_CreateWindow", sdlCreateWindowType)
+	sdlCreateWindow.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_CreateWindow"] = sdlCreateWindow
+
+	// SDL_DestroyWindow(SDL_Window* window)
+	sdlDestroyWindowType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlDestroyWindow := llvm.AddFunction(cg.module, "SDL_DestroyWindow", sdlDestroyWindowType)
+	sdlDestroyWindow.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_DestroyWindow"] = sdlDestroyWindow
+
+	// SDL_CreateRenderer(SDL_Window* window, int index, Uint32 flags) -> SDL_Renderer*
+	sdlCreateRendererType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0), // SDL_Renderer* as void*
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // window
+			cg.context.Int32Type(),                      // index
+			cg.context.Int32Type(),                      // flags
+		},
+		false,
+	)
+	sdlCreateRenderer := llvm.AddFunction(cg.module, "SDL_CreateRenderer", sdlCreateRendererType)
+	sdlCreateRenderer.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_CreateRenderer"] = sdlCreateRenderer
+
+	// SDL_DestroyRenderer(SDL_Renderer* renderer)
+	sdlDestroyRendererType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlDestroyRenderer := llvm.AddFunction(cg.module, "SDL_DestroyRenderer", sdlDestroyRendererType)
+	sdlDestroyRenderer.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_DestroyRenderer"] = sdlDestroyRenderer
+
+	// SDL_RenderClear(SDL_Renderer* renderer) -> bool (SDL3: returns bool)
+	sdlRenderClearType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlRenderClear := llvm.AddFunction(cg.module, "SDL_RenderClear", sdlRenderClearType)
+	sdlRenderClear.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderClear"] = sdlRenderClear
+
+	// SDL_RenderPresent(SDL_Renderer* renderer)
+	sdlRenderPresentType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlRenderPresent := llvm.AddFunction(cg.module, "SDL_RenderPresent", sdlRenderPresentType)
+	sdlRenderPresent.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderPresent"] = sdlRenderPresent
+
+	// SDL_SetRenderDrawColor(SDL_Renderer* renderer, Uint8 r, Uint8 g, Uint8 b, Uint8 a) -> bool (SDL3: returns bool)
+	sdlSetRenderDrawColorType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			cg.context.Int8Type(),                       // r
+			cg.context.Int8Type(),                       // g
+			cg.context.Int8Type(),                       // b
+			cg.context.Int8Type(),                       // a
+		},
+		false,
+	)
+	sdlSetRenderDrawColor := llvm.AddFunction(cg.module, "SDL_SetRenderDrawColor", sdlSetRenderDrawColorType)
+	sdlSetRenderDrawColor.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_SetRenderDrawColor"] = sdlSetRenderDrawColor
+
+	// SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2) -> bool (SDL3: returns bool)
+	sdlRenderDrawLineType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			cg.context.Int32Type(),                      // x1
+			cg.context.Int32Type(),                      // y1
+			cg.context.Int32Type(),                      // x2
+			cg.context.Int32Type(),                      // y2
+		},
+		false,
+	)
+	sdlRenderDrawLine := llvm.AddFunction(cg.module, "SDL_RenderDrawLine", sdlRenderDrawLineType)
+	sdlRenderDrawLine.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderDrawLine"] = sdlRenderDrawLine
+
+	// SDL_RenderDrawRect(SDL_Renderer* renderer, const SDL_Rect* rect) -> bool (SDL3: returns bool)
+	// SDL_Rect is {int x, int y, int w, int h} = 16 bytes
+	sdlRectType := llvm.StructType([]llvm.Type{
+		cg.context.Int32Type(), // x
+		cg.context.Int32Type(), // y
+		cg.context.Int32Type(), // w
+		cg.context.Int32Type(), // h
+	}, false)
+	sdlRenderDrawRectType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0),      // renderer
+			llvm.PointerType(sdlRectType, 0),                // rect (const SDL_Rect*)
+		},
+		false,
+	)
+	sdlRenderDrawRect := llvm.AddFunction(cg.module, "SDL_RenderDrawRect", sdlRenderDrawRectType)
+	sdlRenderDrawRect.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderDrawRect"] = sdlRenderDrawRect
+
+	// SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect) -> bool (SDL3: returns bool)
+	sdlRenderFillRectType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0),      // renderer
+			llvm.PointerType(sdlRectType, 0),                // rect (const SDL_Rect*)
+		},
+		false,
+	)
+	sdlRenderFillRect := llvm.AddFunction(cg.module, "SDL_RenderFillRect", sdlRenderFillRectType)
+	sdlRenderFillRect.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderFillRect"] = sdlRenderFillRect
+
+	// SDL_PollEvent(SDL_Event* event) -> bool (SDL3: returns bool)
+	sdlPollEventType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlPollEvent := llvm.AddFunction(cg.module, "SDL_PollEvent", sdlPollEventType)
+	sdlPollEvent.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_PollEvent"] = sdlPollEvent
+
+	// SDL_Delay(Uint32 ms)
+	sdlDelayType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	sdlDelay := llvm.AddFunction(cg.module, "SDL_Delay", sdlDelayType)
+	sdlDelay.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_Delay"] = sdlDelay
+
+	// SDL_GetTicks() -> Uint32
+	sdlGetTicksType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{},
+		false,
+	)
+	sdlGetTicks := llvm.AddFunction(cg.module, "SDL_GetTicks", sdlGetTicksType)
+	sdlGetTicks.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetTicks"] = sdlGetTicks
 }
 
 // Generate generates LLVM IR from the AST
@@ -467,6 +652,8 @@ func (cg *LLVMCodeGenerator) generateLocalVar(v *VariableDeclaration, varType ll
 				if err != nil {
 					return err
 				}
+				// Coerce element to match array element type
+				val = cg.coerceToType(val, elemType)
 				indices := []llvm.Value{
 					llvm.ConstInt(cg.context.Int32Type(), 0, false),
 					llvm.ConstInt(cg.context.Int32Type(), uint64(i), false),
@@ -501,11 +688,86 @@ func (cg *LLVMCodeGenerator) generateLocalVar(v *VariableDeclaration, varType ll
 		if err != nil {
 			return err
 		}
+		// Coerce value to match variable type (e.g., double to float for float32)
+		val = cg.coerceToType(val, varType)
 		cg.builder.CreateStore(val, alloca)
 	}
 
 	cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: varType}
 	return nil
+}
+
+// coerceToType converts a value to the expected type if needed
+func (cg *LLVMCodeGenerator) coerceToType(val llvm.Value, targetType llvm.Type) llvm.Value {
+	valType := val.Type()
+	valKind := valType.TypeKind()
+	targetKind := targetType.TypeKind()
+
+	// Same type, no conversion needed
+	if valType == targetType {
+		return val
+	}
+
+	// Float conversions
+	if valKind == llvm.DoubleTypeKind && targetKind == llvm.FloatTypeKind {
+		return cg.builder.CreateFPTrunc(val, targetType, "ftrunc")
+	}
+	if valKind == llvm.FloatTypeKind && targetKind == llvm.DoubleTypeKind {
+		return cg.builder.CreateFPExt(val, targetType, "fext")
+	}
+
+	// Integer size conversions
+	if valKind == llvm.IntegerTypeKind && targetKind == llvm.IntegerTypeKind {
+		valBits := valType.IntTypeWidth()
+		targetBits := targetType.IntTypeWidth()
+		if valBits > targetBits {
+			return cg.builder.CreateTrunc(val, targetType, "trunc")
+		} else if valBits < targetBits {
+			return cg.builder.CreateSExt(val, targetType, "sext")
+		}
+	}
+
+	return val
+}
+
+// coerceBinaryOperands ensures both operands have the same type for binary operations
+func (cg *LLVMCodeGenerator) coerceBinaryOperands(left, right llvm.Value) (llvm.Value, llvm.Value) {
+	leftType := left.Type()
+	rightType := right.Type()
+
+	// Same type, no conversion needed
+	if leftType == rightType {
+		return left, right
+	}
+
+	leftKind := leftType.TypeKind()
+	rightKind := rightType.TypeKind()
+
+	// Float type coercion - promote to the larger type
+	if (leftKind == llvm.FloatTypeKind || leftKind == llvm.DoubleTypeKind) &&
+		(rightKind == llvm.FloatTypeKind || rightKind == llvm.DoubleTypeKind) {
+		// If one is double and other is float, promote float to double
+		if leftKind == llvm.DoubleTypeKind && rightKind == llvm.FloatTypeKind {
+			right = cg.builder.CreateFPExt(right, leftType, "fext")
+		} else if leftKind == llvm.FloatTypeKind && rightKind == llvm.DoubleTypeKind {
+			left = cg.builder.CreateFPExt(left, rightType, "fext")
+		}
+		return left, right
+	}
+
+	// Integer type coercion - promote to the larger type
+	if leftKind == llvm.IntegerTypeKind && rightKind == llvm.IntegerTypeKind {
+		leftBits := leftType.IntTypeWidth()
+		rightBits := rightType.IntTypeWidth()
+		if leftBits > rightBits {
+			right = cg.builder.CreateSExt(right, leftType, "sext")
+		} else if rightBits > leftBits {
+			left = cg.builder.CreateSExt(left, rightType, "sext")
+		}
+		return left, right
+	}
+
+	return left, right
 }
 
 // generateStaticVar generates a static variable (persistent storage, internal linkage)
@@ -777,6 +1039,9 @@ func (cg *LLVMCodeGenerator) generateBinaryExpr(b *BinaryOp) (llvm.Value, error)
 		return llvm.Value{}, err
 	}
 
+	// Ensure both operands have matching types
+	left, right = cg.coerceBinaryOperands(left, right)
+
 	// Check if we're dealing with floating-point types
 	isFloat := left.Type().TypeKind() == llvm.DoubleTypeKind || left.Type().TypeKind() == llvm.FloatTypeKind
 
@@ -835,6 +1100,9 @@ func (cg *LLVMCodeGenerator) generateBitwiseOp(b *BitwiseOp) (llvm.Value, error)
 	if err != nil {
 		return llvm.Value{}, err
 	}
+
+	// Ensure both operands have matching types
+	left, right = cg.coerceBinaryOperands(left, right)
 
 	switch b.Operator {
 	case TokenAmpersand:
@@ -931,6 +1199,35 @@ func (cg *LLVMCodeGenerator) generateUnaryExpr(u *UnaryOp) (llvm.Value, error) {
 
 // generateCall generates a function call
 func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error) {
+	// Check for module-qualified function calls (module::function)
+	if strings.Contains(call.Name, "::") {
+		parts := strings.SplitN(call.Name, "::", 2)
+		if len(parts) == 2 {
+			moduleName := parts[0]
+			funcName := parts[1]
+			// Look up the module and function using GetModuleFunction
+			if fn := GetModuleFunction(moduleName, funcName); fn != nil {
+				// Create a new FunctionCall with just the function name for the switch statement
+				unqualifiedCall := &FunctionCall{
+					Name: funcName,
+					Args: call.Args,
+				}
+				return cg.generateCall(unqualifiedCall)
+			}
+		}
+	}
+
+	// Check imported stdlib functions
+	if cg.imports != nil {
+		if fn, ok := cg.imports.ImportedFunctions[call.Name]; ok && fn != nil {
+			// Create a new FunctionCall for the switch statement
+			return cg.generateCall(&FunctionCall{
+				Name: call.Name,
+				Args: call.Args,
+			})
+		}
+	}
+
 	// Handle builtin functions
 	switch call.Name {
 	case "println", "print":
@@ -1237,6 +1534,38 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateRegexSplit(call)
 	case "regex::find_all":
 		return cg.generateRegexFindAll(call)
+
+	// SDL3 functions
+	case "init":
+		return cg.generateSDL3Init(call)
+	case "quit":
+		return cg.generateSDL3Quit(call)
+	case "create_window":
+		return cg.generateSDL3CreateWindow(call)
+	case "destroy_window":
+		return cg.generateSDL3DestroyWindow(call)
+	case "create_renderer":
+		return cg.generateSDL3CreateRenderer(call)
+	case "destroy_renderer":
+		return cg.generateSDL3DestroyRenderer(call)
+	case "render_clear":
+		return cg.generateSDL3RenderClear(call)
+	case "render_present":
+		return cg.generateSDL3RenderPresent(call)
+	case "set_render_draw_color":
+		return cg.generateSDL3SetRenderDrawColor(call)
+	case "render_draw_line":
+		return cg.generateSDL3RenderDrawLine(call)
+	case "render_draw_rect":
+		return cg.generateSDL3RenderDrawRect(call)
+	case "render_fill_rect":
+		return cg.generateSDL3RenderFillRect(call)
+	case "poll_event":
+		return cg.generateSDL3PollEvent(call)
+	case "delay":
+		return cg.generateSDL3Delay(call)
+	case "get_ticks":
+		return cg.generateSDL3GetTicks(call)
 	}
 
 	// Look up the function
@@ -1308,6 +1637,10 @@ func (cg *LLVMCodeGenerator) generatePrint(call *FunctionCall) (llvm.Value, erro
 		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
 	} else if argType.TypeKind() == llvm.DoubleTypeKind || argType.TypeKind() == llvm.FloatTypeKind {
 		// Float - use printf with %f format
+		// C varargs require float to be promoted to double
+		if argType.TypeKind() == llvm.FloatTypeKind {
+			arg = cg.builder.CreateFPExt(arg, cg.context.DoubleType(), "fpext")
+		}
 		if isPrintln {
 			formatStr = cg.createGlobalString("%f\n")
 		} else {
@@ -1338,6 +1671,10 @@ func (cg *LLVMCodeGenerator) generatePrintf(call *FunctionCall) (llvm.Value, err
 		val, err := cg.generateExpression(arg)
 		if err != nil {
 			return llvm.Value{}, err
+		}
+		// C varargs require float to be promoted to double
+		if val.Type().TypeKind() == llvm.FloatTypeKind {
+			val = cg.builder.CreateFPExt(val, cg.context.DoubleType(), "fpext")
 		}
 		args[i] = val
 	}
@@ -1549,6 +1886,8 @@ func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
 	// First check local variables
 	variable, ok := cg.namedValues[id.Name]
 	if ok {
+		// Coerce value to match variable type
+		val = cg.coerceToType(val, variable.ElementType)
 		cg.builder.CreateStore(val, variable.Alloca)
 		return nil
 	}
@@ -1657,7 +1996,9 @@ func (cg *LLVMCodeGenerator) tokenTypeToLLVM(tokenType TokenType) llvm.Type {
 		return cg.context.Int8Type()
 	case TokenTypeBool:
 		return cg.context.Int1Type()
-	case TokenTypeFloat:
+	case TokenTypeFloat32:
+		return cg.context.FloatType()
+	case TokenTypeFloat64:
 		return cg.context.DoubleType()
 	case TokenTypeString:
 		return llvm.PointerType(cg.context.Int8Type(), 0)
@@ -2252,7 +2593,7 @@ func (cg *LLVMCodeGenerator) generateBitCast(bc *BitCastExpression) (llvm.Value,
 		targetType = cg.context.Int16Type()
 	case "uint8":
 		targetType = cg.context.Int8Type()
-	case "float":
+	case "float64":
 		targetType = cg.context.DoubleType()
 	case "float32":
 		targetType = cg.context.FloatType()

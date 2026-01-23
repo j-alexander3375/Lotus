@@ -207,7 +207,7 @@ func (c *Compiler) buildBinaryWithLLVM(llvmGen *LLVMCodeGenerator) error {
 	// Use clang to compile LLVM IR to binary
 	assembleStart := time.Now()
 	optFlag := fmt.Sprintf("-O%d", c.Options.OptLevel)
-	cmd := exec.Command("clang", optFlag, "-o", c.Options.OutPath, tmpIR, "-lm")
+	cmd := exec.Command("clang", optFlag, "-o", c.Options.OutPath, tmpIR, "-lm", "-lSDL3")
 
 	if c.Options.TargetTriple != "" {
 		cmd.Args = append(cmd.Args, "-target", c.Options.TargetTriple)

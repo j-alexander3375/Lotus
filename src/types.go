@@ -32,9 +32,9 @@ func GetTypeSize(tokenType TokenType) int {
 		return Int8Size
 	case TokenTypeInt16, TokenTypeUint16:
 		return Int16Size
-	case TokenTypeInt, TokenTypeInt32, TokenTypeUint, TokenTypeUint32, TokenTypeFloat, TokenTypeChar:
+	case TokenTypeInt, TokenTypeInt32, TokenTypeUint, TokenTypeUint32, TokenTypeFloat32, TokenTypeChar:
 		return Int32Size
-	case TokenTypeInt64, TokenTypeUint64, TokenTypeString:
+	case TokenTypeInt64, TokenTypeUint64, TokenTypeFloat64, TokenTypeString:
 		return Int64Size
 	default:
 		return PointerSize // Default to pointer size for unknown types
@@ -54,7 +54,12 @@ func IsIntegerType(tokenType TokenType) bool {
 
 // IsNumericType checks if a token type represents a numeric type (int or float)
 func IsNumericType(tokenType TokenType) bool {
-	return IsIntegerType(tokenType) || tokenType == TokenTypeFloat
+	return IsIntegerType(tokenType) || IsFloatType(tokenType)
+}
+
+// IsFloatType checks if a token type represents a floating-point type
+func IsFloatType(tokenType TokenType) bool {
+	return tokenType == TokenTypeFloat32 || tokenType == TokenTypeFloat64
 }
 
 // IsPrimitiveType checks if a token type is a primitive type

@@ -4250,3 +4250,497 @@ func (cg *LLVMCodeGenerator) generateToUint64(call *FunctionCall) (llvm.Value, e
 	}
 	return cg.generateExpression(call.Args[0])
 }
+
+// ============================================================================
+// SDL3 FUNCTIONS
+// ============================================================================
+
+// generateSDL3Init calls SDL_Init(flags) -> bool (SDL3: returns bool)
+func (cg *LLVMCodeGenerator) generateSDL3Init(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::init requires 1 argument")
+	}
+
+	flags, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert to int32 for SDL_Init
+	flags32 := cg.builder.CreateTrunc(flags, cg.context.Int32Type(), "flags32")
+
+	sdlInit := cg.functions["SDL_Init"]
+	if sdlInit.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_Init not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlInit.GlobalValueType(), sdlInit, []llvm.Value{flags32}, "sdlinit")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlinitext"), nil
+}
+
+// generateSDL3Quit calls SDL_Quit()
+func (cg *LLVMCodeGenerator) generateSDL3Quit(call *FunctionCall) (llvm.Value, error) {
+	sdlQuit := cg.functions["SDL_Quit"]
+	if sdlQuit.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_Quit not declared")
+	}
+
+	cg.builder.CreateCall(sdlQuit.GlobalValueType(), sdlQuit, []llvm.Value{}, "")
+	return llvm.Value{}, nil
+}
+
+// generateSDL3CreateWindow calls SDL_CreateWindow(title, w, h, flags) -> window* (SDL3: no x, y)
+func (cg *LLVMCodeGenerator) generateSDL3CreateWindow(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.Value{}, fmt.Errorf("SDL3::create_window requires 4 arguments (title, w, h, flags)")
+	}
+
+	title, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	flags, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert to int32
+	w32 := cg.builder.CreateTrunc(w, cg.context.Int32Type(), "w32")
+	h32 := cg.builder.CreateTrunc(h, cg.context.Int32Type(), "h32")
+	flags32 := cg.builder.CreateTrunc(flags, cg.context.Int32Type(), "flags32")
+
+	sdlCreateWindow := cg.functions["SDL_CreateWindow"]
+	if sdlCreateWindow.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_CreateWindow not declared")
+	}
+
+	window := cg.builder.CreateCall(sdlCreateWindow.GlobalValueType(), sdlCreateWindow,
+		[]llvm.Value{title, w32, h32, flags32}, "sdlwindow")
+	return cg.builder.CreatePtrToInt(window, cg.context.Int64Type(), "windowptr"), nil
+}
+
+// generateSDL3DestroyWindow calls SDL_DestroyWindow(window*)
+func (cg *LLVMCodeGenerator) generateSDL3DestroyWindow(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::destroy_window requires 1 argument")
+	}
+
+	windowPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	window := cg.builder.CreateIntToPtr(windowPtr, llvm.PointerType(cg.context.Int8Type(), 0), "window")
+
+	sdlDestroyWindow := cg.functions["SDL_DestroyWindow"]
+	if sdlDestroyWindow.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_DestroyWindow not declared")
+	}
+
+	cg.builder.CreateCall(sdlDestroyWindow.GlobalValueType(), sdlDestroyWindow, []llvm.Value{window}, "")
+	return llvm.Value{}, nil
+}
+
+// generateSDL2CreateRenderer calls SDL_CreateRenderer(window*, index, flags) -> renderer*
+func (cg *LLVMCodeGenerator) generateSDL2CreateRenderer(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("SDL3::create_renderer requires 2 arguments")
+	}
+
+	windowPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	flags, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	window := cg.builder.CreateIntToPtr(windowPtr, llvm.PointerType(cg.context.Int8Type(), 0), "window")
+	flags32 := cg.builder.CreateTrunc(flags, cg.context.Int32Type(), "flags32")
+	// -1 for default driver (SDL_RENDERER_DRIVER_INDEX)
+	index32 := llvm.ConstInt(cg.context.Int32Type(), 4294967295, false) // 0xFFFFFFFF as uint64
+
+	sdlCreateRenderer := cg.functions["SDL_CreateRenderer"]
+	if sdlCreateRenderer.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_CreateRenderer not declared")
+	}
+
+	renderer := cg.builder.CreateCall(sdlCreateRenderer.GlobalValueType(), sdlCreateRenderer,
+		[]llvm.Value{window, index32, flags32}, "sdlrenderer")
+	return cg.builder.CreatePtrToInt(renderer, cg.context.Int64Type(), "rendererptr"), nil
+}
+
+// generateSDL3DestroyRenderer calls SDL_DestroyRenderer(renderer*)
+func (cg *LLVMCodeGenerator) generateSDL3DestroyRenderer(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::destroy_renderer requires 1 argument")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlDestroyRenderer := cg.functions["SDL_DestroyRenderer"]
+	if sdlDestroyRenderer.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_DestroyRenderer not declared")
+	}
+
+	cg.builder.CreateCall(sdlDestroyRenderer.GlobalValueType(), sdlDestroyRenderer, []llvm.Value{renderer}, "")
+	return llvm.Value{}, nil
+}
+
+// generateSDL3RenderClear calls SDL_RenderClear(renderer*) -> bool (SDL3: returns bool)
+func (cg *LLVMCodeGenerator) generateSDL3RenderClear(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_clear requires 1 argument")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderClear := cg.functions["SDL_RenderClear"]
+	if sdlRenderClear.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderClear not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlRenderClear.GlobalValueType(), sdlRenderClear, []llvm.Value{renderer}, "sdlclear")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlclearext"), nil
+}
+
+// generateSDL3RenderPresent calls SDL_RenderPresent(renderer*)
+func (cg *LLVMCodeGenerator) generateSDL3RenderPresent(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_present requires 1 argument")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderPresent := cg.functions["SDL_RenderPresent"]
+	if sdlRenderPresent.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderPresent not declared")
+	}
+
+	cg.builder.CreateCall(sdlRenderPresent.GlobalValueType(), sdlRenderPresent, []llvm.Value{renderer}, "")
+	return llvm.Value{}, nil
+}
+
+// generateSDL3SetRenderDrawColor calls SDL_SetRenderDrawColor(renderer*, r, g, b, a) -> bool (SDL3: returns bool)
+func (cg *LLVMCodeGenerator) generateSDL3SetRenderDrawColor(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::set_render_draw_color requires 5 arguments")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	r, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	g, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	b, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	a, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer and truncate colors to uint8
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+	r8 := cg.builder.CreateTrunc(r, cg.context.Int8Type(), "r8")
+	g8 := cg.builder.CreateTrunc(g, cg.context.Int8Type(), "g8")
+	b8 := cg.builder.CreateTrunc(b, cg.context.Int8Type(), "b8")
+	a8 := cg.builder.CreateTrunc(a, cg.context.Int8Type(), "a8")
+
+	sdlSetRenderDrawColor := cg.functions["SDL_SetRenderDrawColor"]
+	if sdlSetRenderDrawColor.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_SetRenderDrawColor not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlSetRenderDrawColor.GlobalValueType(), sdlSetRenderDrawColor,
+		[]llvm.Value{renderer, r8, g8, b8, a8}, "sdlcolor")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlcolorext"), nil
+}
+
+// generateSDL3RenderDrawLine calls SDL_RenderDrawLine(renderer*, x1, y1, x2, y2) -> bool (SDL3: returns bool)
+func (cg *LLVMCodeGenerator) generateSDL3RenderDrawLine(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_draw_line requires 5 arguments")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x1, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y1, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x2, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y2, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer and truncate coordinates to int32
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+	x1_32 := cg.builder.CreateTrunc(x1, cg.context.Int32Type(), "x1_32")
+	y1_32 := cg.builder.CreateTrunc(y1, cg.context.Int32Type(), "y1_32")
+	x2_32 := cg.builder.CreateTrunc(x2, cg.context.Int32Type(), "x2_32")
+	y2_32 := cg.builder.CreateTrunc(y2, cg.context.Int32Type(), "y2_32")
+
+	sdlRenderDrawLine := cg.functions["SDL_RenderDrawLine"]
+	if sdlRenderDrawLine.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderDrawLine not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlRenderDrawLine.GlobalValueType(), sdlRenderDrawLine,
+		[]llvm.Value{renderer, x1_32, y1_32, x2_32, y2_32}, "sdlline")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdllineext"), nil
+}
+
+// generateSDL2RenderDrawRect calls SDL_RenderDrawRect(renderer*, x, y, w, h) -> int
+// Creates SDL_Rect structure on stack and passes pointer to SDL2
+func (cg *LLVMCodeGenerator) generateSDL2RenderDrawRect(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_draw_rect requires 5 arguments")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Create SDL_Rect structure: {int x, int y, int w, int h}
+	sdlRectType := llvm.StructType([]llvm.Type{
+		cg.context.Int32Type(), // x
+		cg.context.Int32Type(), // y
+		cg.context.Int32Type(), // w
+		cg.context.Int32Type(), // h
+	}, false)
+
+	// Allocate SDL_Rect on stack
+	rectPtr := cg.builder.CreateAlloca(sdlRectType, "rect")
+
+	// Convert int64 to int32 and store in rect structure
+	x32 := cg.builder.CreateTrunc(x, cg.context.Int32Type(), "x32")
+	y32 := cg.builder.CreateTrunc(y, cg.context.Int32Type(), "y32")
+	w32 := cg.builder.CreateTrunc(w, cg.context.Int32Type(), "w32")
+	h32 := cg.builder.CreateTrunc(h, cg.context.Int32Type(), "h32")
+
+	// Store values into rect structure
+	xGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 0, "xgep")
+	yGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 1, "ygep")
+	wGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 2, "wgep")
+	hGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 3, "hgep")
+
+	cg.builder.CreateStore(x32, xGEP)
+	cg.builder.CreateStore(y32, yGEP)
+	cg.builder.CreateStore(w32, wGEP)
+	cg.builder.CreateStore(h32, hGEP)
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderDrawRect := cg.functions["SDL_RenderDrawRect"]
+	if sdlRenderDrawRect.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderDrawRect not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlRenderDrawRect.GlobalValueType(), sdlRenderDrawRect,
+		[]llvm.Value{renderer, rectPtr}, "sdlrect")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlrectext"), nil
+}
+
+// generateSDL2RenderFillRect calls SDL_RenderFillRect(renderer*, x, y, w, h) -> int
+// Creates SDL_Rect structure on stack and passes pointer to SDL2
+func (cg *LLVMCodeGenerator) generateSDL2RenderFillRect(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_fill_rect requires 5 arguments")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Create SDL_Rect structure: {int x, int y, int w, int h}
+	sdlRectType := llvm.StructType([]llvm.Type{
+		cg.context.Int32Type(), // x
+		cg.context.Int32Type(), // y
+		cg.context.Int32Type(), // w
+		cg.context.Int32Type(), // h
+	}, false)
+
+	// Allocate SDL_Rect on stack
+	rectPtr := cg.builder.CreateAlloca(sdlRectType, "rect")
+
+	// Convert int64 to int32 and store in rect structure
+	x32 := cg.builder.CreateTrunc(x, cg.context.Int32Type(), "x32")
+	y32 := cg.builder.CreateTrunc(y, cg.context.Int32Type(), "y32")
+	w32 := cg.builder.CreateTrunc(w, cg.context.Int32Type(), "w32")
+	h32 := cg.builder.CreateTrunc(h, cg.context.Int32Type(), "h32")
+
+	// Store values into rect structure
+	xGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 0, "xgep")
+	yGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 1, "ygep")
+	wGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 2, "wgep")
+	hGEP := cg.builder.CreateStructGEP(sdlRectType, rectPtr, 3, "hgep")
+
+	cg.builder.CreateStore(x32, xGEP)
+	cg.builder.CreateStore(y32, yGEP)
+	cg.builder.CreateStore(w32, wGEP)
+	cg.builder.CreateStore(h32, hGEP)
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderFillRect := cg.functions["SDL_RenderFillRect"]
+	if sdlRenderFillRect.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderFillRect not declared")
+	}
+
+	// SDL3 returns bool (Int1Type)
+	result := cg.builder.CreateCall(sdlRenderFillRect.GlobalValueType(), sdlRenderFillRect,
+		[]llvm.Value{renderer, rectPtr}, "sdlfillrect")
+	// Convert bool to int64 (0 or 1)
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlfillrectext"), nil
+}
+
+// generateSDL2PollEvent calls SDL_PollEvent(event*) -> int (returns 1 if event, 0 if none)
+func (cg *LLVMCodeGenerator) generateSDL2PollEvent(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::poll_event requires 1 argument")
+	}
+
+	eventPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	event := cg.builder.CreateIntToPtr(eventPtr, llvm.PointerType(cg.context.Int8Type(), 0), "event")
+
+	sdlPollEvent := cg.functions["SDL_PollEvent"]
+	if sdlPollEvent.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_PollEvent not declared")
+	}
+
+	result := cg.builder.CreateCall(sdlPollEvent.GlobalValueType(), sdlPollEvent, []llvm.Value{event}, "sdlevent")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "sdleventext"), nil
+}
+
+// generateSDL2Delay calls SDL_Delay(ms)
+func (cg *LLVMCodeGenerator) generateSDL2Delay(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::delay requires 1 argument")
+	}
+
+	ms, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert to int32
+	ms32 := cg.builder.CreateTrunc(ms, cg.context.Int32Type(), "ms32")
+
+	sdlDelay := cg.functions["SDL_Delay"]
+	if sdlDelay.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_Delay not declared")
+	}
+
+	cg.builder.CreateCall(sdlDelay.GlobalValueType(), sdlDelay, []llvm.Value{ms32}, "")
+	return llvm.Value{}, nil
+}
+
+// generateSDL3GetTicks calls SDL_GetTicks() -> int
+func (cg *LLVMCodeGenerator) generateSDL3GetTicks(call *FunctionCall) (llvm.Value, error) {
+	sdlGetTicks := cg.functions["SDL_GetTicks"]
+	if sdlGetTicks.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_GetTicks not declared")
+	}
+
+	result := cg.builder.CreateCall(sdlGetTicks.GlobalValueType(), sdlGetTicks, []llvm.Value{}, "sdlticks")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "sdlsticksext"), nil
+}

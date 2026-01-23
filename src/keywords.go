@@ -45,11 +45,14 @@ const (
 	TokenTypeUint32 // type keyword: uint32
 	TokenTypeUint64 // type keyword: uint64
 
+	// Type keywords - floats
+	TokenTypeFloat32 // type keyword: float32 (32-bit single precision)
+	TokenTypeFloat64 // type keyword: float64 (64-bit double precision)
+
 	// Type keywords - other
 	TokenTypeString // type keyword: string
 	TokenTypeChar   // type keyword: char (Unicode character, 32-bit)
 	TokenTypeBool   // type keyword: bool
-	TokenTypeFloat  // type keyword: float
 	TokenTypeVoid   // type keyword: void (for functions with no return value)
 	TokenTypeFn     // type keyword: fn (for function types / first-class functions)
 

@@ -40,6 +40,7 @@ var StandardLibrary = map[string]*StdlibModule{
 	"random":      createRandomModule(),
 	"regex":       createRegexModule(),
 	"json":        createJSONModule(),
+	"sdl3":        createSDL3Module(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -684,6 +685,106 @@ func createJSONModule() *StdlibModule {
 				NumArgs: 1,
 				CodeGen: generateJSONIsValid,
 			}, // is_valid(json_string) -> bool - check if string is valid JSON
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createSDL3Module creates the SDL3 graphics/game development stdlib module
+func createSDL3Module() *StdlibModule {
+	return &StdlibModule{
+		Name: "sdl3",
+		Functions: map[string]*StdlibFunction{
+			"init": {
+				Name:    "init",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3Init,
+			}, // init(flags) -> bool - initialize SDL3 subsystems
+			"quit": {
+				Name:    "quit",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3Quit,
+			}, // quit() - cleanup SDL3
+			"create_window": {
+				Name:    "create_window",
+				Module:  "sdl3",
+				NumArgs: 4,
+				CodeGen: generateSDL3CreateWindow,
+			}, // create_window(title, w, h, flags) -> window* (SDL3: no x, y)
+			"destroy_window": {
+				Name:    "destroy_window",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3DestroyWindow,
+			}, // destroy_window(window*) - destroy window
+			"create_renderer": {
+				Name:    "create_renderer",
+				Module:  "sdl3",
+				NumArgs: 2,
+				CodeGen: generateSDL3CreateRenderer,
+			}, // create_renderer(window*, flags) -> renderer*
+			"destroy_renderer": {
+				Name:    "destroy_renderer",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3DestroyRenderer,
+			}, // destroy_renderer(renderer*) - destroy renderer
+			"render_clear": {
+				Name:    "render_clear",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3RenderClear,
+			}, // render_clear(renderer*) -> bool
+			"render_present": {
+				Name:    "render_present",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3RenderPresent,
+			}, // render_present(renderer*) - present rendered frame
+			"set_render_draw_color": {
+				Name:    "set_render_draw_color",
+				Module:  "sdl3",
+				NumArgs: 5,
+				CodeGen: generateSDL3SetRenderDrawColor,
+			}, // set_render_draw_color(renderer*, r, g, b, a) -> bool
+			"render_draw_line": {
+				Name:    "render_draw_line",
+				Module:  "sdl3",
+				NumArgs: 5,
+				CodeGen: generateSDL3RenderDrawLine,
+			}, // render_draw_line(renderer*, x1, y1, x2, y2) -> bool
+			"render_draw_rect": {
+				Name:    "render_draw_rect",
+				Module:  "sdl3",
+				NumArgs: 5,
+				CodeGen: generateSDL3RenderDrawRect,
+			}, // render_draw_rect(renderer*, x, y, w, h) -> bool
+			"render_fill_rect": {
+				Name:    "render_fill_rect",
+				Module:  "sdl3",
+				NumArgs: 5,
+				CodeGen: generateSDL3RenderFillRect,
+			}, // render_fill_rect(renderer*, x, y, w, h) -> bool
+			"poll_event": {
+				Name:    "poll_event",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3PollEvent,
+			}, // poll_event(event*) -> bool - returns true if event, false if none
+			"delay": {
+				Name:    "delay",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3Delay,
+			}, // delay(ms) - delay execution
+			"get_ticks": {
+				Name:    "get_ticks",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3GetTicks,
+			}, // get_ticks() -> int - get milliseconds since init
 		},
 		Types: map[string]TokenType{},
 	}
@@ -7957,5 +8058,94 @@ func generateJSONIsNull(cg *CodeGenerator, args []ASTNode) {
 // generateJSONIsValid(json_string) -> bool - check if string is valid JSON
 func generateJSONIsValid(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    # json::is_valid() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// ============================================================================
+// SDL3 MODULE FUNCTIONS (Assembly backend stubs)
+// ============================================================================
+
+// generateSDL3Init(flags) -> bool - initialize SDL3 subsystems
+func generateSDL3Init(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::init() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3Quit() - cleanup SDL3
+func generateSDL3Quit(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::quit() - stub\n")
+}
+
+// generateSDL3CreateWindow(title, w, h, flags) -> window* (SDL3: no x, y)
+func generateSDL3CreateWindow(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::create_window() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3DestroyWindow(window*) - destroy window
+func generateSDL3DestroyWindow(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::destroy_window() - stub\n")
+}
+
+// generateSDL3CreateRenderer(window*, flags) -> renderer*
+func generateSDL3CreateRenderer(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::create_renderer() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3DestroyRenderer(renderer*) - destroy renderer
+func generateSDL3DestroyRenderer(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::destroy_renderer() - stub\n")
+}
+
+// generateSDL3RenderClear(renderer*) -> bool
+func generateSDL3RenderClear(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::render_clear() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3RenderPresent(renderer*) - present rendered frame
+func generateSDL3RenderPresent(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::render_present() - stub\n")
+}
+
+// generateSDL3SetRenderDrawColor(renderer*, r, g, b, a) -> bool
+func generateSDL3SetRenderDrawColor(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::set_render_draw_color() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3RenderDrawLine(renderer*, x1, y1, x2, y2) -> bool
+func generateSDL3RenderDrawLine(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::render_draw_line() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3RenderDrawRect(renderer*, x, y, w, h) -> bool
+func generateSDL3RenderDrawRect(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::render_draw_rect() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3RenderFillRect(renderer*, x, y, w, h) -> bool
+func generateSDL3RenderFillRect(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::render_fill_rect() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3PollEvent(event*) -> bool - returns true if event, false if none
+func generateSDL3PollEvent(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::poll_event() - stub\n")
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+}
+
+// generateSDL3Delay(ms) - delay execution
+func generateSDL3Delay(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::delay() - stub\n")
+}
+
+// generateSDL3GetTicks() -> int - get milliseconds since init
+func generateSDL3GetTicks(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    # sdl3::get_ticks() - stub\n")
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
 }
