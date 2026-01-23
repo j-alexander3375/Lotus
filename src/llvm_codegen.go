@@ -199,13 +199,12 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	sdlDestroyWindow.SetLinkage(llvm.ExternalLinkage)
 	cg.functions["SDL_DestroyWindow"] = sdlDestroyWindow
 
-	// SDL_CreateRenderer(SDL_Window* window, int index, Uint32 flags) -> SDL_Renderer*
+	// SDL_CreateRenderer(SDL_Window* window, const char* name) -> SDL_Renderer* (SDL3 signature)
 	sdlCreateRendererType := llvm.FunctionType(
 		llvm.PointerType(cg.context.Int8Type(), 0), // SDL_Renderer* as void*
 		[]llvm.Type{
 			llvm.PointerType(cg.context.Int8Type(), 0), // window
-			cg.context.Int32Type(),                      // index
-			cg.context.Int32Type(),                      // flags
+			llvm.PointerType(cg.context.Int8Type(), 0), // name (const char*)
 		},
 		false,
 	)
@@ -295,12 +294,31 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	sdlRenderDrawRect.SetLinkage(llvm.ExternalLinkage)
 	cg.functions["SDL_RenderDrawRect"] = sdlRenderDrawRect
 
-	// SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_Rect* rect) -> bool (SDL3: returns bool)
+	// SDL_RenderRect(SDL_Renderer* renderer, const SDL_FRect* rect) -> bool (SDL3 uses float rect)
+	sdlFRectType := llvm.StructType([]llvm.Type{
+		cg.context.FloatType(), // x
+		cg.context.FloatType(), // y
+		cg.context.FloatType(), // w
+		cg.context.FloatType(), // h
+	}, false)
+	sdlRenderRectType := llvm.FunctionType(
+		cg.context.Int1Type(), // bool in SDL3
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			llvm.PointerType(sdlFRectType, 0),          // rect (const SDL_FRect*)
+		},
+		false,
+	)
+	sdlRenderRect := llvm.AddFunction(cg.module, "SDL_RenderRect", sdlRenderRectType)
+	sdlRenderRect.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderRect"] = sdlRenderRect
+
+	// SDL_RenderFillRect(SDL_Renderer* renderer, const SDL_FRect* rect) -> bool (SDL3 uses float rect)
 	sdlRenderFillRectType := llvm.FunctionType(
 		cg.context.Int1Type(), // bool in SDL3
 		[]llvm.Type{
-			llvm.PointerType(cg.context.Int8Type(), 0),      // renderer
-			llvm.PointerType(sdlRectType, 0),                // rect (const SDL_Rect*)
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			llvm.PointerType(sdlFRectType, 0),          // rect (const SDL_FRect*)
 		},
 		false,
 	)
@@ -1214,17 +1232,6 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 				}
 				return cg.generateCall(unqualifiedCall)
 			}
-		}
-	}
-
-	// Check imported stdlib functions
-	if cg.imports != nil {
-		if fn, ok := cg.imports.ImportedFunctions[call.Name]; ok && fn != nil {
-			// Create a new FunctionCall for the switch statement
-			return cg.generateCall(&FunctionCall{
-				Name: call.Name,
-				Args: call.Args,
-			})
 		}
 	}
 

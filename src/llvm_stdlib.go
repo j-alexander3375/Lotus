@@ -4744,3 +4744,219 @@ func (cg *LLVMCodeGenerator) generateSDL3GetTicks(call *FunctionCall) (llvm.Valu
 	result := cg.builder.CreateCall(sdlGetTicks.GlobalValueType(), sdlGetTicks, []llvm.Value{}, "sdlticks")
 	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "sdlsticksext"), nil
 }
+
+// generateSDL3CreateRenderer calls SDL_CreateRenderer(window*, name) -> renderer* (SDL3 signature)
+func (cg *LLVMCodeGenerator) generateSDL3CreateRenderer(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("SDL3::create_renderer requires 2 arguments (window, name)")
+	}
+
+	windowPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	// Second argument is renderer name (can be null for default)
+	name, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	window := cg.builder.CreateIntToPtr(windowPtr, llvm.PointerType(cg.context.Int8Type(), 0), "window")
+	// Name is already a pointer (string or null)
+	namePtr := cg.builder.CreateIntToPtr(name, llvm.PointerType(cg.context.Int8Type(), 0), "name")
+
+	sdlCreateRenderer := cg.functions["SDL_CreateRenderer"]
+	if sdlCreateRenderer.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_CreateRenderer not declared")
+	}
+
+	renderer := cg.builder.CreateCall(sdlCreateRenderer.GlobalValueType(), sdlCreateRenderer,
+		[]llvm.Value{window, namePtr}, "sdlrenderer")
+	return cg.builder.CreatePtrToInt(renderer, cg.context.Int64Type(), "rendererptr"), nil
+}
+
+// generateSDL3RenderDrawRect calls SDL_RenderRect(renderer*, rect*) -> bool (SDL3 signature)
+func (cg *LLVMCodeGenerator) generateSDL3RenderDrawRect(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_draw_rect requires 5 arguments (renderer, x, y, w, h)")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Create SDL_FRect structure for SDL3: {float x, float y, float w, float h}
+	sdlFRectType := llvm.StructType([]llvm.Type{
+		cg.context.FloatType(), // x
+		cg.context.FloatType(), // y
+		cg.context.FloatType(), // w
+		cg.context.FloatType(), // h
+	}, false)
+
+	// Allocate SDL_FRect on stack
+	rectPtr := cg.builder.CreateAlloca(sdlFRectType, "frect")
+
+	// Convert int64 to float and store in rect structure
+	xf := cg.builder.CreateSIToFP(x, cg.context.FloatType(), "xf")
+	yf := cg.builder.CreateSIToFP(y, cg.context.FloatType(), "yf")
+	wf := cg.builder.CreateSIToFP(w, cg.context.FloatType(), "wf")
+	hf := cg.builder.CreateSIToFP(h, cg.context.FloatType(), "hf")
+
+	// Store values into rect structure
+	xGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 0, "xgep")
+	yGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 1, "ygep")
+	wGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 2, "wgep")
+	hGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 3, "hgep")
+
+	cg.builder.CreateStore(xf, xGEP)
+	cg.builder.CreateStore(yf, yGEP)
+	cg.builder.CreateStore(wf, wGEP)
+	cg.builder.CreateStore(hf, hGEP)
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderRect := cg.functions["SDL_RenderRect"]
+	if sdlRenderRect.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderRect not declared")
+	}
+
+	// SDL3 returns bool
+	result := cg.builder.CreateCall(sdlRenderRect.GlobalValueType(), sdlRenderRect,
+		[]llvm.Value{renderer, rectPtr}, "sdlrect")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlrectext"), nil
+}
+
+// generateSDL3RenderFillRect calls SDL_RenderFillRect(renderer*, rect*) -> bool (SDL3 signature)
+func (cg *LLVMCodeGenerator) generateSDL3RenderFillRect(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("SDL3::render_fill_rect requires 5 arguments (renderer, x, y, w, h)")
+	}
+
+	rendererPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Create SDL_FRect structure for SDL3: {float x, float y, float w, float h}
+	sdlFRectType := llvm.StructType([]llvm.Type{
+		cg.context.FloatType(), // x
+		cg.context.FloatType(), // y
+		cg.context.FloatType(), // w
+		cg.context.FloatType(), // h
+	}, false)
+
+	// Allocate SDL_FRect on stack
+	rectPtr := cg.builder.CreateAlloca(sdlFRectType, "frect")
+
+	// Convert int64 to float and store in rect structure
+	xf := cg.builder.CreateSIToFP(x, cg.context.FloatType(), "xf")
+	yf := cg.builder.CreateSIToFP(y, cg.context.FloatType(), "yf")
+	wf := cg.builder.CreateSIToFP(w, cg.context.FloatType(), "wf")
+	hf := cg.builder.CreateSIToFP(h, cg.context.FloatType(), "hf")
+
+	// Store values into rect structure
+	xGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 0, "xgep")
+	yGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 1, "ygep")
+	wGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 2, "wgep")
+	hGEP := cg.builder.CreateStructGEP(sdlFRectType, rectPtr, 3, "hgep")
+
+	cg.builder.CreateStore(xf, xGEP)
+	cg.builder.CreateStore(yf, yGEP)
+	cg.builder.CreateStore(wf, wGEP)
+	cg.builder.CreateStore(hf, hGEP)
+
+	// Convert int64 to pointer
+	renderer := cg.builder.CreateIntToPtr(rendererPtr, llvm.PointerType(cg.context.Int8Type(), 0), "renderer")
+
+	sdlRenderFillRect := cg.functions["SDL_RenderFillRect"]
+	if sdlRenderFillRect.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_RenderFillRect not declared")
+	}
+
+	// SDL3 returns bool
+	result := cg.builder.CreateCall(sdlRenderFillRect.GlobalValueType(), sdlRenderFillRect,
+		[]llvm.Value{renderer, rectPtr}, "sdlfillrect")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdlfillrectext"), nil
+}
+
+// generateSDL3PollEvent calls SDL_PollEvent(event*) -> bool (SDL3 returns bool, not int)
+func (cg *LLVMCodeGenerator) generateSDL3PollEvent(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::poll_event requires 1 argument")
+	}
+
+	eventPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert int64 to pointer
+	event := cg.builder.CreateIntToPtr(eventPtr, llvm.PointerType(cg.context.Int8Type(), 0), "event")
+
+	sdlPollEvent := cg.functions["SDL_PollEvent"]
+	if sdlPollEvent.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_PollEvent not declared")
+	}
+
+	// SDL3 returns bool
+	result := cg.builder.CreateCall(sdlPollEvent.GlobalValueType(), sdlPollEvent, []llvm.Value{event}, "sdlevent")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "sdleventext"), nil
+}
+
+// generateSDL3Delay calls SDL_Delay(ms)
+func (cg *LLVMCodeGenerator) generateSDL3Delay(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("SDL3::delay requires 1 argument")
+	}
+
+	ms, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	// Convert to int32
+	ms32 := cg.builder.CreateTrunc(ms, cg.context.Int32Type(), "ms32")
+
+	sdlDelay := cg.functions["SDL_Delay"]
+	if sdlDelay.IsNil() {
+		return llvm.Value{}, fmt.Errorf("SDL_Delay not declared")
+	}
+
+	cg.builder.CreateCall(sdlDelay.GlobalValueType(), sdlDelay, []llvm.Value{ms32}, "")
+	return llvm.Value{}, nil
+}
