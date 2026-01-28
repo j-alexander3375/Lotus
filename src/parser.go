@@ -168,10 +168,42 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 	case TokenPrintString, TokenPrintf, TokenFPrintf, TokenPrintln, TokenSPrint, TokenSPrintf, TokenSPrintln, TokenFatalf, TokenFatalln, TokenLogf, TokenLogln:
 		return p.parseFunctionCall()
 	case TokenIdentifier:
-		// Could be a function call or assignment or variable reference
+		// Could be:
+		// 1. Function call: foo()
+		// 2. Assignment: x = value
+		// 3. Struct/class variable declaration: MyStruct myVar;
+		// 4. Module-qualified call: module::func()
 		name := p.current().Value
 		p.advance()
 		switch p.current().Type {
+		case TokenIdentifier:
+			// Struct/class variable declaration: StructName varName;
+			// This is the factory pattern case
+			varName := p.current().Value
+			p.advance()
+
+			// Check if there's an assignment
+			var value ASTNode
+			if p.current().Type == TokenAssign {
+				p.advance()
+				var err error
+				value, err = p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// Expect semicolon
+			if err := p.expect(TokenSemi); err != nil {
+				return nil, err
+			}
+
+			// Return variable declaration with custom type
+			return &VariableDeclaration{
+				Name:  varName,
+				Type:  TokenIdentifier, // Custom type (struct/class)
+				Value: value,
+			}, nil
 		case TokenLParen:
 			// Back up to re-parse as function call
 			p.pos--
@@ -211,6 +243,32 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 				}, nil
 			}
 			return nil, fmt.Errorf("unexpected single ':' after identifier %s", name)
+		case TokenDot:
+			// Field access: identifier.field or identifier.field = value
+			// Build the field access chain
+			var target ASTNode = &Identifier{Name: name}
+			for p.current().Type == TokenDot {
+				p.advance() // skip '.'
+				if p.current().Type != TokenIdentifier {
+					return nil, p.formatErrorWithCode(ErrExpectedToken, "expected field name after '.', got "+TokenTypeName(p.current().Type))
+				}
+				fieldName := p.current().Value
+				p.advance()
+				target = &FieldAccess{Object: target, FieldName: fieldName, IsPointer: false}
+			}
+
+			// Check for assignment
+			if p.current().Type == TokenAssign {
+				p.advance()
+				value, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				return &Assignment{Target: target, Value: value}, nil
+			}
+
+			// Just a field access expression
+			return target, nil
 		case TokenAssign:
 			// Simple assignment: identifier = expression
 			p.advance()
@@ -1468,15 +1526,18 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		return nil, err
 	}
 
-	// Return type (can be built-in type or template parameter)
+	// Return type (can be built-in type, template parameter, or struct/class name)
 	var retType TokenType
 
 	if isTypeToken(p.current().Type) {
 		retType = p.current().Type
 		p.advance()
-	} else if p.current().Type == TokenIdentifier && p.templateParams[p.current().Value] {
-		// Template parameter used as return type
-		retType = TokenIdentifier // Store as identifier, will be resolved during instantiation
+	} else if p.current().Type == TokenIdentifier {
+		// Could be:
+		// 1. Template parameter
+		// 2. Struct/class name (factory pattern)
+		// 3. User-defined type
+		retType = TokenIdentifier // Store as identifier, will be resolved during type checking
 		p.advance()
 	} else {
 		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingReturnType+", got "+TokenTypeName(p.current().Type))
@@ -1496,15 +1557,18 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 
 	var params []FunctionParam
 	for p.current().Type != TokenRParen {
-		// Parameter type (can be built-in type or template parameter)
+		// Parameter type (can be built-in type, template parameter, or struct/class name)
 		var pType TokenType
 
 		if isTypeToken(p.current().Type) {
 			pType = p.current().Type
 			p.advance()
-		} else if p.current().Type == TokenIdentifier && p.templateParams[p.current().Value] {
-			// Template parameter used as parameter type
-			pType = TokenIdentifier // Will be resolved during instantiation
+		} else if p.current().Type == TokenIdentifier {
+			// Could be:
+			// 1. Template parameter
+			// 2. Struct/class name
+			// 3. User-defined type
+			pType = TokenIdentifier // Will be resolved during type checking
 			p.advance()
 		} else {
 			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected parameter type, got "+TokenTypeName(p.current().Type))

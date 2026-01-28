@@ -1,3 +1,13 @@
+
+[0;34m[STEP][0m [0;36m🚀 Lotus Automated Release System[0m
+
+[0;32m[INFO][0m Bump type: minor
+[0;32m[INFO][0m Current version: 1.6.0
+[0;32m[INFO][0m New version: 1.7.0
+
+[0;34m[STEP][0m [0;36mRunning Comprehensive Test Suite[0m
+
+[0;32m[INFO][0m Running Go tests...
 === RUN   TestCloneIntLiteral
 --- PASS: TestCloneIntLiteral (0.00s)
 === RUN   TestCloneFloatLiteral
@@ -467,4 +477,72 @@
 FAIL
 FAIL	LOTUS/src	59.263s
 FAIL
+[0;32m[INFO][0m ✓ Go tests passed
+[0;32m[INFO][0m Running .lts compilation tests...
+[0;32m[INFO][0m Testing: examples/const_namespace_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/const_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_for.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_if.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_while.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespace_use_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespaces.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespaces_simple.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/optional_advanced.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/optional_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/qualified_call_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/struct_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_comprehensive_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_simple.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_struct_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_advanced.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_basic.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_functions_only.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_simple_test.lts
 Compilation failed: LLVM codegen error: undefined function: multiply
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/use_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/using_declarations.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/fast_inverse_sqrt.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/ns_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/test_sdl3.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m ✓ All tests passed!
+
+[0;34m[STEP][0m [0;36mUpdating Version Files: 1.6.0 → 1.7.0[0m
+
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/src/constants.go
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/PKGBUILD
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/.SRCINFO
+
+[0;34m[STEP][0m [0;36mCreating Release Notes: /mnt/c/Users/joshu/develLotus/RELEASE_NOTES_1.7.0.md[0m
+
+[0;32m[INFO][0m ✓ Created release notes
+
+[0;34m[STEP][0m [0;36mRebuilding with New Version[0m
+
+[0;32m[INFO][0m ✓ Rebuilt successfully
+
+[0;34m[STEP][0m [0;36mCommitting Version Bump[0m
+

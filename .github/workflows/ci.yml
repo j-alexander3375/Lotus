@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, main, develop ]
+    branches: [master, main, develop]
   pull_request:
-    branches: [ master, main, develop ]
+    branches: [master, main, develop]
 
 jobs:
   test:
@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.21']
+        go-version: ["1.21"]
 
     steps:
       - name: Checkout code
@@ -63,9 +63,9 @@ jobs:
           cd src
           go build -o ../lotus .
           cd ..
-          ./lotus examples/control_flow_if.lts -o test_if
-          ./lotus examples/control_flow_for.lts -o test_for
-          ./lotus examples/control_flow_while.lts -o test_while
+          ./lotus -o test_if examples/control_flow_if.lts
+          ./lotus -o test_for examples/control_flow_for.lts
+          ./lotus -o test_while examples/control_flow_while.lts
 
       - name: Test compilation examples (Windows)
         if: matrix.os == 'windows-latest'
@@ -73,9 +73,9 @@ jobs:
           cd src
           go build -o ../lotus.exe .
           cd ..
-          ./lotus.exe examples/control_flow_if.lts -o test_if.exe
-          ./lotus.exe examples/control_flow_for.lts -o test_for.exe
-          ./lotus.exe examples/control_flow_while.lts -o test_while.exe
+          ./lotus.exe -o test_if.exe examples/control_flow_if.lts
+          ./lotus.exe -o test_for.exe examples/control_flow_for.lts
+          ./lotus.exe -o test_while.exe examples/control_flow_while.lts
 
   lint:
     name: Lint
@@ -87,7 +87,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Run go fmt
         run: |
@@ -113,7 +113,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Install LLVM
         run: |
