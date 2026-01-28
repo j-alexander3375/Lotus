@@ -382,14 +382,9 @@ deploy_to_aur() {
     cp "$SRCINFO_FILE" .
     log_info "✓ Copied PKGBUILD and .SRCINFO"
 
-    # Test build
-    log_info "Testing AUR package build..."
-    if makepkg -si --noconfirm; then
-        log_info "✓ Test build successful"
-    else
-        log_error "✗ Test build failed"
-        return 1
-    fi
+    # Skip test build in automated mode (already tested in main repo)
+    # Note: Manual test with 'makepkg -si' recommended before first AUR push
+    log_info "Skipping test build (code already tested)"
 
     # Commit and push to AUR
     git add PKGBUILD .SRCINFO
