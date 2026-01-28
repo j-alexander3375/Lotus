@@ -1,8 +1,6 @@
 # Lotus Compiler - Fresh Systems Language
 
-<p align="center">
-  <img src="ext/images/lotus.svg" alt="Lotus Logo" width="120">
-</p>
+*** CLAUDE IS USED SOLELY FOR RELEASE WORKFLOWS AND TEST OPTIMIZATION ***
 
 **Lotus** is a systems programming language with deliberate design choices: module imports are string-based (`use "io";`), returns use `ret`, and declarations default to type-first bindings (`int n = 42;`). The compiler uses **LLVM** as its default backend for cross-platform compilation and advanced optimizations.
 
