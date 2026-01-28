@@ -23,6 +23,12 @@ type LLVMVariable struct {
 	ElementType llvm.Type
 }
 
+// pendingTemplateFunction holds a template function and its type substitution map
+type pendingTemplateFunction struct {
+	Function *FunctionDefinition
+	TypeMap  map[string]TokenType
+}
+
 // LLVMCodeGenerator generates LLVM IR from Lotus AST
 type LLVMCodeGenerator struct {
 	context llvm.Context
@@ -31,6 +37,9 @@ type LLVMCodeGenerator struct {
 
 	// Current function being generated
 	currentFn llvm.Value
+
+	// Template context for tracking type substitutions
+	templateTypeMap map[string]TokenType // Maps template parameter names to concrete types
 
 	// Loop context for break/continue
 	loopExitBlock     llvm.BasicBlock // Target for break
@@ -59,6 +68,11 @@ type LLVMCodeGenerator struct {
 	// Partial applications (currying)
 	partialApplications map[string]*PartialApplication // Function name -> partial info
 
+	// Template storage
+	templates                map[string]*TemplateDeclaration // Template name -> template definition
+	instantiatedTemplates    map[string]bool                 // Track which template instantiations exist
+	pendingTemplateFunctions []pendingTemplateFunction       // Template functions waiting to be generated
+
 	// Import context for stdlib
 	imports *ImportContext
 
@@ -73,26 +87,30 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 	builder := ctx.NewBuilder()
 
 	cg := &LLVMCodeGenerator{
-		context:             ctx,
-		module:              mod,
-		builder:             builder,
-		namedValues:         make(map[string]LLVMVariable),
-		globalStrings:       make(map[string]llvm.Value),
-		functions:           make(map[string]llvm.Value),
-		globalVars:          make(map[string]llvm.Value),
-		staticVars:          make(map[string]llvm.Value),
-		stringConstants:     make(map[string]bool),
-		vtables:             make(map[string]llvm.Value),
-		virtualMethods:      make(map[string]bool),
-		structTypes:         make(map[string]llvm.Type),
-		structDefs:          make(map[string]*StructDefinition),
-		enumDefs:            make(map[string]*EnumDefinition),
-		unionDefs:           make(map[string]*UnionDefinition),
-		classDefs:           make(map[string]*ClassDefinition),
-		classTypes:          make(map[string]llvm.Type),
-		imports:             NewImportContext(),
-		partialApplications: make(map[string]*PartialApplication),
-		stringCounter:       0,
+		context:                  ctx,
+		module:                   mod,
+		builder:                  builder,
+		namedValues:              make(map[string]LLVMVariable),
+		globalStrings:            make(map[string]llvm.Value),
+		functions:                make(map[string]llvm.Value),
+		globalVars:               make(map[string]llvm.Value),
+		staticVars:               make(map[string]llvm.Value),
+		stringConstants:          make(map[string]bool),
+		vtables:                  make(map[string]llvm.Value),
+		virtualMethods:           make(map[string]bool),
+		structTypes:              make(map[string]llvm.Type),
+		structDefs:               make(map[string]*StructDefinition),
+		enumDefs:                 make(map[string]*EnumDefinition),
+		unionDefs:                make(map[string]*UnionDefinition),
+		classDefs:                make(map[string]*ClassDefinition),
+		classTypes:               make(map[string]llvm.Type),
+		imports:                  NewImportContext(),
+		partialApplications:      make(map[string]*PartialApplication),
+		templates:                make(map[string]*TemplateDeclaration),
+		instantiatedTemplates:    make(map[string]bool),
+		pendingTemplateFunctions: make([]pendingTemplateFunction, 0),
+		templateTypeMap:          make(map[string]TokenType),
+		stringCounter:            0,
 	}
 
 	// Declare external C library functions
@@ -179,9 +197,9 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 		llvm.PointerType(cg.context.Int8Type(), 0), // SDL_Window* as void*
 		[]llvm.Type{
 			llvm.PointerType(cg.context.Int8Type(), 0), // title
-			cg.context.Int32Type(),                      // w
-			cg.context.Int32Type(),                      // h
-			cg.context.Int32Type(),                      // flags
+			cg.context.Int32Type(),                     // w
+			cg.context.Int32Type(),                     // h
+			cg.context.Int32Type(),                     // flags
 		},
 		false,
 	)
@@ -247,10 +265,10 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 		cg.context.Int1Type(), // bool in SDL3
 		[]llvm.Type{
 			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
-			cg.context.Int8Type(),                       // r
-			cg.context.Int8Type(),                       // g
-			cg.context.Int8Type(),                       // b
-			cg.context.Int8Type(),                       // a
+			cg.context.Int8Type(),                      // r
+			cg.context.Int8Type(),                      // g
+			cg.context.Int8Type(),                      // b
+			cg.context.Int8Type(),                      // a
 		},
 		false,
 	)
@@ -263,10 +281,10 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 		cg.context.Int1Type(), // bool in SDL3
 		[]llvm.Type{
 			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
-			cg.context.FloatType(),                      // x1
-			cg.context.FloatType(),                      // y1
-			cg.context.FloatType(),                      // x2
-			cg.context.FloatType(),                      // y2
+			cg.context.FloatType(),                     // x1
+			cg.context.FloatType(),                     // y1
+			cg.context.FloatType(),                     // x2
+			cg.context.FloatType(),                     // y2
 		},
 		false,
 	)
@@ -285,8 +303,8 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	sdlRenderDrawRectType := llvm.FunctionType(
 		cg.context.Int1Type(), // bool in SDL3
 		[]llvm.Type{
-			llvm.PointerType(cg.context.Int8Type(), 0),      // renderer
-			llvm.PointerType(sdlRectType, 0),                // rect (const SDL_Rect*)
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			llvm.PointerType(sdlRectType, 0),           // rect (const SDL_Rect*)
 		},
 		false,
 	)
@@ -357,20 +375,66 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	cg.functions["SDL_GetTicks"] = sdlGetTicks
 }
 
+// declareTopLevelItems recursively declares functions and variables, including those in namespaces
+func (cg *LLVMCodeGenerator) declareTopLevelItems(stmt ASTNode) error {
+	return cg.declareTopLevelItemsWithNamespace(stmt, "")
+}
+
+// declareTopLevelItemsWithNamespace recursively declares functions with namespace context
+func (cg *LLVMCodeGenerator) declareTopLevelItemsWithNamespace(stmt ASTNode, namespacePath string) error {
+	switch s := stmt.(type) {
+	case *FunctionDefinition:
+		return cg.declareFunctionWithNamespace(s, namespacePath)
+	case *VariableDeclaration:
+		// Top-level variables are implicitly global
+		return cg.declareTopLevelVar(s)
+	case *NamespaceDeclaration:
+		// Build the new namespace path
+		newPath := s.Name
+		if namespacePath != "" {
+			newPath = namespacePath + "::" + s.Name
+		}
+		// Recursively declare items inside namespace
+		for _, item := range s.Body {
+			if err := cg.declareTopLevelItemsWithNamespace(item, newPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	case *TemplateDeclaration:
+		// Store template for later instantiation
+		var templateName string
+		switch decl := s.Declaration.(type) {
+		case *FunctionDefinition:
+			templateName = decl.Name
+		case *StructDefinition:
+			templateName = decl.Name
+		default:
+			return fmt.Errorf("unsupported template declaration type: %T", s.Declaration)
+		}
+		if namespacePath != "" {
+			templateName = namespacePath + "::" + templateName
+		}
+		cg.templates[templateName] = s
+		return nil
+	case *UsingDeclaration:
+		// Using declarations don't declare anything
+		return nil
+	case *ImportStatement:
+		// Imports don't declare anything
+		return nil
+	default:
+		// Ignore other statement types in first pass
+		return nil
+	}
+}
+
 // Generate generates LLVM IR from the AST
 func (cg *LLVMCodeGenerator) Generate(statements []ASTNode) error {
 	// First pass: declare all functions and top-level global variables
 	for _, stmt := range statements {
-		switch s := stmt.(type) {
-		case *FunctionDefinition:
-			if err := cg.declareFunction(s); err != nil {
-				return err
-			}
-		case *VariableDeclaration:
-			// Top-level variables are implicitly global
-			if err := cg.declareTopLevelVar(s); err != nil {
-				return err
-			}
+		if err := cg.declareTopLevelItems(stmt); err != nil {
+			return err
 		}
 	}
 
@@ -384,6 +448,27 @@ func (cg *LLVMCodeGenerator) Generate(statements []ASTNode) error {
 			if err := cg.generateStatement(stmt); err != nil {
 				return err
 			}
+		}
+	}
+
+	// Third pass: generate template instantiations
+	// Template functions were declared during the second pass but not generated
+	// to avoid corrupting the LLVM builder state
+	for len(cg.pendingTemplateFunctions) > 0 {
+		// Pop all pending functions (new ones might be added during generation)
+		pending := cg.pendingTemplateFunctions
+		cg.pendingTemplateFunctions = make([]pendingTemplateFunction, 0)
+
+		for _, templateInfo := range pending {
+			// Set the type map for this template instantiation
+			cg.templateTypeMap = templateInfo.TypeMap
+
+			if err := cg.generateFunction(templateInfo.Function); err != nil {
+				return err
+			}
+
+			// Clear the type map after generation
+			cg.templateTypeMap = make(map[string]TokenType)
 		}
 	}
 
@@ -453,6 +538,10 @@ func (cg *LLVMCodeGenerator) tryGetConstantValue(expr ASTNode, targetType llvm.T
 
 // declareFunction creates a function declaration
 func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
+	return cg.declareFunctionWithNamespace(fn, "")
+}
+
+func (cg *LLVMCodeGenerator) declareFunctionWithNamespace(fn *FunctionDefinition, namespacePath string) error {
 	// Build parameter types
 	paramTypes := make([]llvm.Type, len(fn.Parameters))
 	for i, param := range fn.Parameters {
@@ -463,8 +552,14 @@ func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
 	retType := cg.tokenTypeToLLVM(fn.ReturnType)
 	fnType := llvm.FunctionType(retType, paramTypes, false)
 
-	// Create function
-	llvmFn := llvm.AddFunction(cg.module, fn.Name, fnType)
+	// Determine the fully qualified name
+	qualifiedName := fn.Name
+	if namespacePath != "" {
+		qualifiedName = namespacePath + "::" + fn.Name
+	}
+
+	// Create function with qualified name for namespaced functions
+	llvmFn := llvm.AddFunction(cg.module, qualifiedName, fnType)
 
 	// Set linkage based on static modifier
 	if fn.IsStatic {
@@ -478,7 +573,12 @@ func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
 		llvmFn.Param(i).SetName(param.Name)
 	}
 
-	cg.functions[fn.Name] = llvmFn
+	// Store function with both qualified and unqualified names
+	cg.functions[qualifiedName] = llvmFn
+	// Also store with unqualified name if not in a namespace (for backwards compatibility)
+	if namespacePath == "" {
+		cg.functions[fn.Name] = llvmFn
+	}
 
 	// Track virtual methods for vtable generation
 	if fn.IsVirtual {
@@ -490,9 +590,14 @@ func (cg *LLVMCodeGenerator) declareFunction(fn *FunctionDefinition) error {
 
 // generateStatement generates LLVM IR for a statement
 func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
+	return cg.generateStatementWithNamespace(stmt, "")
+}
+
+// generateStatementWithNamespace generates LLVM IR with namespace context
+func (cg *LLVMCodeGenerator) generateStatementWithNamespace(stmt ASTNode, namespacePath string) error {
 	switch s := stmt.(type) {
 	case *FunctionDefinition:
-		return cg.generateFunction(s)
+		return cg.generateFunctionWithNamespace(s, namespacePath)
 	case *VariableDeclaration:
 		return cg.generateVarDecl(s)
 	case *ConstantDeclaration:
@@ -539,6 +644,26 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 		return cg.generateArrayDecl(s)
 	case *FreeCall:
 		return cg.generateFreeStmt(s)
+	case *TemplateDeclaration:
+		// Templates are not instantiated yet - store for later
+		// TODO: Implement template instantiation
+		return nil
+	case *NamespaceDeclaration:
+		// Build the new namespace path
+		newPath := s.Name
+		if namespacePath != "" {
+			newPath = namespacePath + "::" + s.Name
+		}
+		// Process namespace contents with namespace context
+		for _, stmt := range s.Body {
+			if err := cg.generateStatementWithNamespace(stmt, newPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	case *UsingDeclaration:
+		// Using declarations don't generate code - they're handled during parsing
+		return nil
 	default:
 		return fmt.Errorf("unsupported statement type: %T", stmt)
 	}
@@ -546,9 +671,19 @@ func (cg *LLVMCodeGenerator) generateStatement(stmt ASTNode) error {
 
 // generateFunction generates a complete function
 func (cg *LLVMCodeGenerator) generateFunction(fn *FunctionDefinition) error {
-	llvmFn, ok := cg.functions[fn.Name]
+	return cg.generateFunctionWithNamespace(fn, "")
+}
+
+func (cg *LLVMCodeGenerator) generateFunctionWithNamespace(fn *FunctionDefinition, namespacePath string) error {
+	// Determine the fully qualified name
+	qualifiedName := fn.Name
+	if namespacePath != "" {
+		qualifiedName = namespacePath + "::" + fn.Name
+	}
+
+	llvmFn, ok := cg.functions[qualifiedName]
 	if !ok {
-		return fmt.Errorf("function %s not declared", fn.Name)
+		return fmt.Errorf("function %s not declared", qualifiedName)
 	}
 
 	cg.currentFn = llvmFn
@@ -1041,6 +1176,9 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 	case *BitCastExpression:
 		return cg.generateBitCast(e)
 
+	case *OptionExpression:
+		return cg.generateOptionExpression(e)
+
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -1149,22 +1287,47 @@ func (cg *LLVMCodeGenerator) generateComparison(c *Comparison) (llvm.Value, erro
 		return llvm.Value{}, err
 	}
 
+	// Check if we're comparing floats
+	leftType := left.Type()
+	isFloat := leftType.TypeKind() == llvm.FloatTypeKind || leftType.TypeKind() == llvm.DoubleTypeKind
+
 	var cmp llvm.Value
-	switch c.Operator {
-	case TokenEqual:
-		cmp = cg.builder.CreateICmp(llvm.IntEQ, left, right, "eqtmp")
-	case TokenNotEqual:
-		cmp = cg.builder.CreateICmp(llvm.IntNE, left, right, "netmp")
-	case TokenLess:
-		cmp = cg.builder.CreateICmp(llvm.IntSLT, left, right, "lttmp")
-	case TokenLessEq:
-		cmp = cg.builder.CreateICmp(llvm.IntSLE, left, right, "letmp")
-	case TokenGreater:
-		cmp = cg.builder.CreateICmp(llvm.IntSGT, left, right, "gttmp")
-	case TokenGreaterEq:
-		cmp = cg.builder.CreateICmp(llvm.IntSGE, left, right, "getmp")
-	default:
-		return llvm.Value{}, fmt.Errorf("unsupported comparison operator: %v", c.Operator)
+	if isFloat {
+		// Use floating point comparison
+		switch c.Operator {
+		case TokenEqual:
+			cmp = cg.builder.CreateFCmp(llvm.FloatOEQ, left, right, "eqtmp")
+		case TokenNotEqual:
+			cmp = cg.builder.CreateFCmp(llvm.FloatONE, left, right, "netmp")
+		case TokenLess:
+			cmp = cg.builder.CreateFCmp(llvm.FloatOLT, left, right, "lttmp")
+		case TokenLessEq:
+			cmp = cg.builder.CreateFCmp(llvm.FloatOLE, left, right, "letmp")
+		case TokenGreater:
+			cmp = cg.builder.CreateFCmp(llvm.FloatOGT, left, right, "gttmp")
+		case TokenGreaterEq:
+			cmp = cg.builder.CreateFCmp(llvm.FloatOGE, left, right, "getmp")
+		default:
+			return llvm.Value{}, fmt.Errorf("unsupported comparison operator: %v", c.Operator)
+		}
+	} else {
+		// Use integer comparison
+		switch c.Operator {
+		case TokenEqual:
+			cmp = cg.builder.CreateICmp(llvm.IntEQ, left, right, "eqtmp")
+		case TokenNotEqual:
+			cmp = cg.builder.CreateICmp(llvm.IntNE, left, right, "netmp")
+		case TokenLess:
+			cmp = cg.builder.CreateICmp(llvm.IntSLT, left, right, "lttmp")
+		case TokenLessEq:
+			cmp = cg.builder.CreateICmp(llvm.IntSLE, left, right, "letmp")
+		case TokenGreater:
+			cmp = cg.builder.CreateICmp(llvm.IntSGT, left, right, "gttmp")
+		case TokenGreaterEq:
+			cmp = cg.builder.CreateICmp(llvm.IntSGE, left, right, "getmp")
+		default:
+			return llvm.Value{}, fmt.Errorf("unsupported comparison operator: %v", c.Operator)
+		}
 	}
 	return cg.builder.CreateZExt(cmp, cg.context.Int64Type(), "cmpext"), nil
 }
@@ -1212,6 +1375,212 @@ func (cg *LLVMCodeGenerator) generateUnaryExpr(u *UnaryOp) (llvm.Value, error) {
 		return cg.builder.CreateZExt(cmp, cg.context.Int64Type(), "lnotext"), nil
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported unary operator: %v", u.Operator)
+	}
+}
+
+// instantiateTemplate creates a specialized version of a template function
+func (cg *LLVMCodeGenerator) instantiateTemplate(template *TemplateDeclaration, call *FunctionCall) error {
+	// For now, only support function templates
+	fnTemplate, ok := template.Declaration.(*FunctionDefinition)
+	if !ok {
+		return fmt.Errorf("only function templates are currently supported")
+	}
+
+	// Infer argument types from the AST without generating code
+	argTypes := make([]TokenType, len(call.Args))
+	for i, arg := range call.Args {
+		argTypes[i] = cg.inferExpressionType(arg)
+	}
+
+	// Build a map of template parameter names to concrete types
+	typeMap := make(map[string]TokenType)
+
+	// Match template parameters with argument types
+	// For now, assume all template parameters are type parameters (typename T)
+	// and match them in order with function parameters
+	paramIndex := 0
+	for _, param := range template.Parameters {
+		if param.IsType && paramIndex < len(fnTemplate.Parameters) {
+			// Find which function parameters use this template parameter
+			for i, fnParam := range fnTemplate.Parameters {
+				if i < len(argTypes) {
+					// If the function parameter type is TokenIdentifier, it's a template parameter
+					if fnParam.Type == TokenIdentifier {
+						typeMap[param.Name] = argTypes[i]
+						break
+					}
+				}
+			}
+			paramIndex++
+		}
+	}
+
+	// Generate a mangled name for the specialized function
+	// e.g., maximum<int> becomes "maximum_int", maximum<float> becomes "maximum_float"
+	mangledName := fnTemplate.Name
+	for _, param := range template.Parameters {
+		if param.IsType {
+			if concreteType, ok := typeMap[param.Name]; ok {
+				mangledName += "_" + cg.tokenTypeToString(concreteType)
+			}
+		}
+	}
+
+	// Check if this instantiation already exists
+	if _, exists := cg.instantiatedTemplates[mangledName]; exists {
+		// Already instantiated, just return
+		return nil
+	}
+	cg.instantiatedTemplates[mangledName] = true
+
+	// Create a deep copy of the template function
+	specializedFn := CloneFunctionDefinition(fnTemplate)
+	specializedFn.Name = mangledName
+
+	// Substitute template parameters in function parameters
+	for i := range specializedFn.Parameters {
+		if specializedFn.Parameters[i].Type == TokenIdentifier {
+			// This parameter uses a template type parameter
+			// For now, assume it uses the first type parameter (simple case: template<typename T>)
+			for _, tparam := range template.Parameters {
+				if tparam.IsType {
+					if concreteType, ok := typeMap[tparam.Name]; ok {
+						specializedFn.Parameters[i].Type = concreteType
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Substitute return type if it's a template parameter
+	if specializedFn.ReturnType == TokenIdentifier {
+		// Check template parameters to find the matching type
+		for _, tparam := range template.Parameters {
+			if tparam.IsType {
+				if concreteType, ok := typeMap[tparam.Name]; ok {
+					specializedFn.ReturnType = concreteType
+					break
+				}
+			}
+		}
+	}
+
+	// Declare the specialized function (but don't generate it yet)
+	if err := cg.declareFunction(specializedFn); err != nil {
+		return err
+	}
+
+	// Store the specialized function for later generation along with its type map
+	// We can't generate it now because we're in the middle of generating another function
+	cg.pendingTemplateFunctions = append(cg.pendingTemplateFunctions, pendingTemplateFunction{
+		Function: specializedFn,
+		TypeMap:  typeMap,
+	})
+
+	return nil
+}
+
+// inferExpressionType determines the type of an expression from the AST without generating code
+func (cg *LLVMCodeGenerator) inferExpressionType(expr ASTNode) TokenType {
+	switch e := expr.(type) {
+	case *IntLiteral:
+		// Integer literals in Lotus default to int64
+		return TokenTypeInt64
+	case *FloatLiteral:
+		return TokenTypeFloat64 // Float literals default to float64 (double)
+	case *StringLiteral:
+		return TokenTypeString
+	case *BoolLiteral:
+		return TokenTypeBool
+	case *Identifier:
+		// Look up variable type
+		if varInfo, ok := cg.namedValues[e.Name]; ok {
+			return cg.llvmTypeToTokenType(varInfo.ElementType)
+		}
+		return TokenTypeInt32 // Default fallback
+	case *BinaryOp:
+		// Binary operations inherit type from operands
+		leftType := cg.inferExpressionType(e.Left)
+		rightType := cg.inferExpressionType(e.Right)
+		// If either is float, result is float
+		if leftType == TokenTypeFloat32 || leftType == TokenTypeFloat64 ||
+			rightType == TokenTypeFloat32 || rightType == TokenTypeFloat64 {
+			return TokenTypeFloat64
+		}
+		return leftType
+	case *FunctionCall:
+		// Look up function return type
+		if fn, ok := cg.functions[e.Name]; ok {
+			fnType := fn.GlobalValueType()
+			return cg.llvmTypeToTokenType(fnType.ReturnType())
+		}
+		return TokenTypeInt32 // Default fallback
+	default:
+		return TokenTypeInt32 // Default fallback
+	}
+}
+
+// tokenTypeToString converts a TokenType to a string for name mangling
+func (cg *LLVMCodeGenerator) tokenTypeToString(t TokenType) string {
+	switch t {
+	case TokenTypeInt8:
+		return "int8"
+	case TokenTypeInt16:
+		return "int16"
+	case TokenTypeInt32:
+		return "int32"
+	case TokenTypeInt64:
+		return "int64"
+	case TokenTypeUint8:
+		return "uint8"
+	case TokenTypeUint16:
+		return "uint16"
+	case TokenTypeUint32:
+		return "uint32"
+	case TokenTypeUint64:
+		return "uint64"
+	case TokenTypeFloat32:
+		return "float32"
+	case TokenTypeFloat64:
+		return "float64"
+	case TokenTypeBool:
+		return "bool"
+	case TokenTypeString:
+		return "string"
+	default:
+		return "unknown"
+	}
+}
+
+// llvmTypeToTokenType converts an LLVM type to a TokenType
+func (cg *LLVMCodeGenerator) llvmTypeToTokenType(t llvm.Type) TokenType {
+	switch t.TypeKind() {
+	case llvm.IntegerTypeKind:
+		switch t.IntTypeWidth() {
+		case 1:
+			return TokenTypeBool
+		case 8:
+			return TokenTypeInt8
+		case 16:
+			return TokenTypeInt16
+		case 32:
+			return TokenTypeInt32
+		case 64:
+			return TokenTypeInt64
+		default:
+			return TokenTypeInt32
+		}
+	case llvm.FloatTypeKind:
+		return TokenTypeFloat32
+	case llvm.DoubleTypeKind:
+		return TokenTypeFloat64
+	case llvm.PointerTypeKind:
+		return TokenTypeString // Simplified - pointers assumed to be strings
+	case llvm.VoidTypeKind:
+		return TokenTypeVoid
+	default:
+		return TokenTypeInt32 // Default fallback
 	}
 }
 
@@ -1578,21 +1947,76 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	// Look up the function
 	fn, ok := cg.functions[call.Name]
 	if !ok {
-		return llvm.Value{}, fmt.Errorf("undefined function: %s", call.Name)
+		// Check if this is a template that needs instantiation
+		if template, hasTemplate := cg.templates[call.Name]; hasTemplate {
+			// Infer argument types to build the mangled name
+			argTypes := make([]TokenType, len(call.Args))
+			for i, arg := range call.Args {
+				argTypes[i] = cg.inferExpressionType(arg)
+			}
+
+			// Build the mangled name
+			mangledName := call.Name
+			for _, param := range template.Parameters {
+				if param.IsType {
+					// Match with argument types
+					for i := range argTypes {
+						if i < len(argTypes) {
+							mangledName += "_" + cg.tokenTypeToString(argTypes[i])
+							break
+						}
+					}
+				}
+			}
+
+			// Check if this specific instantiation exists
+			fn, ok = cg.functions[mangledName]
+			if !ok {
+				// Need to instantiate this template
+				if err := cg.instantiateTemplate(template, call); err != nil {
+					return llvm.Value{}, err
+				}
+				// Try looking up with the mangled name
+				fn, ok = cg.functions[mangledName]
+				if !ok {
+					return llvm.Value{}, fmt.Errorf("failed to instantiate template: %s", mangledName)
+				}
+			}
+		} else {
+			return llvm.Value{}, fmt.Errorf("undefined function: %s", call.Name)
+		}
 	}
 
 	// Generate arguments
 	args := make([]llvm.Value, len(call.Args))
+	fnType := fn.GlobalValueType()
+	paramTypes := fnType.ParamTypes()
+
 	for i, arg := range call.Args {
 		val, err := cg.generateExpression(arg)
 		if err != nil {
 			return llvm.Value{}, err
 		}
+
+		// Type coercion: if the argument type doesn't match the parameter type, try to coerce it
+		if i < len(paramTypes) {
+			paramType := paramTypes[i]
+			argType := val.Type()
+
+			// If both are floating point types but different sizes, coerce
+			if argType.TypeKind() == llvm.DoubleTypeKind && paramType.TypeKind() == llvm.FloatTypeKind {
+				// Coerce double to float
+				val = cg.builder.CreateFPTrunc(val, paramType, "fptrunc")
+			} else if argType.TypeKind() == llvm.FloatTypeKind && paramType.TypeKind() == llvm.DoubleTypeKind {
+				// Coerce float to double
+				val = cg.builder.CreateFPExt(val, paramType, "fpext")
+			}
+		}
+
 		args[i] = val
 	}
 
 	// Check if function returns void - void calls cannot have names
-	fnType := fn.GlobalValueType()
 	retType := fnType.ReturnType()
 	if retType.TypeKind() == llvm.VoidTypeKind {
 		return cg.builder.CreateCall(fnType, fn, args, ""), nil
@@ -2651,6 +3075,46 @@ func (cg *LLVMCodeGenerator) generateBitCast(bc *BitCastExpression) (llvm.Value,
 	default:
 		// Generic bitcast for other combinations
 		return cg.builder.CreateBitCast(value, targetType, "bitcast"), nil
+	}
+}
+
+// generateOptionExpression generates code for Some(value) or None
+// An Optional<T> is represented as a struct: { i1 has_value, T value }
+func (cg *LLVMCodeGenerator) generateOptionExpression(opt *OptionExpression) (llvm.Value, error) {
+	if opt.IsSome {
+		// Some(value) - generate the value and create an optional with has_value=true
+		value, err := cg.generateExpression(opt.Value)
+		if err != nil {
+			return llvm.Value{}, err
+		}
+
+		// Create struct type: { i1, <value_type> }
+		valueType := value.Type()
+		optionalType := cg.context.StructType([]llvm.Type{
+			cg.context.Int1Type(), // has_value
+			valueType,             // value
+		}, false)
+
+		// Create the optional struct
+		optStruct := llvm.ConstNull(optionalType)
+		optStruct = cg.builder.CreateInsertValue(optStruct, llvm.ConstInt(cg.context.Int1Type(), 1, false), 0, "set_has_value")
+		optStruct = cg.builder.CreateInsertValue(optStruct, value, 1, "set_value")
+
+		return optStruct, nil
+	} else {
+		// None - create an optional with has_value=false
+		// For None, we need to infer the type from context or use a generic pointer
+		// For now, we'll use i64 as a default value type
+		optionalType := cg.context.StructType([]llvm.Type{
+			cg.context.Int1Type(),  // has_value
+			cg.context.Int64Type(), // placeholder value type
+		}, false)
+
+		// Create the optional struct with has_value=false
+		optStruct := llvm.ConstNull(optionalType)
+		optStruct = cg.builder.CreateInsertValue(optStruct, llvm.ConstInt(cg.context.Int1Type(), 0, false), 0, "set_has_value")
+
+		return optStruct, nil
 	}
 }
 

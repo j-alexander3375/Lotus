@@ -1,0 +1,206 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - '*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Check if release notes exist
+        id: check_notes
+        run: |
+          if [ -f "RELEASE_NOTES_${{ steps.get_version.outputs.version }}.md" ]; then
+            echo "notes_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "notes_exist=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Lotus v${{ steps.get_version.outputs.version }}
+          body_path: ${{ steps.check_notes.outputs.notes_exist == 'true' && format('RELEASE_NOTES_{0}.md', steps.get_version.outputs.version) || '' }}
+          draft: false
+          prerelease: false
+
+  build-binaries:
+    name: Build ${{ matrix.os }} Binary
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact_name: lotus-linux-amd64
+            asset_name: lotus-linux-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact_name: lotus-darwin-amd64
+            asset_name: lotus-darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact_name: lotus-darwin-arm64
+            asset_name: lotus-darwin-arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact_name: lotus-windows-amd64.exe
+            asset_name: lotus-windows-amd64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install LLVM (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 15
+          sudo apt-get install -y llvm-15-dev
+
+      - name: Install LLVM (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install llvm@15
+          echo "LLVM_DIR=$(brew --prefix llvm@15)" >> $GITHUB_ENV
+
+      - name: Install LLVM (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install llvm --version=15.0.7
+          echo "LLVM_DIR=C:\Program Files\LLVM" >> $GITHUB_ENV
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd src
+          go build -o ../lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+          cd ..
+
+      - name: Create tarball (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          cp lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }} lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/lotus
+          cp README.md LICENSE lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/
+          mkdir -p lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/examples
+          cp -r examples/*.lts lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/examples/ || true
+          tar czf lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+
+      - name: Create zip (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          cp lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/lotus.exe
+          cp README.md LICENSE lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}/
+          mkdir lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}\examples
+          cp examples\*.lts lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}\examples\
+          Compress-Archive -Path lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }} -DestinationPath lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+
+      - name: Upload Release Asset (Unix)
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          asset_name: lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          asset_name: lotus-${{ needs.create-release.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          asset_content_type: application/zip
+
+  create-source-tarball:
+    name: Create Source Tarball
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create source tarball
+        run: |
+          VERSION=${{ needs.create-release.outputs.version }}
+          tar czf lotus-lang-${VERSION}.tar.gz \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.tar.gz' \
+            --exclude='lotus' \
+            --exclude='a.out' \
+            --exclude='*.o' \
+            --transform "s,^,Lotus-${VERSION}/," \
+            .
+
+      - name: Calculate SHA256
+        run: |
+          sha256sum lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz > lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
+          cat lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
+
+      - name: Upload Source Tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz
+          asset_name: lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload SHA256 Checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
+          asset_name: lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
+          asset_content_type: text/plain

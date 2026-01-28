@@ -225,6 +225,8 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenTypeChar, ""))
 			case "bool":
 				tokens = append(tokens, makeToken(TokenTypeBool, ""))
+			case "float":
+				tokens = append(tokens, makeToken(TokenTypeFloat32, "")) // Default float is float32
 			case "float32":
 				tokens = append(tokens, makeToken(TokenTypeFloat32, ""))
 			case "float64":
@@ -287,6 +289,14 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenBitcast, ""))
 			case "transmute":
 				tokens = append(tokens, makeToken(TokenTransmute, ""))
+			case "template":
+				tokens = append(tokens, makeToken(TokenTemplate, ""))
+			case "typename":
+				tokens = append(tokens, makeToken(TokenTypename, ""))
+			case "namespace":
+				tokens = append(tokens, makeToken(TokenNamespace, ""))
+			case "using":
+				tokens = append(tokens, makeToken(TokenUsing, ""))
 			case "match":
 				tokens = append(tokens, makeToken(TokenMatch, ""))
 			case "case":

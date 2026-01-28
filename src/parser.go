@@ -12,15 +12,18 @@ import (
 // Parser holds the state for parsing a token stream
 // It maintains the current position and provides methods for lookahead and navigation.
 type Parser struct {
-	tokens []Token
-	pos    int
+	tokens          []Token
+	pos             int
+	templateParams  map[string]bool      // Track template parameter names in current context
+	currentTemplate *TemplateDeclaration // Current template being parsed
 }
 
 // NewParser creates a new parser for the given tokens
 func NewParser(tokens []Token) *Parser {
 	return &Parser{
-		tokens: tokens,
-		pos:    0,
+		tokens:         tokens,
+		pos:            0,
+		templateParams: make(map[string]bool),
 	}
 }
 
@@ -130,6 +133,12 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 		return p.parseDecoratedFunction()
 	case TokenUse:
 		return p.parseImportStatement()
+	case TokenTemplate:
+		return p.parseTemplateDeclaration()
+	case TokenNamespace:
+		return p.parseNamespaceDeclaration()
+	case TokenUsing:
+		return p.parseUsingDeclaration()
 	case TokenRet:
 		return p.parseReturnStatement()
 	case TokenReturn:
@@ -148,6 +157,8 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 		return p.parseMatchExpression()
 	case TokenUnion:
 		return p.parseUnionDefinition()
+	case TokenStruct:
+		return p.parseStructDefinition()
 	case TokenConst:
 		return p.parseConstantDeclaration()
 	case TokenTypeInt, TokenTypeInt8, TokenTypeInt16, TokenTypeInt32, TokenTypeInt64,
@@ -625,6 +636,70 @@ func (p *Parser) parsePattern() (ASTNode, error) {
 	}
 }
 
+// parseStructDefinition parses a struct type definition
+// Syntax: struct name { type field; ... }
+func (p *Parser) parseStructDefinition() (ASTNode, error) {
+	p.advance() // skip 'struct'
+
+	if p.current().Type != TokenIdentifier {
+		return nil, p.formatError("expected struct name after 'struct'")
+	}
+	structName := p.current().Value
+	p.advance()
+
+	if p.current().Type != TokenLBrace {
+		return nil, p.formatError("expected '{' after struct name")
+	}
+	p.advance() // skip '{'
+
+	var fields []StructField
+	for p.current().Type != TokenRBrace && p.current().Type != TokenEOF {
+		// Skip newlines
+		for p.current().Type == TokenNewline {
+			p.advance()
+		}
+
+		// Check for end of struct
+		if p.current().Type == TokenRBrace {
+			break
+		}
+
+		// Parse field type
+		if !isTypeToken(p.current().Type) && p.current().Type != TokenIdentifier {
+			return nil, p.formatError(fmt.Sprintf("expected type for struct field, got %v", p.current().Type))
+		}
+		fieldType := p.current().Type
+		p.advance()
+
+		// Parse field name
+		if p.current().Type != TokenIdentifier {
+			return nil, p.formatError("expected field name")
+		}
+		fieldName := p.current().Value
+		p.advance()
+
+		// Expect semicolon (optional)
+		if p.current().Type == TokenSemi {
+			p.advance()
+		}
+
+		fields = append(fields, StructField{
+			Name: fieldName,
+			Type: fieldType,
+		})
+	}
+
+	if p.current().Type != TokenRBrace {
+		return nil, p.formatError("expected '}' at end of struct definition")
+	}
+	p.advance() // skip '}'
+
+	return &StructDefinition{
+		Name:   structName,
+		Fields: fields,
+	}, nil
+}
+
 // parseUnionDefinition parses a union type definition
 // Syntax: union Name { Variant1(Type), Variant2(Type1, Type2), Variant3 }
 func (p *Parser) parseUnionDefinition() (*UnionDefinition, error) {
@@ -863,6 +938,21 @@ func isTypeToken(t TokenType) bool {
 	default:
 		return false
 	}
+}
+
+// isTypeOrTemplateParam checks if current token is a type or template parameter
+func (p *Parser) isTypeOrTemplateParam() bool {
+	// Check if it's a built-in type
+	if isTypeToken(p.current().Type) {
+		return true
+	}
+
+	// Check if it's an identifier that's a template parameter
+	if p.current().Type == TokenIdentifier {
+		return p.templateParams[p.current().Value]
+	}
+
+	return false
 }
 
 // parseFunctionCall parses a function call
@@ -1238,6 +1328,24 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 	case TokenMatch:
 		// Match expression
 		return p.parseMatchExpression()
+	case TokenSome:
+		// Some(value) - optional with value
+		p.advance() // skip 'Some'
+		if err := p.expect(TokenLParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '(' after 'Some'")
+		}
+		value, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after Some value")
+		}
+		return &OptionExpression{IsSome: true, Value: value}, nil
+	case TokenNone:
+		// None - empty optional
+		p.advance()
+		return &OptionExpression{IsSome: false, Value: nil}, nil
 	case TokenIdentifier:
 		name := p.current().Value
 		p.advance()
@@ -1360,12 +1468,19 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		return nil, err
 	}
 
-	// Return type
-	if !isTypeToken(p.current().Type) {
+	// Return type (can be built-in type or template parameter)
+	var retType TokenType
+
+	if isTypeToken(p.current().Type) {
+		retType = p.current().Type
+		p.advance()
+	} else if p.current().Type == TokenIdentifier && p.templateParams[p.current().Value] {
+		// Template parameter used as return type
+		retType = TokenIdentifier // Store as identifier, will be resolved during instantiation
+		p.advance()
+	} else {
 		return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingReturnType+", got "+TokenTypeName(p.current().Type))
 	}
-	retType := p.current().Type
-	p.advance()
 
 	// Function name
 	if p.current().Type != TokenIdentifier {
@@ -1381,12 +1496,43 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 
 	var params []FunctionParam
 	for p.current().Type != TokenRParen {
-		// Parameter type
-		if !isTypeToken(p.current().Type) {
+		// Parameter type (can be built-in type or template parameter)
+		var pType TokenType
+
+		if isTypeToken(p.current().Type) {
+			pType = p.current().Type
+			p.advance()
+		} else if p.current().Type == TokenIdentifier && p.templateParams[p.current().Value] {
+			// Template parameter used as parameter type
+			pType = TokenIdentifier // Will be resolved during instantiation
+			p.advance()
+		} else {
 			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected parameter type, got "+TokenTypeName(p.current().Type))
 		}
-		pType := p.current().Type
-		p.advance()
+
+		// Check for array type: T[Size] or int[]
+		if p.current().Type == TokenLBracket {
+			p.advance() // skip '['
+			// Skip array size expression (could be a number, template param, or empty)
+			if p.current().Type != TokenRBracket {
+				// Has size - skip it (could be template param or expression)
+				depth := 1
+				for depth > 0 && p.current().Type != TokenEOF {
+					if p.current().Type == TokenLBracket {
+						depth++
+					} else if p.current().Type == TokenRBracket {
+						depth--
+					}
+					if depth > 0 {
+						p.advance()
+					}
+				}
+			}
+			if err := p.expect(TokenRBracket); err != nil {
+				return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ']' in array type")
+			}
+			// TODO: Store array size information
+		}
 
 		// Parameter name
 		if p.current().Type != TokenIdentifier {

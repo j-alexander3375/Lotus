@@ -11,17 +11,24 @@ type Variable struct {
 
 // TypeRegistry manages all type definitions in the compiler
 type TypeRegistry struct {
-	Structs map[string]*StructDefinition
-	Enums   map[string]*EnumDefinition
-	Classes map[string]*ClassDefinition
+	Structs         map[string]*StructDefinition
+	Enums           map[string]*EnumDefinition
+	Classes         map[string]*ClassDefinition
+	Templates       map[string]*TemplateDefinition
+	Namespaces      map[string]*Namespace
+	GlobalNamespace *Namespace
 }
 
 // NewTypeRegistry creates a new type registry instance
 func NewTypeRegistry() *TypeRegistry {
+	globalNs := NewNamespace("", nil)
 	return &TypeRegistry{
-		Structs: make(map[string]*StructDefinition),
-		Enums:   make(map[string]*EnumDefinition),
-		Classes: make(map[string]*ClassDefinition),
+		Structs:         make(map[string]*StructDefinition),
+		Enums:           make(map[string]*EnumDefinition),
+		Classes:         make(map[string]*ClassDefinition),
+		Templates:       make(map[string]*TemplateDefinition),
+		Namespaces:      make(map[string]*Namespace),
+		GlobalNamespace: globalNs,
 	}
 }
 

@@ -10,6 +10,9 @@ a.out
 release_workflow.md
 NEW_MODULE.md
 
+# Unit tests
+*_test.go
+
 # Ignore build directories
 out/
 build/

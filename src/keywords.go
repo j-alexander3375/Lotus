@@ -174,6 +174,15 @@ const (
 	TokenThrow   // throw
 	TokenNull    // null
 
+	// Templates (C++ style generics)
+	TokenTemplate // template (template declaration)
+	TokenTypename // typename (type parameter in template)
+
+	// Namespaces
+	TokenNamespace // namespace (namespace declaration)
+	TokenUsing     // using (using declaration/directive)
+	TokenInline2   // inline (inline namespace)
+
 	// Special tokens
 	TokenEOF
 	TokenUnknown

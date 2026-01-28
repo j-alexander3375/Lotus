@@ -98,6 +98,22 @@ Input (.lts file)
 | Bitcast | `bitcast<int64>(floatVal)` | Bit reinterpretation |
 | Virtual functions | `vrt fn foo()` / `override fn foo()` | Polymorphism |
 | Storage classes | `static`, `lcl`, `gbl` | Variable scope control |
+| Optional types | `Some(value)`, `None` | Type-safe null handling |
+
+### Optional Types
+
+Lotus provides built-in optional types for representing values that may or may not exist:
+
+```lotus
+// Creating optionals
+Some(42)        // Optional with value
+None            // Empty optional
+
+// Optionals are represented internally as structs: { i1 has_value, T value }
+// This allows type-safe handling of potentially missing values
+```
+
+**Current Status**: Basic implementation with `Some` and `None` syntax. Full pattern matching and unwrapping operations are planned for future releases.
 
 ### Import System
 
@@ -373,7 +389,7 @@ fn void main() {
 | Register allocation improvements | ⏳ | Better code generation |
 | Inline function expansion | ⏳ | Performance optimization |
 | Generics | ⏳ | Type parameterization |
-| Union/option types | ⏳ | `Option<T>`, `Result<T, E>` |
+| Union/option types | ✅ | `Some(value)`, `None` (basic implementation) |
 | Pattern matching | ⏳ | `match` expression |
 | Debug/trace hooks | ⏳ | Runtime debugging |
 | Package manager | ⏳ | Dependency management |

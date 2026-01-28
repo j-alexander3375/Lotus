@@ -31,6 +31,7 @@
 - **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
 - **Structs, enums, classes** - snake_case identifiers with full OOP support
 - **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
+- **Optional types** - `Some(value)` and `None` for type-safe null handling
 - **Functional programming** - Pipe operator (`|>`), wrappers/decorators (`@`), currying (`partial`)
 - **Void return type** - `fn void foo()` for functions with no return value
 - **Type reinterpretation** - `bitcast<Type>(expr)` for low-level bit manipulation
@@ -195,6 +196,22 @@ fn int main() {
 }
 ```
 
+### Optional Types
+
+```lotus
+// Optional types provide type-safe null handling
+// Syntax: Some(value) for values that exist, None for absence
+
+// Note: Currently, optionals are represented as internal structs
+// Full pattern matching and unwrapping will be added in future releases
+
+// Example usage (basic):
+// Some(42)  - represents an optional with value 42
+// None      - represents an empty optional
+```
+
+**Status**: Basic implementation complete. Parser recognizes `Some` and `None` keywords. Full integration with pattern matching and helper functions planned for future releases.
+
 ### Error Handling
 
 ```lotus
@@ -340,6 +357,8 @@ Other:
 | [STDLIB_AND_IMPORTS.md](Important_Documentation/STDLIB_AND_IMPORTS.md) | Import patterns and module usage |
 | [STDLIB_FINAL_SUMMARY.md](Important_Documentation/STDLIB_FINAL_SUMMARY.md) | Complete stdlib reference |
 | [DEVELOPMENT.md](Important_Documentation/DEVELOPMENT.md) | Contributor guide and architecture |
+| [RELEASE_PROCESS.md](Important_Documentation/RELEASE_PROCESS.md) | Release workflow and version management |
+| [AUTOMATED_RELEASE.md](Important_Documentation/AUTOMATED_RELEASE.md) | Fully automated release system |
 
 ## Examples
 
