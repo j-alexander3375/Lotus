@@ -16,7 +16,7 @@ package main
 
 import (
 	"fmt"
-	
+
 	"tinygo.org/x/go-llvm"
 )
 
@@ -24,12 +24,12 @@ import (
 type OptimizationLevel int
 
 const (
-	OptNone     OptimizationLevel = 0 // -O0: No optimization
-	OptLess     OptimizationLevel = 1 // -O1: Basic optimizations
-	OptDefault  OptimizationLevel = 2 // -O2: Standard optimizations
+	OptNone       OptimizationLevel = 0 // -O0: No optimization
+	OptLess       OptimizationLevel = 1 // -O1: Basic optimizations
+	OptDefault    OptimizationLevel = 2 // -O2: Standard optimizations
 	OptAggressive OptimizationLevel = 3 // -O3: Aggressive optimizations
-	OptSize     OptimizationLevel = 4 // -Os: Optimize for size
-	OptSizeMin  OptimizationLevel = 5 // -Oz: Minimize size aggressively
+	OptSize       OptimizationLevel = 4 // -Os: Optimize for size
+	OptSizeMin    OptimizationLevel = 5 // -Oz: Minimize size aggressively
 )
 
 // LLVMOptimizer provides optimization passes for LLVM modules
@@ -43,12 +43,12 @@ type LLVMOptimizer struct {
 
 // LLVMOptimizationStats tracks optimization metrics for LLVM passes
 type LLVMOptimizationStats struct {
-	DeadCodeEliminated    int
-	FunctionsInlined      int
-	ConstantsPropagated   int
-	LoopsOptimized        int
-	CommonSubexpressions  int
-	MemoryPromotions      int
+	DeadCodeEliminated   int
+	FunctionsInlined     int
+	ConstantsPropagated  int
+	LoopsOptimized       int
+	CommonSubexpressions int
+	MemoryPromotions     int
 }
 
 // NewLLVMOptimizer creates a new LLVM optimizer
