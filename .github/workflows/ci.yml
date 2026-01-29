@@ -41,10 +41,14 @@ jobs:
           # Download and install SDL3
           Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-3.1.6-win32-x64.zip" -OutFile "SDL3.zip"
           Expand-Archive -Path "SDL3.zip" -DestinationPath "C:\SDL3"
-          # Use forward slashes and no spaces in path
-          echo "CGO_CPPFLAGS=-IC:/Program` Files/LLVM/include" >> $env:GITHUB_ENV
-          echo "CGO_LDFLAGS=-LC:/Program` Files/LLVM/lib" >> $env:GITHUB_ENV
-          echo 'C:/Program Files/LLVM/bin' >> $env:GITHUB_PATH
+          # Find LLVM installation
+          $llvmPath = (Get-ChildItem -Path "C:\Program Files" -Filter "LLVM" -Directory -ErrorAction SilentlyContinue).FullName
+          if (-not $llvmPath) {
+            $llvmPath = (Get-ChildItem -Path "C:\" -Filter "LLVM" -Directory -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          }
+          Write-Host "LLVM Path: $llvmPath"
+          echo "LLVM_PATH=$llvmPath" >> $env:GITHUB_ENV
+          echo "$llvmPath\bin" >> $env:GITHUB_PATH
           echo 'C:\SDL3\SDL3-3.1.6-win32-x64\bin' >> $env:GITHUB_PATH
           echo 'LIB=C:\SDL3\SDL3-3.1.6-win32-x64\lib\x64' >> $env:GITHUB_ENV
 
@@ -58,8 +62,8 @@ jobs:
           cd src
           go build -v .
         env:
-          CGO_CPPFLAGS: ${{ matrix.os == 'windows-latest' && '-IC:/PROGRA~1/LLVM/include' || env.CGO_CPPFLAGS }}
-          CGO_LDFLAGS: ${{ matrix.os == 'windows-latest' && '-LC:/PROGRA~1/LLVM/lib' || env.CGO_LDFLAGS }}
+          CGO_CPPFLAGS: ${{ matrix.os == 'windows-latest' && format('-I{0}/include', env.LLVM_PATH) || env.CGO_CPPFLAGS }}
+          CGO_LDFLAGS: ${{ matrix.os == 'windows-latest' && format('-L{0}/lib', env.LLVM_PATH) || env.CGO_LDFLAGS }}
 
       - name: Run tests
         run: |
