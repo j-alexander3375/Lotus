@@ -1,0 +1,25 @@
+use "io"
+
+// Generic identity function
+template<typename T>
+fn T identity(T value) {
+    ret value;
+}
+
+// Generic add function
+template<typename T>
+fn T add(T a, T b) {
+    ret a + b;
+}
+
+fn void main() {
+    println("=== Testing Generic Functions ===");
+
+    // Test generic identity with integers
+    int identInt = identity(42);
+    printf("Identity of 42: %d\n", identInt);
+
+    // Test generic add
+    int sum = add(10, 20);
+    printf("Add(10, 20): %d\n", sum);
+}
