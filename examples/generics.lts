@@ -12,6 +12,12 @@ fn T add(T a, T b) {
     ret a + b;
 }
 
+// Generic compare function - returns bool
+template<typename T>
+fn bool isEqual(T a, T b) {
+    ret a == b;
+}
+
 fn void main() {
     println("=== Testing Generic Functions ===");
 
@@ -22,4 +28,10 @@ fn void main() {
     // Test generic add
     int sum = add(10, 20);
     printf("Add(10, 20): %d\n", sum);
+
+    // Test generic compare
+    bool eq1 = isEqual(5, 5);
+    bool eq2 = isEqual(5, 10);
+    printf("5 == 5: %d\n", eq1);
+    printf("5 == 10: %d\n", eq2);
 }

@@ -880,6 +880,11 @@ func (cg *LLVMCodeGenerator) coerceToType(val llvm.Value, targetType llvm.Type) 
 		if valBits > targetBits {
 			return cg.builder.CreateTrunc(val, targetType, "trunc")
 		} else if valBits < targetBits {
+			// Use zero extend for i1 (bool) to avoid sign extension issues
+			// i1(1) should become i64(1), not i64(-1)
+			if valBits == 1 {
+				return cg.builder.CreateZExt(val, targetType, "zext")
+			}
 			return cg.builder.CreateSExt(val, targetType, "sext")
 		}
 	}
@@ -1333,7 +1338,9 @@ func (cg *LLVMCodeGenerator) generateComparison(c *Comparison) (llvm.Value, erro
 			return llvm.Value{}, fmt.Errorf("unsupported comparison operator: %v", c.Operator)
 		}
 	}
-	return cg.builder.CreateZExt(cmp, cg.context.Int64Type(), "cmpext"), nil
+	// Return the i1 comparison result directly
+	// It will be extended to i64 only when needed (e.g., when used in arithmetic context)
+	return cmp, nil
 }
 
 // generateLogicalOp generates a logical operation
@@ -2125,8 +2132,15 @@ func (cg *LLVMCodeGenerator) generateIf(i *IfStatement) error {
 		return err
 	}
 
-	// Convert to boolean
-	condBool := cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cg.context.Int64Type(), 0, false), "ifcond")
+	// Convert to boolean if needed
+	var condBool llvm.Value
+	if cond.Type().IntTypeWidth() == 1 {
+		// Already i1, use directly
+		condBool = cond
+	} else {
+		// Convert non-zero to true
+		condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "ifcond")
+	}
 
 	// Create blocks
 	thenBlock := llvm.AddBasicBlock(cg.currentFn, "then")
@@ -2189,7 +2203,12 @@ func (cg *LLVMCodeGenerator) generateWhile(w *WhileLoop) error {
 	if err != nil {
 		return err
 	}
-	condBool := cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cg.context.Int64Type(), 0, false), "whilecond")
+	var condBool llvm.Value
+	if cond.Type().IntTypeWidth() == 1 {
+		condBool = cond
+	} else {
+		condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "whilecond")
+	}
 	cg.builder.CreateCondBr(condBool, bodyBlock, exitBlock)
 
 	// Body block
@@ -2243,7 +2262,12 @@ func (cg *LLVMCodeGenerator) generateFor(f *ForLoop) error {
 		if err != nil {
 			return err
 		}
-		condBool := cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cg.context.Int64Type(), 0, false), "forcond")
+		var condBool llvm.Value
+		if cond.Type().IntTypeWidth() == 1 {
+			condBool = cond
+		} else {
+			condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "forcond")
+		}
 		cg.builder.CreateCondBr(condBool, bodyBlock, exitBlock)
 	} else {
 		cg.builder.CreateBr(bodyBlock)

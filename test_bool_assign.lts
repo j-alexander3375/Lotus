@@ -1,0 +1,13 @@
+use "io"
+
+fn int main() {
+    // Assign comparison result to int variable
+    int result = 5 > 3;
+    printf("5 > 3 = %d\n", result);
+    
+    // Assign to bool variable
+    bool flag = 10 == 10;
+    printf("10 == 10 = %d\n", flag);
+    
+    ret 0;
+}

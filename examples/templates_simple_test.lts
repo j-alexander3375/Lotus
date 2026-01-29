@@ -8,16 +8,19 @@ fn int add(int a, int b) {
     ret a + b;
 }
 
-// Regular multiply function (not in namespace)
-fn int multiply(int x, int y) {
-    ret x * y;
+// Simple namespace test
+namespace math {
+    fn int multiply(int x, int y) {
+        ret x * y;
+    }
 }
 
 fn int main() {
     int sum = add(5, 10);
     printf("Sum: %d\n", sum);
 
-    int product = multiply(3, 4);
+    // Using namespace-qualified function call
+    int product = math::multiply(3, 4);
     printf("Product: %d\n", product);
 
     ret 0;
