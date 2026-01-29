@@ -24,18 +24,19 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Install LLVM (macOS)
+      - name: Install LLVM and SDL3 (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install llvm@18
+          brew install llvm@18 sdl3
           LLVM_PATH=$(brew --prefix llvm@18)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
-      - name: Install LLVM (Windows)
+      - name: Install LLVM and SDL3 (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm --version=18.1.8 --allow-downgrade --force
+          choco install sdl3
           echo 'CGO_CPPFLAGS=-IC:/Program Files/LLVM/include' >> $env:GITHUB_ENV
           echo 'CGO_LDFLAGS=-LC:/Program Files/LLVM/lib' >> $env:GITHUB_ENV
           echo 'C:/Program Files/LLVM/bin' >> $env:GITHUB_PATH
@@ -87,9 +88,9 @@ jobs:
         with:
           go-version: "1.21"
 
-      - name: Install LLVM
+      - name: Install LLVM and SDL3
         run: |
-          brew install llvm@18
+          brew install llvm@18 sdl3
           LLVM_PATH=$(brew --prefix llvm@18)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
