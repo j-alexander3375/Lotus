@@ -30,6 +30,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 || \
           sudo apt-get install -y llvm llvm-dev
+          echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib" >> $GITHUB_ENV
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
@@ -93,6 +95,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 || \
           sudo apt-get install -y llvm llvm-dev
+          echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib" >> $GITHUB_ENV
 
       - name: Run go fmt
         run: |
@@ -125,6 +129,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 || \
           sudo apt-get install -y llvm llvm-dev
+          echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib" >> $GITHUB_ENV
 
       - name: Check build
         run: |
