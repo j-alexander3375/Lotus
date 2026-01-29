@@ -41,8 +41,8 @@ jobs:
           # Download and install SDL3
           Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-3.1.6-win32-x64.zip" -OutFile "SDL3.zip"
           Expand-Archive -Path "SDL3.zip" -DestinationPath "C:\SDL3"
-          echo "CGO_CPPFLAGS=-I`"C:/Program Files/LLVM/include`"" >> $env:GITHUB_ENV
-          echo "CGO_LDFLAGS=-L`"C:/Program Files/LLVM/lib`"" >> $env:GITHUB_ENV
+          echo "CGO_CPPFLAGS=-IC:/PROGRA~1/LLVM/include" >> $env:GITHUB_ENV
+          echo "CGO_LDFLAGS=-LC:/PROGRA~1/LLVM/lib" >> $env:GITHUB_ENV
           echo 'C:/Program Files/LLVM/bin' >> $env:GITHUB_PATH
           echo 'C:\SDL3\SDL3-3.1.6-win32-x64\bin' >> $env:GITHUB_PATH
           echo 'LIB=C:\SDL3\SDL3-3.1.6-win32-x64\lib\x64' >> $env:GITHUB_ENV
