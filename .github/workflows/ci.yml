@@ -28,13 +28,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # Use LLVM 21 - available on Ubuntu 24.04
-          sudo apt-get install -y llvm-21 llvm-21-dev libllvm21
-          {
-            echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
-            echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
-            echo "PATH=/usr/lib/llvm-21/bin:$PATH"
-          } >> $GITHUB_ENV
+          # Install LLVM 18 (available in Ubuntu 24.04 repos)
+          sudo apt-get install -y llvm-18 llvm-18-dev libllvm18
+          # If LLVM 21 directory exists (pre-installed), just use it without installing packages
+          if [ -d "/usr/lib/llvm-21" ]; then
+            echo "Using pre-installed LLVM 21"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
+              echo "PATH=/usr/lib/llvm-21/bin:$PATH"
+            } >> $GITHUB_ENV
+          else
+            echo "Using LLVM 18"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib -lLLVM-18"
+              echo "PATH=/usr/lib/llvm-18/bin:$PATH"
+            } >> $GITHUB_ENV
+          fi
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
@@ -103,13 +114,24 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          # Use LLVM 21 - available on Ubuntu 24.04
-          sudo apt-get install -y llvm-21 llvm-21-dev libllvm21
-          {
-            echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
-            echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
-            echo "PATH=/usr/lib/llvm-21/bin:$PATH"
-          } >> $GITHUB_ENV
+          # Install LLVM 18 (available in Ubuntu 24.04 repos)
+          sudo apt-get install -y llvm-18 llvm-18-dev libllvm18
+          # If LLVM 21 directory exists (pre-installed), just use it without installing packages
+          if [ -d "/usr/lib/llvm-21" ]; then
+            echo "Using pre-installed LLVM 21"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
+              echo "PATH=/usr/lib/llvm-21/bin:$PATH"
+            } >> $GITHUB_ENV
+          else
+            echo "Using LLVM 18"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib -lLLVM-18"
+              echo "PATH=/usr/lib/llvm-18/bin:$PATH"
+            } >> $GITHUB_ENV
+          fi
 
       - name: Run go fmt
         run: |
@@ -140,13 +162,24 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          # Use LLVM 21 - available on Ubuntu 24.04
-          sudo apt-get install -y llvm-21 llvm-21-dev libllvm21
-          {
-            echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
-            echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
-            echo "PATH=/usr/lib/llvm-21/bin:$PATH"
-          } >> $GITHUB_ENV
+          # Install LLVM 18 (available in Ubuntu 24.04 repos)
+          sudo apt-get install -y llvm-18 llvm-18-dev libllvm18
+          # If LLVM 21 directory exists (pre-installed), just use it without installing packages
+          if [ -d "/usr/lib/llvm-21" ]; then
+            echo "Using pre-installed LLVM 21"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-21/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-21/lib -lLLVM-21"
+              echo "PATH=/usr/lib/llvm-21/bin:$PATH"
+            } >> $GITHUB_ENV
+          else
+            echo "Using LLVM 18"
+            {
+              echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include"
+              echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib -lLLVM-18"
+              echo "PATH=/usr/lib/llvm-18/bin:$PATH"
+            } >> $GITHUB_ENV
+          fi
 
       - name: Check build
         run: |
