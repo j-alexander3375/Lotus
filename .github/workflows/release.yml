@@ -92,10 +92,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 libc++-18-dev libc++abi-18-dev
-          # Use llvm-config-18 to get the correct flags
-          echo "CGO_CPPFLAGS=$(llvm-config-18 --cppflags)" >> $GITHUB_ENV
-          echo "CGO_LDFLAGS=$(llvm-config-18 --ldflags --libs --system-libs)" >> $GITHUB_ENV
-          echo "PATH=/usr/lib/llvm-18/bin:$PATH" >> $GITHUB_ENV
+          # Set environment variables for LLVM 18
+          {
+            echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include"
+            echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib -lLLVM-18"
+            echo "PATH=/usr/lib/llvm-18/bin:$PATH"
+          } >> $GITHUB_ENV
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
