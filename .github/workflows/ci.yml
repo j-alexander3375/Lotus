@@ -57,6 +57,9 @@ jobs:
         run: |
           cd src
           go build -v .
+        env:
+          CGO_CPPFLAGS: ${{ matrix.os == 'windows-latest' && '-IC:/PROGRA~1/LLVM/include' || env.CGO_CPPFLAGS }}
+          CGO_LDFLAGS: ${{ matrix.os == 'windows-latest' && '-LC:/PROGRA~1/LLVM/lib' || env.CGO_LDFLAGS }}
 
       - name: Run tests
         run: |
