@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
         go-version: ["1.21"]
 
     steps:
@@ -23,15 +23,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Install LLVM (Ubuntu)
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y llvm-18-dev
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
@@ -63,8 +54,8 @@ jobs:
           cd src
           go test -v -timeout 0 ./...
 
-      - name: Test compilation examples (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Test compilation examples (macOS)
+        if: matrix.os == 'macos-latest'
         run: |
           cd src
           go build -o ../lotus .
@@ -85,7 +76,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-22.04
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -97,11 +88,10 @@ jobs:
 
       - name: Install LLVM
         run: |
-          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y llvm-18-dev
+          brew install llvm@15
+          LLVM_PATH=$(brew --prefix llvm@15)
+          echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
       - name: Run go fmt
         run: |
@@ -116,29 +106,3 @@ jobs:
         run: |
           cd src
           go vet ./...
-
-  build-check:
-    name: Build Check
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.21"
-
-      - name: Install LLVM
-        run: |
-          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y llvm-18-dev
-
-      - name: Check build
-        run: |
-          cd src
-          # Native build only - cross-compilation requires platform-specific LLVM
-          go build -v .

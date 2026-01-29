@@ -11,7 +11,7 @@ permissions:
 jobs:
   create-release:
     name: Create Release
-    runs-on: ubuntu-22.04
+    runs-on: macos-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -57,11 +57,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-22.04
-            goos: linux
-            goarch: amd64
-            artifact_name: lotus-linux-amd64
-            asset_name: lotus-linux-amd64
           - os: macos-latest
             goos: darwin
             goarch: amd64
@@ -86,15 +81,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.21"
-
-      - name: Install LLVM (Ubuntu)
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 18
-          sudo apt-get install -y llvm-18-dev
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
@@ -167,7 +153,7 @@ jobs:
   create-source-tarball:
     name: Create Source Tarball
     needs: create-release
-    runs-on: ubuntu-22.04
+    runs-on: macos-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -182,12 +168,11 @@ jobs:
             --exclude='lotus' \
             --exclude='a.out' \
             --exclude='*.o' \
-            --transform "s,^,Lotus-${VERSION}/," \
             .
 
       - name: Calculate SHA256
         run: |
-          sha256sum lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz > lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
+          shasum -a 256 lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz > lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
           cat lotus-lang-${{ needs.create-release.outputs.version }}.tar.gz.sha256
 
       - name: Upload Source Tarball
