@@ -41,13 +41,17 @@ jobs:
           # Download and install SDL3
           Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-3.1.6-win32-x64.zip" -OutFile "SDL3.zip"
           Expand-Archive -Path "SDL3.zip" -DestinationPath "C:\SDL3"
-          # Find LLVM installation
+          # Find LLVM installation and convert to short path
           $llvmPath = (Get-ChildItem -Path "C:\Program Files" -Filter "LLVM" -Directory -ErrorAction SilentlyContinue).FullName
           if (-not $llvmPath) {
             $llvmPath = (Get-ChildItem -Path "C:\" -Filter "LLVM" -Directory -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           }
-          Write-Host "LLVM Path: $llvmPath"
-          echo "LLVM_PATH=$llvmPath" >> $env:GITHUB_ENV
+          # Convert to 8.3 short path format to avoid spaces
+          $fso = New-Object -ComObject Scripting.FileSystemObject
+          $folder = $fso.GetFolder($llvmPath)
+          $llvmShortPath = $folder.ShortPath
+          Write-Host "LLVM Path: $llvmPath (Short: $llvmShortPath)"
+          echo "LLVM_PATH=$llvmShortPath" >> $env:GITHUB_ENV
           echo "$llvmPath\bin" >> $env:GITHUB_PATH
           echo 'C:\SDL3\SDL3-3.1.6-win32-x64\bin' >> $env:GITHUB_PATH
           echo 'LIB=C:\SDL3\SDL3-3.1.6-win32-x64\lib\x64' >> $env:GITHUB_ENV
