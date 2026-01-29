@@ -58,6 +58,8 @@ jobs:
       - name: Get dependencies
         run: |
           cd src
+          # Clean Go module cache to ensure go-llvm recompiles with correct LLVM version
+          go clean -modcache
           go get -v -t -d ./...
 
       - name: Build
