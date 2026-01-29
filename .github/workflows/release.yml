@@ -92,8 +92,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 libc++-18-dev libc++abi-18-dev
-          # Remove any other LLVM versions to avoid conflicts
-          sudo apt-get remove -y llvm-21 llvm-21-dev libllvm21 2>/dev/null || true
+          # Remove LLVM 21 directories completely
+          sudo rm -rf /usr/lib/llvm-21 2>/dev/null || true
           # Create symlink so llvm-config points to version 18
           sudo ln -sf /usr/lib/llvm-18/bin/llvm-config /usr/local/bin/llvm-config
           # Set environment variables for LLVM 18
@@ -101,6 +101,7 @@ jobs:
             echo "CGO_CPPFLAGS=-I/usr/lib/llvm-18/include"
             echo "CGO_LDFLAGS=-L/usr/lib/llvm-18/lib -lLLVM-18"
             echo "PATH=/usr/lib/llvm-18/bin:$PATH"
+            echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18"
           } >> $GITHUB_ENV
 
       - name: Install LLVM (macOS)
