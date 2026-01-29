@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest]
-        go-version: ["1.21"]
+        go-version: ["1.25.1"]
 
     steps:
       - name: Checkout code
@@ -27,15 +27,15 @@ jobs:
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install llvm@15
-          LLVM_PATH=$(brew --prefix llvm@15)
+          brew install llvm
+          LLVM_PATH=$(brew --prefix llvm)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
       - name: Install LLVM (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install llvm --version=15.0.7
+          choco install llvm
           echo "CGO_CPPFLAGS=-IC:/Program Files/LLVM/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-LC:/Program Files/LLVM/lib" >> $GITHUB_ENV
 
@@ -84,12 +84,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.25.1"
 
       - name: Install LLVM
         run: |
-          brew install llvm@15
-          LLVM_PATH=$(brew --prefix llvm@15)
+          brew install llvm
+          LLVM_PATH=$(brew --prefix llvm)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
