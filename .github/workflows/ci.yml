@@ -27,15 +27,15 @@ jobs:
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install llvm
-          LLVM_PATH=$(brew --prefix llvm)
+          brew install llvm@18
+          LLVM_PATH=$(brew --prefix llvm@18)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
       - name: Install LLVM (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install llvm
+          choco install llvm --version=18.1.8
           echo 'CGO_CPPFLAGS=-IC:/Program Files/LLVM/include' >> $env:GITHUB_ENV
           echo 'CGO_LDFLAGS=-LC:/Program Files/LLVM/lib' >> $env:GITHUB_ENV
           echo 'C:/Program Files/LLVM/bin' >> $env:GITHUB_PATH
@@ -89,8 +89,8 @@ jobs:
 
       - name: Install LLVM
         run: |
-          brew install llvm
-          LLVM_PATH=$(brew --prefix llvm)
+          brew install llvm@18
+          LLVM_PATH=$(brew --prefix llvm@18)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
 
