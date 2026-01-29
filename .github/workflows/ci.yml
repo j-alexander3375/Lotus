@@ -29,17 +29,23 @@ jobs:
         run: |
           brew install llvm@18 sdl3
           LLVM_PATH=$(brew --prefix llvm@18)
+          SDL3_PATH=$(brew --prefix sdl3)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=${LIBRARY_PATH}:${SDL3_PATH}/lib" >> $GITHUB_ENV
 
       - name: Install LLVM and SDL3 (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           choco install llvm --version=18.1.8 --allow-downgrade --force
-          choco install sdl3
+          # Download and install SDL3
+          Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/preview-3.1.6/SDL3-3.1.6-win32-x64.zip" -OutFile "SDL3.zip"
+          Expand-Archive -Path "SDL3.zip" -DestinationPath "C:\SDL3"
           echo 'CGO_CPPFLAGS=-IC:/Program Files/LLVM/include' >> $env:GITHUB_ENV
           echo 'CGO_LDFLAGS=-LC:/Program Files/LLVM/lib' >> $env:GITHUB_ENV
           echo 'C:/Program Files/LLVM/bin' >> $env:GITHUB_PATH
+          echo 'C:\SDL3\SDL3-3.1.6-win32-x64\bin' >> $env:GITHUB_PATH
+          echo 'LIB=C:\SDL3\SDL3-3.1.6-win32-x64\lib\x64' >> $env:GITHUB_ENV
 
       - name: Get dependencies
         run: |
@@ -92,8 +98,10 @@ jobs:
         run: |
           brew install llvm@18 sdl3
           LLVM_PATH=$(brew --prefix llvm@18)
+          SDL3_PATH=$(brew --prefix sdl3)
           echo "CGO_CPPFLAGS=-I${LLVM_PATH}/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${LLVM_PATH}/lib" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=${LIBRARY_PATH}:${SDL3_PATH}/lib" >> $GITHUB_ENV
 
       - name: Run go fmt
         run: |
