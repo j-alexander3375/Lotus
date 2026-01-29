@@ -25,6 +25,8 @@
 ### Language Features
 - **Type-first bindings** - `int count = 42;` with explicit `ret` for returns
 - **String-based imports** - `use "module";` with Rust-like aliasing (`as`)
+- **Pattern matching** - Haskell-style `match` with literals, ranges, bindings, and guards
+- **Generics/Templates** - C++-style `template<typename T>` with type inference
 - **Virtual functions** - `vrt fn` for virtual methods, `override fn` for overrides
 - **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
 - **Structs, enums, classes** - snake_case identifiers with full OOP support
@@ -200,15 +202,68 @@ fn int main() {
 // Optional types provide type-safe null handling
 // Syntax: Some(value) for values that exist, None for absence
 
-// Note: Currently, optionals are represented as internal structs
-// Full pattern matching and unwrapping will be added in future releases
+// Creating optionals
+Some(42)        // Optional with integer value
+Some("hello")   // Optional with string value
+None            // Empty optional
 
-// Example usage (basic):
-// Some(42)  - represents an optional with value 42
-// None      - represents an empty optional
+// Optionals are represented as structs: { i1 has_value, T value }
 ```
 
-**Status**: Basic implementation complete. Parser recognizes `Some` and `None` keywords. Full integration with pattern matching and helper functions planned for future releases.
+### Pattern Matching
+
+```lotus
+use "io"
+
+fn void gradeStudent(int score) {
+    match score {
+        case 90..100 => println("Grade: A"),
+        case 80..89 => println("Grade: B"),
+        case 70..79 => println("Grade: C"),
+        case 60..69 => println("Grade: D"),
+        default => println("Grade: F")
+    }
+}
+
+fn void checkNumber(int num) {
+    match num {
+        case x when x > 0 => println("Positive"),
+        case x when x < 0 => println("Negative"),
+        case _ => println("Zero")
+    }
+}
+```
+
+**Pattern Types:**
+- Literal: `case 42 =>`, `case "hello" =>`
+- Range: `case 1..10 =>`
+- Binding: `case x =>` (binds to variable)
+- Wildcard: `case _ =>` (matches all)
+- Guards: `case x when x > 10 =>`
+
+### Generics/Templates
+
+```lotus
+use "io"
+
+// Generic function with type inference
+template<typename T>
+fn T maximum(T a, T b) {
+    if a > b {
+        ret a;
+    }
+    ret b;
+}
+
+fn void main() {
+    // Type is inferred from arguments
+    int maxInt = maximum(10, 20);          // T = int
+    float maxFloat = maximum(3.14, 2.71);  // T = float
+    
+    printf("Max int: %d\n", maxInt);
+    printf("Max float: %f\n", maxFloat);
+}
+```
 
 ### Error Handling
 

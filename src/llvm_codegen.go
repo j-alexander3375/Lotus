@@ -664,6 +664,10 @@ func (cg *LLVMCodeGenerator) generateStatementWithNamespace(stmt ASTNode, namesp
 	case *UsingDeclaration:
 		// Using declarations don't generate code - they're handled during parsing
 		return nil
+	case *MatchExpression:
+		// Match expressions can be used as statements (result is discarded)
+		_, err := cg.generateMatchExpression(s)
+		return err
 	default:
 		return fmt.Errorf("unsupported statement type: %T", stmt)
 	}

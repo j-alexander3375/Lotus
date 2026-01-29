@@ -232,3 +232,49 @@ type BitCastExpression struct {
 }
 
 func (b *BitCastExpression) astNode() {}
+
+// ============================================================================
+// Generics Nodes
+// ============================================================================
+
+// TypeParameter represents a generic type parameter (e.g., T in Box<T>)
+type TypeParameter struct {
+	Name string // Type parameter name (e.g., "T", "K", "V")
+}
+
+// GenericFunctionDefinition represents a generic function with type parameters
+// fn T max<T>(T a, T b) { ret a > b ? a : b; }
+type GenericFunctionDefinition struct {
+	BaseNode
+	Name           string          // Function name
+	TypeParams     []TypeParameter // Type parameters (e.g., [T, K, V])
+	ReturnType     TokenType       // Return type (can use type parameter)
+	ReturnTypeName string          // Name if return type is a type parameter
+	Parameters     []FunctionParam // Function parameters
+	Body           []ASTNode       // Function body
+}
+
+func (g *GenericFunctionDefinition) astNode() {}
+
+// GenericStructDefinition represents a generic struct with type parameters
+// struct Box<T> { T value; }
+type GenericStructDefinition struct {
+	BaseNode
+	Name       string          // Struct name
+	TypeParams []TypeParameter // Type parameters
+	Fields     []StructField   // Struct fields (can use type parameters)
+}
+
+func (g *GenericStructDefinition) astNode() {}
+
+// GenericInstantiation represents the use of a generic type with concrete types
+// Box<int>, Array<string>, HashMap<string, int>
+type GenericInstantiation struct {
+	BaseNode
+	Name       string   // Generic name (e.g., "Box", "Array")
+	TypeArgs   []string // Type arguments (e.g., ["int"], ["string", "int"])
+	IsStruct   bool     // true if this is a struct instantiation
+	IsFunction bool     // true if this is a function call
+}
+
+func (g *GenericInstantiation) astNode() {}

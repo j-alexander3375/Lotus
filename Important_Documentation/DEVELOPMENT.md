@@ -99,6 +99,8 @@ Input (.lts file)
 | Virtual functions | `vrt fn foo()` / `override fn foo()` | Polymorphism |
 | Storage classes | `static`, `lcl`, `gbl` | Variable scope control |
 | Optional types | `Some(value)`, `None` | Type-safe null handling |
+| Pattern matching | `match expr { case ... }` | Haskell-style pattern matching |
+| Generics/Templates | `template<typename T>` | C++-style generic programming |
 
 ### Optional Types
 
@@ -113,7 +115,75 @@ None            // Empty optional
 // This allows type-safe handling of potentially missing values
 ```
 
-**Current Status**: Basic implementation with `Some` and `None` syntax. Full pattern matching and unwrapping operations are planned for future releases.
+### Pattern Matching
+
+Haskell-style pattern matching with `match` expressions:
+
+```lotus
+// Literal matching
+match value {
+    case 42 => println("Found 42!"),
+    case 100 => println("Found 100!"),
+    default => println("Other")
+}
+
+// Range patterns
+match score {
+    case 90..100 => println("Grade: A"),
+    case 80..89 => println("Grade: B"),
+    default => println("Grade: F")
+}
+
+// Binding patterns with guards
+match num {
+    case x when x > 10 => println("Greater than 10"),
+    case x when x < 10 => println("Less than 10"),
+    default => println("Equal to 10")
+}
+
+// Wildcard pattern
+match value {
+    case _ => println("Matches anything")
+}
+```
+
+**Pattern Types:**
+- Literal patterns: `case 42 =>`, `case "hello" =>`
+- Range patterns: `case 1..10 =>`
+- Binding patterns: `case x =>` (binds value to variable)
+- Wildcard patterns: `case _ =>` (matches anything)
+- Guard clauses: `case x when condition =>`
+
+### Generics/Templates
+
+C++-style template system for generic programming:
+
+```lotus
+// Generic function
+template<typename T>
+fn T maximum(T a, T b) {
+    if a > b {
+        ret a;
+    }
+    ret b;
+}
+
+// Usage with type inference
+int maxInt = maximum(10, 20);      // Infers T = int
+float maxFloat = maximum(3.14, 2.71);  // Infers T = float
+
+// Generic struct (planned)
+template<typename T>
+struct Box {
+    T value;
+}
+```
+
+**Features:**
+- Type parameters: `template<typename T>`
+- Type inference from arguments
+- Multiple type parameters: `template<typename K, typename V>`
+- Works with functions (structs partially implemented)
 
 ### Import System
 
@@ -388,9 +458,10 @@ fn void main() {
 | Width/padding for printf | ⏳ | Format specifier enhancements |
 | Register allocation improvements | ⏳ | Better code generation |
 | Inline function expansion | ⏳ | Performance optimization |
-| Generics | ⏳ | Type parameterization |
-| Union/option types | ✅ | `Some(value)`, `None` (basic implementation) |
-| Pattern matching | ⏳ | `match` expression |
+| Generics/Templates | ✅ | C++-style templates with type inference |
+| Union/option types | ✅ | `Some(value)`, `None` |
+| Pattern matching | ✅ | Haskell-style `match` with literals, ranges, bindings, guards |
+| Constructor patterns | ⏳ | Pattern matching on `Some(x)`, enum variants |
 | Debug/trace hooks | ⏳ | Runtime debugging |
 | Package manager | ⏳ | Dependency management |
 | Build system integration | ⏳ | Make/CMake/Meson support |
