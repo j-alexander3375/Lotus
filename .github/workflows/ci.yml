@@ -126,11 +126,8 @@ jobs:
           sudo apt-get install -y llvm-18 llvm-18-dev libllvm18 || \
           sudo apt-get install -y llvm llvm-dev
 
-      - name: Check build for multiple architectures
+      - name: Check build
         run: |
           cd src
-          GOOS=linux GOARCH=amd64 go build -v .
-          GOOS=linux GOARCH=arm64 go build -v .
-          GOOS=darwin GOARCH=amd64 go build -v .
-          GOOS=darwin GOARCH=arm64 go build -v .
-          GOOS=windows GOARCH=amd64 go build -v .
+          # Native build only - cross-compilation requires platform-specific LLVM
+          go build -v .
