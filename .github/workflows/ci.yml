@@ -27,8 +27,11 @@ jobs:
       - name: Install LLVM (Ubuntu)
         if: matrix.os == 'ubuntu-22.04'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm llvm-dev
+          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y llvm-18-dev
 
       - name: Install LLVM (macOS)
         if: matrix.os == 'macos-latest'
@@ -94,8 +97,11 @@ jobs:
 
       - name: Install LLVM
         run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm llvm-dev
+          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y llvm-18-dev
 
       - name: Run go fmt
         run: |
@@ -125,8 +131,11 @@ jobs:
 
       - name: Install LLVM
         run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm llvm-dev
+          # Install LLVM 18 from apt.llvm.org for Ubuntu 22.04
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          sudo apt-get install -y llvm-18-dev
 
       - name: Check build
         run: |
