@@ -139,7 +139,7 @@ func TestIntegrationCompileAndRun(t *testing.T) {
 				ret 0;
 			}`,
 			expectedOutput: "",
-			shouldFail:     true, // Struct parsing not yet implemented
+			shouldFail:     false, // Struct parsing is now implemented
 		},
 		{
 			name: "enum_definition",
