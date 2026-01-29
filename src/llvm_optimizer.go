@@ -128,7 +128,7 @@ func (opt *LLVMOptimizer) isDeadInstruction(inst llvm.Value) bool {
 	// Don't remove terminators (check by opcode)
 	opcode := inst.InstructionOpcode()
 	switch opcode {
-	case llvm.Ret, llvm.Br, llvm.Switch, llvm.IndirectBr, llvm.Invoke, llvm.Resume, llvm.Unreachable:
+	case llvm.Ret, llvm.Br, llvm.Switch, llvm.IndirectBr, llvm.Invoke, llvm.Unreachable:
 		return false
 	}
 
