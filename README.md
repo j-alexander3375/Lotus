@@ -1,9 +1,9 @@
 # Lotus Compiler - Fresh Systems Language
 
-*** CLAUDE IS USED SOLELY FOR RELEASE WORKFLOWS AND TEST OPTIMIZATION ***
+**CLAUDE IS USED SOLELY FOR RELEASE WORKFLOWS AND TEST OPTIMIZATION**
 
 **Lotus** is a systems programming language with deliberate design choices: module imports are string-based (`use "io";`), returns use `ret`, and declarations default to type-first bindings (`int n = 42;`). The compiler uses **LLVM** as its default backend for cross-platform compilation and advanced optimizations.
-
+**Current Status:** Lotus is in active development with core features operational and advanced features being refined. See the [Language Idioms](#language-idioms-and-best-practices) section for production-ready patterns and the [Examples](#examples) section for current capabilities.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://go.dev)
 [![LLVM](https://img.shields.io/badge/LLVM-Backend-orange.svg)](https://llvm.org)
@@ -15,6 +15,7 @@
 - [Installation](#installation)
 - [Language Overview](#language-overview)
 - [Standard Library](#standard-library)
+- [Language Idioms and Best Practices](#language-idioms-and-best-practices)
 - [Compiler Options](#compiler-options)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -24,17 +25,23 @@
 
 ### Language Features
 - **Type-first bindings** - `int count = 42;` with explicit `ret` for returns
-- **String-based imports** - `use "module";` with Rust-like aliasing (`as`)
-- **Pattern matching** - Haskell-style `match` with literals, ranges, bindings, and guards
-- **Generics/Templates** - C++-style `template<typename T>` with type inference
+- **String-based imports** - `use "module";` with clear module boundaries
+- **Pattern matching** - Comprehensive `match` with literals, ranges, bindings, guards, and wildcards
+- **Generics/Templates** - `template<typename T>` with automatic type inference
 - **Virtual functions** - `vrt fn` for virtual methods, `override fn` for overrides
 - **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
-- **Structs, enums, classes** - snake_case identifiers with full OOP support
+- **Basic structs and enums** - snake_case identifiers with fundamental OOP support
 - **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
-- **Optional types** - `Some(value)` and `None` for type-safe null handling
+- **Optional types** - `Some(value)` and `None` syntax (parser support, advanced operations in development)
 - **Functional programming** - Pipe operator (`|>`), wrappers/decorators (`@`), currying (`partial`)
 - **Void return type** - `fn void foo()` for functions with no return value
 - **Type reinterpretation** - `bitcast<Type>(expr)` for low-level bit manipulation
+
+**Features in Active Development:**
+- Advanced struct operations (parameters, return types, complex nesting)
+- Enhanced namespace and module system  
+- Sophisticated template specialization and constraints
+- Complete optional type integration with pattern matching
 
 ### Compiler Features
 - **LLVM backend** (default) - Cross-platform: x86, ARM, RISC-V, WebAssembly
@@ -63,19 +70,25 @@ use "io";
 use "math";
 
 fn int main() {
-    int max_val = max(10, 20);
-    printf("Maximum: %d\n", max_val);
+    int first_val = 10;
+    int second_val = 20;
+    int max_val = max(first_val, second_val);
+    
+    printf("Maximum of %d and %d: %d\n", first_val, second_val, max_val);
     ret 0;
 }
 ```
 
 ```bash
-# Compile and run
+# Compile and run immediately
 ./lotus --run program.lts
 
-# Just compile
+# Compile to binary
 ./lotus program.lts -o myprogram
 ./myprogram
+
+# Show compilation statistics
+./lotus --stats program.lts
 ```
 
 ## Installation
@@ -370,6 +383,345 @@ shuffle(arr, 10);                    // Shuffle array in place
 int pick = choice(arr, 10);          // Random element from array
 ```
 
+## Language Idioms and Best Practices
+
+This section covers idiomatic Lotus patterns and best practices. For detailed coding style and conventions, see the [STYLE_GUIDE.md](Important_Documentation/STYLE_GUIDE.md).
+
+### 1. Function Return Patterns
+
+**Always use explicit `ret` statements:**
+```lotus
+// ✅ Good: Explicit return
+fn int calculate_sum(int a, int b) {
+    int result = a + b;
+    ret result;
+}
+
+// ✅ Good: Early return for error conditions
+fn int safe_divide(int a, int b) {
+    if b == 0 {
+        ret -1;  // Error sentinel
+    }
+    ret a / b;
+}
+```
+
+**Prefer void functions when no value is returned:**
+```lotus
+// ✅ Good: Clear that nothing is returned
+fn void print_banner() {
+    printf("=== Lotus Application ===\n");
+}
+
+// ✅ Good: Explicit void return type
+fn void main() {
+    print_banner();
+}
+```
+
+### 2. Type-First Variable Declarations
+
+**Leverage Lotus's type-first syntax:**
+```lotus
+// ✅ Good: Clear type declarations
+fn void process_data() {
+    int count = 0;
+    string message = "Processing";
+    bool is_complete = false;
+    float progress = 0.0;
+    
+    // Logic here...
+}
+```
+
+**Use meaningful variable names with types:**
+```lotus
+// ✅ Good: Descriptive names
+fn void file_operations() {
+    int file_size = 1024;
+    string file_path = "/tmp/data.txt";
+    bool is_readable = true;
+}
+```
+
+### 3. Pattern Matching Idioms
+
+**Use ranges for numerical classifications:**
+```lotus
+fn void classify_score(int score) {
+    match score {
+        case 90..100 => println("Excellent"),
+        case 80..89 => println("Good"),
+        case 70..79 => println("Average"),
+        case 60..69 => println("Below Average"),
+        default => println("Needs Improvement")
+    }
+}
+```
+
+**Use guards for complex conditions:**
+```lotus
+fn void analyze_number(int num) {
+    match num {
+        case x when x > 0 && x % 2 == 0 => println("Positive Even"),
+        case x when x > 0 && x % 2 == 1 => println("Positive Odd"),
+        case x when x < 0 => println("Negative"),
+        default => println("Zero")
+    }
+}
+```
+
+**Prefer binding when you need the matched value:**
+```lotus
+fn void process_value(int input) {
+    match input {
+        case val when val > 100 => {
+            printf("Large value: %d\n", val);
+            // Process large value
+        },
+        case val => {
+            printf("Normal value: %d\n", val);
+            // Process normal value
+        }
+    }
+}
+```
+
+### 4. Template/Generic Function Patterns
+
+**Use descriptive type parameter names:**
+```lotus
+// ✅ Good: Clear what T represents
+template<typename T>
+fn T find_maximum(T first, T second) {
+    if first > second {
+        ret first;
+    }
+    ret second;
+}
+```
+
+**Keep generic functions simple and focused:**
+```lotus
+template<typename T>
+fn void swap(T* a, T* b) {
+    T temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Usage with type inference
+int x = 10, y = 20;
+swap(&x, &y);  // T inferred as int
+```
+
+### 5. Error Handling Patterns
+
+**Use sentinel values consistently:**
+```lotus
+// Pattern: Return -1 for errors in integer functions
+fn int parse_number(string str) {
+    // Parsing logic...
+    if parsing_failed {
+        ret -1;  // Consistent error sentinel
+    }
+    ret result;
+}
+
+// Pattern: Return null for pointer functions
+fn int* allocate_array(int size) {
+    if size <= 0 {
+        ret null;  // Invalid input
+    }
+    
+    int* array = malloc(sizeof(int) * size);
+    if array == null {
+        ret null;  // Allocation failed
+    }
+    
+    ret array;
+}
+```
+
+**Always check return values:**
+```lotus
+fn void safe_operations() {
+    int* buffer = allocate_array(100);
+    if buffer == null {
+        printf("Error: Failed to allocate memory\n");
+        ret;
+    }
+    
+    // Use buffer...
+    
+    free(buffer);  // Always clean up
+}
+```
+
+### 6. Module Import Best Practices
+
+**Use specific imports to show dependencies:**
+```lotus
+use "io";     // For printf, println
+use "mem";    // For malloc, free
+use "math";   // For mathematical operations
+
+fn int main() {
+    printf("Starting application...\n");
+    ret 0;
+}
+```
+
+**Group related functionality:**
+```lotus
+// For string processing applications
+use "io";
+use "str";
+use "mem";
+
+fn void process_text(string input) {
+    int length = len(input);
+    string upper = toUpper(input);
+    printf("Original: %s (length: %d)\n", input, length);
+    printf("Uppercase: %s\n", upper);
+}
+```
+
+### 7. Control Flow Idioms
+
+**Prefer early returns for validation:**
+```lotus
+fn int validate_and_process(int* data, int size) {
+    if data == null {
+        ret -1;  // Invalid data
+    }
+    
+    if size <= 0 {
+        ret -2;  // Invalid size
+    }
+    
+    // Main processing logic here
+    ret process_data(data, size);
+}
+```
+
+**Use for loops for known iterations:**
+```lotus
+fn void initialize_array(int* arr, int size) {
+    for int i = 0; i < size; i++ {
+        arr[i] = 0;
+    }
+}
+```
+
+**Use while loops for condition-based iteration:**
+```lotus
+fn int find_first_zero(int* arr, int size) {
+    int index = 0;
+    while index < size && arr[index] != 0 {
+        index++;
+    }
+    ret index < size ? index : -1;
+}
+```
+
+### 8. Memory Management Patterns
+
+**Follow the allocate-use-free pattern:**
+```lotus
+fn void process_large_data() {
+    int* buffer = malloc(sizeof(int) * 1000);
+    if buffer == null {
+        printf("Memory allocation failed\n");
+        ret;
+    }
+    
+    // Initialize buffer
+    for int i = 0; i < 1000; i++ {
+        buffer[i] = i * 2;
+    }
+    
+    // Process data...
+    
+    free(buffer);  // Always free allocated memory
+}
+```
+
+**Use RAII-style patterns where possible:**
+```lotus
+fn int process_with_cleanup(int size) {
+    int* temp = malloc(sizeof(int) * size);
+    if temp == null {
+        ret -1;  // Early return, nothing to clean up
+    }
+    
+    int result = do_processing(temp);
+    free(temp);  // Always reached if malloc succeeded
+    ret result;
+}
+```
+
+### 9. Printf Format String Best Practices
+
+**Use appropriate format specifiers:**
+```lotus
+fn void display_info(int count, string name, float ratio) {
+    printf("Item: %s\n", name);           // %s for strings
+    printf("Count: %d\n", count);         // %d for integers
+    printf("Ratio: %.2f\n", ratio);       // %f for floats (with precision)
+}
+```
+
+**Keep format strings literal when possible:**
+```lotus
+// ✅ Good: Literal format strings are easier to validate
+printf("Processing %d items...\n", count);
+printf("Error code: %d\n", error);
+
+// ⚠️ Avoid: Dynamic format strings when not necessary
+// printf(format_string, value);  // Harder to validate
+```
+
+### 10. Code Organization Idioms
+
+**Structure functions logically:**
+```lotus
+// 1. Helper/utility functions first
+fn bool is_valid_size(int size) {
+    ret size > 0 && size < 10000;
+}
+
+// 2. Core logic functions
+fn int* create_buffer(int size) {
+    if !is_valid_size(size) {
+        ret null;
+    }
+    ret malloc(sizeof(int) * size);
+}
+
+// 3. Main/entry point last
+fn int main() {
+    int* buffer = create_buffer(100);
+    if buffer != null {
+        free(buffer);
+    }
+    ret 0;
+}
+```
+
+**Use meaningful function names:**
+```lotus
+// ✅ Good: Function names describe purpose
+fn bool validate_user_input(string input);
+fn int calculate_fibonacci_number(int n);
+fn void cleanup_temporary_files();
+
+// ❌ Avoid: Generic or unclear names
+fn bool check(string s);
+fn int calc(int n);
+fn void clean();
+```
+
 ## Compiler Options
 
 ```
@@ -378,35 +730,50 @@ Usage: lotus [options] <source.lts>
 Output Options:
   -o <file>        Output file name (default: a.out)
   -S               Emit assembly instead of binary
-  --emit-llvm      Emit LLVM IR
+  --emit-llvm      Emit LLVM IR instead of binary
   --run            Compile and run immediately
 
 Backend Options:
-  --gcc            Use legacy GCC/assembly backend
+  --gcc            Use legacy GCC/assembly backend (LLVM is default)
   --target <triple> Cross-compile for target (e.g., aarch64-linux-gnu)
 
 Optimization:
   -O0              No optimization
-  -O1              Basic optimization
+  -O1              Basic optimization  
   -O2              Standard optimization (default)
   -O3              Aggressive optimization
 
-Debugging:
-  --ast-dump       Print AST structure
+Analysis & Debugging:
+  --ast-dump       Print AST structure and exit
   --stats          Show compilation statistics
-  --timing         Show phase timing
-  -v, --verbose    Verbose output
+  --timing         Show detailed phase timing
+  --token-dump     Print tokens and exit
+  -v, --verbose    Verbose compilation output
+  -q, --quiet      Suppress non-error output
+
+Warning Control:
+  -Wall            Enable all warnings
+  -Werror          Treat warnings as errors
+  -Wunused         Warn about unused variables
+  -Wshadow         Warn about variable shadowing
+  -w               Suppress all warnings
+
+Development:
+  --lsp            Run as Language Server Protocol server
+  --docs [section] Show offline documentation
+  -I <dir>         Add include directory for imports
 
 Other:
-  --version        Show version
-  --help           Show help
+  --version        Show version information
+  --help           Show this help message
 ```
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [STYLE_GUIDE.md](Important_Documentation/STYLE_GUIDE.md) | Naming conventions, formatting, idioms |
+| [STYLE_GUIDE.md](Important_Documentation/STYLE_GUIDE.md) | Naming conventions, formatting, code organization |
+| [Language Idioms (this document)](#language-idioms-and-best-practices) | Idiomatic patterns and best practices |
 | [STDLIB_AND_IMPORTS.md](Important_Documentation/STDLIB_AND_IMPORTS.md) | Import patterns and module usage |
 | [STDLIB_FINAL_SUMMARY.md](Important_Documentation/STDLIB_FINAL_SUMMARY.md) | Complete stdlib reference |
 | [DEVELOPMENT.md](Important_Documentation/DEVELOPMENT.md) | Contributor guide and architecture |
@@ -415,13 +782,27 @@ Other:
 
 ## Examples
 
-See the [examples/](examples/) directory for complete programs:
+The language showcases several powerful features through practical examples:
 
-- `control_flow_if.lts` - Conditionals
-- `control_flow_for.lts` - Loops
-- `control_flow_while.lts` - While loops
+**Basic Programs:**
+- [control_flow_if.lts](examples/control_flow_if.lts) - Conditional logic and function calls
+- [control_flow_for.lts](examples/control_flow_for.lts) - Loop iteration patterns  
+- [control_flow_while.lts](examples/control_flow_while.lts) - Condition-based loops
 
-See [tests/](tests/) for more comprehensive examples.
+**Advanced Features:**
+- [pattern_matching.lts](examples/pattern_matching.lts) - Complete pattern matching with literals, ranges, guards, and bindings
+- [template_comprehensive_test.lts](examples/template_comprehensive_test.lts) - Generic functions with type inference
+- [optional_test.lts](examples/optional_test.lts) - Optional type syntax (`Some`/`None`)
+
+**Language Features in Development:**
+- Complex struct operations with parameters and return types
+- Advanced namespace and module systems  
+- Sophisticated template specialization
+- Enhanced functional programming constructs
+
+For complete working examples demonstrating idioms and best practices, see the [Language Idioms and Best Practices](#language-idioms-and-best-practices) section above.
+
+Additional test files and examples can be found in [tests/](tests/) directory.
 
 ## Project Structure
 

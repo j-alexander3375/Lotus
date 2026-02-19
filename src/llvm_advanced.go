@@ -22,7 +22,7 @@ func (cg *LLVMCodeGenerator) generateTernary(t *TernaryOp) (llvm.Value, error) {
 	// Ensure condition is i1
 	if cond.Type().IntTypeWidth() != 1 {
 		zero := llvm.ConstInt(cond.Type(), 0, false)
-		cond = cg.builder.CreateICmp(llvm.IntNE, cond, zero, "ternarycond")
+		cond = cg.builder.CreateICmp(llvm.IntPredicate(llvm.IntNE), cond, zero, "ternarycond")
 	}
 
 	currentFn := cg.builder.GetInsertBlock().Parent()
