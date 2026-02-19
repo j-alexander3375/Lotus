@@ -1,0 +1,15 @@
+// Test qualified function calls
+
+namespace math {
+    fn int multiply(int a, int b) {
+        ret a * b;
+    }
+}
+
+fn int main() {
+    // Call with qualified name
+    int result = math::multiply(3, 4);
+    println(result);
+
+    ret 0;
+}

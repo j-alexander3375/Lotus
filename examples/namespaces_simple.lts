@@ -1,0 +1,34 @@
+// Simple namespace test with const
+use "io";
+
+namespace math {
+    const float PI = 3.14159;
+    const int MAX_ITERATIONS = 100;
+
+    fn int add(int a, int b) {
+        ret a + b;
+    }
+
+    fn float circle_area(float radius) {
+        ret PI * radius * radius;
+    }
+}
+
+namespace utils {
+    fn int double_value(int x) {
+        ret x * 2;
+    }
+}
+
+fn int main() {
+    int sum = math::add(5, 10);
+    println(sum);
+
+    float area = math::circle_area(5.0);
+    println(area);
+
+    int doubled = utils::double_value(7);
+    println(doubled);
+
+    ret 0;
+}

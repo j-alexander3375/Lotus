@@ -1,0 +1,21 @@
+// Simple template function test
+
+template<typename T>
+fn T maximum(T a, T b) {
+    if a > b {
+        ret a;
+    }
+    ret b;
+}
+
+fn int main() {
+    // Call template with int - should instantiate maximum<int>
+    int x = maximum(5, 10);
+    println(x);
+
+    // Call template with float - should instantiate maximum<float>
+    float y = maximum(3.14, 2.71);
+    println(y);
+
+    ret 0;
+}

@@ -1,0 +1,23 @@
+use "io";
+
+// Regular function first
+fn int add(int a, int b) {
+    ret a + b;
+}
+
+// Simple namespace test
+namespace math {
+    fn int multiply(int x, int y) {
+        ret x * y;
+    }
+}
+
+fn int main() {
+    int sum = add(5, 10);
+    io::println("Sum: %d", sum);
+
+    int product = math::multiply(3, 4);
+    io::println("Product: %d", product);
+
+    ret 0;
+}

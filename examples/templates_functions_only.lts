@@ -1,0 +1,29 @@
+// Template functions only - testing parser
+use "io";
+
+// Simple template function with single type parameter
+template<typename T>
+fn T max(T a, T b) {
+    if a > b {
+        ret a;
+    }
+    ret b;
+}
+
+// Template function with multiple type parameters
+template<typename T, typename U>
+fn T convert_and_multiply(U value, T multiplier) {
+    ret multiplier * 2;
+}
+
+// Main function
+fn int main() {
+    // For now, just test that it parses
+    int x = 10;
+    int y = 20;
+
+    io::println("Testing templates - parser only");
+    io::println("x = %d, y = %d", x, y);
+
+    ret 0;
+}

@@ -1,0 +1,28 @@
+// Simplified template test - using concrete types instead of template parameters in function signature
+// This tests that the parser can recognize template syntax
+
+use "io";
+
+// Regular function first
+fn int add(int a, int b) {
+    ret a + b;
+}
+
+// Simple namespace test
+namespace math {
+    fn int multiply(int x, int y) {
+        ret x * y;
+    }
+}
+
+fn int main() {
+    int sum = add(5, 10);
+    io::println("Sum: %d", sum);
+
+    // Qualified names not yet supported in codegen
+    // int product = math::multiply(3, 4);
+    int product = multiply(3, 4);
+    io::println("Product: %d", product);
+
+    ret 0;
+}

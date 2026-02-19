@@ -1,0 +1,19 @@
+// Test template struct parsing
+
+template<typename T>
+struct Pair {
+    T first;
+    T second;
+}
+
+template<typename T, int N>
+struct Array {
+    int size;
+    int capacity;
+}
+
+fn int main() {
+    // Just test that it parses
+    println(42);
+    ret 0;
+}

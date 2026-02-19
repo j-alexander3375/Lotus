@@ -1,0 +1,70 @@
+// Basic template examples for Lotus
+// Demonstrates C++-style template syntax
+
+// Simple template function with single type parameter
+template<typename T>
+fn T max(T a, T b) {
+    if a > b {
+        ret a;
+    }
+    ret b;
+}
+
+// Template function with multiple type parameters
+template<typename T, typename U>
+fn T convert_and_add(U value, T base) {
+    // Bitcast U to T and add to base
+    T converted = bitcast<T>(value);
+    ret base + converted;
+}
+
+// Template function with type and value parameters
+template<typename T, int Size>
+fn T sum_array(T[Size] arr) {
+    T total = 0;
+    for int i = 0; i < Size; i = i + 1 {
+        total = total + arr[i];
+    }
+    ret total;
+}
+
+// Template struct
+template<typename T>
+struct pair {
+    T first;
+    T second;
+}
+
+// Template function using template struct
+template<typename T>
+fn pair<T> make_pair(T a, T b) {
+    pair<T> p;
+    p.first = a;
+    p.second = b;
+    ret p;
+}
+
+// Main function demonstrating template usage
+fn int main() {
+    // Template function with explicit type arguments
+    int max_int = max<int>(10, 20);
+    println("Max int: %d", max_int);
+
+    // Template function with type deduction
+    float max_float = max(3.14, 2.71);
+    println("Max float: %v", max_float);
+
+    // Template with value parameter
+    int[5] numbers = {1, 2, 3, 4, 5};
+    int total = sum_array<int, 5>(numbers);
+    println("Sum: %d", total);
+
+    // Template struct instantiation
+    pair<int> int_pair = make_pair<int>(42, 100);
+    println("Pair: (%d, %d)", int_pair.first, int_pair.second);
+
+    pair<string> str_pair = make_pair<string>("hello", "world");
+    println("String pair: (%s, %s)", str_pair.first, str_pair.second);
+
+    ret 0;
+}

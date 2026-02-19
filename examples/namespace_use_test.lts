@@ -1,0 +1,25 @@
+// Test namespace with use directive
+
+namespace math {
+    fn int add(int a, int b) {
+        ret a + b;
+    }
+
+    fn int multiply(int a, int b) {
+        ret a * b;
+    }
+}
+
+// Note: 'use' for user namespaces might not be implemented yet
+// Let's test both qualified and see what happens
+
+fn int main() {
+    // Test qualified calls (should work)
+    int sum = math::add(5, 10);
+    println(sum);
+
+    int product = math::multiply(3, 4);
+    println(product);
+
+    ret 0;
+}

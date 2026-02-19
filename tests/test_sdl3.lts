@@ -1,0 +1,84 @@
+use "sdl3";
+use "io";
+
+// SDL3 test program - creates a window and renders a simple scene
+fn int main() {
+    // Initialize SDL3 with video subsystem
+    // SDL_INIT_VIDEO = 0x00000020
+    int init_result = sdl3::init(0x00000020);
+    if (init_result == 0) {
+        printf("Failed to initialize SDL3\n");
+        ret 1;
+    }
+    
+    printf("SDL3 initialized successfully\n");
+    
+    // Create window (SDL3: title, width, height, flags)
+    // SDL_WINDOW_RESIZABLE = 0x00000020
+    int window = sdl3::create_window("SDL3 Test Window", 640, 480, 0x00000020);
+    if (window == 0) {
+        printf("Failed to create window\n");
+        sdl3::quit();
+        ret 1;
+    }
+    
+    printf("Window created successfully\n");
+    
+    // Create renderer (SDL3: window, name - use 0 for default renderer)
+    int renderer = sdl3::create_renderer(window, 0);
+    if (renderer == 0) {
+        printf("Failed to create renderer\n");
+        sdl3::destroy_window(window);
+        sdl3::quit();
+        ret 1;
+    }
+    
+    printf("Renderer created successfully\n");
+    
+    // Set render draw color to blue (r, g, b, a)
+    int color_result = sdl3::set_render_draw_color(renderer, 0, 0, 255, 255);
+    if (color_result == 0) {
+        printf("Failed to set render draw color\n");
+    }
+    
+    // Clear the screen
+    int clear_result = sdl3::render_clear(renderer);
+    if (clear_result == 0) {
+        printf("Failed to clear renderer\n");
+    }
+    
+    // Set color to red for drawing
+    sdl3::set_render_draw_color(renderer, 255, 0, 0, 255);
+    
+    // Draw a line
+    sdl3::render_draw_line(renderer, 50, 50, 590, 430);
+    
+    // Draw a rectangle outline
+    sdl3::render_draw_rect(renderer, 100, 100, 200, 150);
+    
+    // Set color to green for filled rectangle
+    sdl3::set_render_draw_color(renderer, 0, 255, 0, 255);
+    
+    // Draw a filled rectangle
+    sdl3::render_fill_rect(renderer, 350, 200, 150, 100);
+    
+    // Present the rendered frame
+    sdl3::render_present(renderer);
+    
+    printf("Rendered frame, waiting 2 seconds...\n");
+    
+    // Delay for 2 seconds (2000 milliseconds)
+    sdl3::delay(2000);
+    
+    // Get current ticks
+    int ticks = sdl3::get_ticks();
+    printf("SDL ticks: %d\n", ticks);
+    
+    // Cleanup
+    sdl3::destroy_renderer(renderer);
+    sdl3::destroy_window(window);
+    sdl3::quit();
+    
+    printf("SDL3 test completed successfully\n");
+    ret 0;
+}

@@ -1,0 +1,12 @@
+// Test that use imports still work
+use "io";
+
+fn int main() {
+    // Test unqualified call after use
+    println(42);
+
+    // Test qualified call
+    io::println(100);
+
+    ret 0;
+}

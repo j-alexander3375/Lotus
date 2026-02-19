@@ -1,0 +1,43 @@
+use "io";
+
+// Optional Types - Advanced Example
+// This demonstrates the current state and planned features
+
+fn int main() {
+    printf("=== Lotus Optional Types ===\n\n");
+
+    // Current Implementation:
+    // - Parser recognizes Some(value) and None keywords
+    // - LLVM codegen generates struct representation: { i1 has_value, T value }
+    // - Basic AST nodes exist for optional expressions
+
+    printf("✓ Current: Some/None syntax recognized\n");
+    printf("✓ Current: Struct-based representation\n");
+    printf("✓ Current: Type-safe at compile time\n\n");
+
+    // Planned Features:
+    printf("⏳ Planned: Pattern matching for unwrapping\n");
+    printf("⏳ Planned: .unwrap(), .unwrap_or() methods\n");
+    printf("⏳ Planned: .is_some(), .is_none() predicates\n");
+    printf("⏳ Planned: .map(), .and_then() combinators\n");
+    printf("⏳ Planned: Result<T, E> type for error handling\n\n");
+
+    // Example of future syntax (not yet implemented):
+    //
+    // Pattern matching with optionals:
+    // match maybe_value {
+    //     Some(x) => printf("Got value: %d\n", x),
+    //     None => printf("No value\n")
+    // }
+    //
+    // Method chaining:
+    // int result = maybe_value.unwrap_or(42);
+    // bool has_val = maybe_value.is_some();
+    //
+    // Combinators:
+    // auto doubled = maybe_value.map(|x| => x * 2);
+
+    printf("Optional types are evolving! 🌸\n");
+
+    ret 0;
+}

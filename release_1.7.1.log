@@ -1,0 +1,600 @@
+
+[0;34m[STEP][0m [0;36m🚀 Lotus Automated Release System[0m
+
+[0;32m[INFO][0m Bump type: patch
+[0;32m[INFO][0m Current version: 1.7.1
+[0;32m[INFO][0m New version: 1.7.2
+
+[0;34m[STEP][0m [0;36mRunning Comprehensive Test Suite[0m
+
+[0;32m[INFO][0m Running Go tests...
+=== RUN   TestCloneIntLiteral
+--- PASS: TestCloneIntLiteral (0.00s)
+=== RUN   TestCloneFloatLiteral
+--- PASS: TestCloneFloatLiteral (0.00s)
+=== RUN   TestCloneBinaryOp
+--- PASS: TestCloneBinaryOp (0.00s)
+=== RUN   TestCloneFunctionDefinition
+--- PASS: TestCloneFunctionDefinition (0.00s)
+=== RUN   TestCloneIfStatement
+--- PASS: TestCloneIfStatement (0.00s)
+=== RUN   TestCloneAssignment
+--- PASS: TestCloneAssignment (0.00s)
+=== RUN   TestCloneFunctionCall
+--- PASS: TestCloneFunctionCall (0.00s)
+=== RUN   TestIntegrationCompileAndRun
+=== RUN   TestIntegrationCompileAndRun/simple_return
+=== RUN   TestIntegrationCompileAndRun/variable_declaration
+=== RUN   TestIntegrationCompileAndRun/float32_constant
+=== RUN   TestIntegrationCompileAndRun/float64_constant
+=== RUN   TestIntegrationCompileAndRun/arithmetic_operations
+=== RUN   TestIntegrationCompileAndRun/if_statement
+=== RUN   TestIntegrationCompileAndRun/while_loop
+=== RUN   TestIntegrationCompileAndRun/for_loop
+=== RUN   TestIntegrationCompileAndRun/function_call
+=== RUN   TestIntegrationCompileAndRun/struct_definition
+    integration_test.go:188: Expected compilation to fail, but it succeeded
+=== RUN   TestIntegrationCompileAndRun/enum_definition
+=== RUN   TestIntegrationCompileAndRun/bitwise_operations
+--- FAIL: TestIntegrationCompileAndRun (6.87s)
+    --- PASS: TestIntegrationCompileAndRun/simple_return (0.29s)
+    --- PASS: TestIntegrationCompileAndRun/variable_declaration (0.15s)
+    --- PASS: TestIntegrationCompileAndRun/float32_constant (0.17s)
+    --- PASS: TestIntegrationCompileAndRun/float64_constant (0.14s)
+    --- PASS: TestIntegrationCompileAndRun/arithmetic_operations (0.13s)
+    --- PASS: TestIntegrationCompileAndRun/if_statement (0.13s)
+    --- PASS: TestIntegrationCompileAndRun/while_loop (0.14s)
+    --- PASS: TestIntegrationCompileAndRun/for_loop (0.14s)
+    --- PASS: TestIntegrationCompileAndRun/function_call (0.12s)
+    --- FAIL: TestIntegrationCompileAndRun/struct_definition (0.15s)
+    --- PASS: TestIntegrationCompileAndRun/enum_definition (0.01s)
+    --- PASS: TestIntegrationCompileAndRun/bitwise_operations (0.16s)
+=== RUN   TestIntegrationExampleFiles
+=== RUN   TestIntegrationExampleFiles/const_namespace_test.lts
+=== RUN   TestIntegrationExampleFiles/const_test.lts
+=== RUN   TestIntegrationExampleFiles/control_flow_for.lts
+=== RUN   TestIntegrationExampleFiles/control_flow_if.lts
+=== RUN   TestIntegrationExampleFiles/control_flow_while.lts
+=== RUN   TestIntegrationExampleFiles/namespace_use_test.lts
+=== RUN   TestIntegrationExampleFiles/namespaces.lts
+=== RUN   TestIntegrationExampleFiles/namespaces_simple.lts
+=== RUN   TestIntegrationExampleFiles/optional_advanced.lts
+=== RUN   TestIntegrationExampleFiles/optional_test.lts
+=== RUN   TestIntegrationExampleFiles/qualified_call_test.lts
+=== RUN   TestIntegrationExampleFiles/struct_test.lts
+=== RUN   TestIntegrationExampleFiles/template_comprehensive_test.lts
+=== RUN   TestIntegrationExampleFiles/template_simple.lts
+=== RUN   TestIntegrationExampleFiles/template_struct_test.lts
+=== RUN   TestIntegrationExampleFiles/templates_advanced.lts
+=== RUN   TestIntegrationExampleFiles/templates_basic.lts
+=== RUN   TestIntegrationExampleFiles/templates_functions_only.lts
+=== RUN   TestIntegrationExampleFiles/templates_simple_test.lts
+    integration_test.go:254: Compilation of templates_simple_test.lts failed: exit status 1
+        Output: Compilation failed: LLVM codegen error: undefined function: multiply
+=== RUN   TestIntegrationExampleFiles/use_test.lts
+=== RUN   TestIntegrationExampleFiles/using_declarations.lts
+--- FAIL: TestIntegrationExampleFiles (5.42s)
+    --- PASS: TestIntegrationExampleFiles/const_namespace_test.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/const_test.lts (0.08s)
+    --- PASS: TestIntegrationExampleFiles/control_flow_for.lts (0.10s)
+    --- PASS: TestIntegrationExampleFiles/control_flow_if.lts (0.11s)
+    --- PASS: TestIntegrationExampleFiles/control_flow_while.lts (0.08s)
+    --- PASS: TestIntegrationExampleFiles/namespace_use_test.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/namespaces.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/namespaces_simple.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/optional_advanced.lts (0.17s)
+    --- PASS: TestIntegrationExampleFiles/optional_test.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/qualified_call_test.lts (0.17s)
+    --- PASS: TestIntegrationExampleFiles/struct_test.lts (0.12s)
+    --- PASS: TestIntegrationExampleFiles/template_comprehensive_test.lts (0.12s)
+    --- PASS: TestIntegrationExampleFiles/template_simple.lts (0.12s)
+    --- PASS: TestIntegrationExampleFiles/template_struct_test.lts (0.14s)
+    --- PASS: TestIntegrationExampleFiles/templates_advanced.lts (0.12s)
+    --- PASS: TestIntegrationExampleFiles/templates_basic.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/templates_functions_only.lts (0.08s)
+    --- FAIL: TestIntegrationExampleFiles/templates_simple_test.lts (0.01s)
+    --- PASS: TestIntegrationExampleFiles/use_test.lts (0.09s)
+    --- PASS: TestIntegrationExampleFiles/using_declarations.lts (0.15s)
+=== RUN   TestIntegrationTestFiles
+=== RUN   TestIntegrationTestFiles/fast_inverse_sqrt.lts
+=== RUN   TestIntegrationTestFiles/ns_test.lts
+=== RUN   TestIntegrationTestFiles/test_sdl3.lts
+--- PASS: TestIntegrationTestFiles (3.89s)
+    --- PASS: TestIntegrationTestFiles/fast_inverse_sqrt.lts (0.10s)
+    --- PASS: TestIntegrationTestFiles/ns_test.lts (0.08s)
+    --- PASS: TestIntegrationTestFiles/test_sdl3.lts (0.10s)
+=== RUN   TestIntegrationTypeSystem
+    integration_test.go:349: Float type system test passed successfully
+--- PASS: TestIntegrationTypeSystem (3.87s)
+=== RUN   TestOptionExpressionStructure
+--- PASS: TestOptionExpressionStructure (0.00s)
+=== RUN   TestParseOptionExpressionSome
+--- PASS: TestParseOptionExpressionSome (0.00s)
+=== RUN   TestParseOptionExpressionNone
+--- PASS: TestParseOptionExpressionNone (0.00s)
+=== RUN   TestParseOptionWithDifferentTypes
+--- PASS: TestParseOptionWithDifferentTypes (0.00s)
+=== RUN   TestOptionExpressionInVariableDeclaration
+--- PASS: TestOptionExpressionInVariableDeclaration (0.00s)
+=== RUN   TestParseSimpleVariableDeclaration
+=== RUN   TestParseSimpleVariableDeclaration/int_variable
+=== RUN   TestParseSimpleVariableDeclaration/float32_variable
+=== RUN   TestParseSimpleVariableDeclaration/float64_variable
+=== RUN   TestParseSimpleVariableDeclaration/bool_variable
+=== RUN   TestParseSimpleVariableDeclaration/string_variable
+--- PASS: TestParseSimpleVariableDeclaration (0.00s)
+    --- PASS: TestParseSimpleVariableDeclaration/int_variable (0.00s)
+    --- PASS: TestParseSimpleVariableDeclaration/float32_variable (0.00s)
+    --- PASS: TestParseSimpleVariableDeclaration/float64_variable (0.00s)
+    --- PASS: TestParseSimpleVariableDeclaration/bool_variable (0.00s)
+    --- PASS: TestParseSimpleVariableDeclaration/string_variable (0.00s)
+=== RUN   TestParseConstantDeclaration
+=== RUN   TestParseConstantDeclaration/int_constant
+=== RUN   TestParseConstantDeclaration/float32_constant
+=== RUN   TestParseConstantDeclaration/float64_constant
+=== RUN   TestParseConstantDeclaration/string_constant
+--- PASS: TestParseConstantDeclaration (0.00s)
+    --- PASS: TestParseConstantDeclaration/int_constant (0.00s)
+    --- PASS: TestParseConstantDeclaration/float32_constant (0.00s)
+    --- PASS: TestParseConstantDeclaration/float64_constant (0.00s)
+    --- PASS: TestParseConstantDeclaration/string_constant (0.00s)
+=== RUN   TestParseFunctionDeclaration
+--- PASS: TestParseFunctionDeclaration (0.00s)
+=== RUN   TestParseIfStatement
+--- PASS: TestParseIfStatement (0.00s)
+=== RUN   TestParseWhileStatement
+--- PASS: TestParseWhileStatement (0.00s)
+=== RUN   TestParseForStatement
+--- PASS: TestParseForStatement (0.00s)
+=== RUN   TestParseReturnStatement
+=== RUN   TestParseReturnStatement/return_with_value
+=== RUN   TestParseReturnStatement/return_keyword
+--- PASS: TestParseReturnStatement (0.00s)
+    --- PASS: TestParseReturnStatement/return_with_value (0.00s)
+    --- PASS: TestParseReturnStatement/return_keyword (0.00s)
+=== RUN   TestParseBinaryExpression
+=== RUN   TestParseBinaryExpression/addition
+=== RUN   TestParseBinaryExpression/subtraction
+=== RUN   TestParseBinaryExpression/multiplication
+=== RUN   TestParseBinaryExpression/division
+=== RUN   TestParseBinaryExpression/modulo
+=== RUN   TestParseBinaryExpression/equality
+=== RUN   TestParseBinaryExpression/inequality
+=== RUN   TestParseBinaryExpression/less_than
+=== RUN   TestParseBinaryExpression/less_or_equal
+=== RUN   TestParseBinaryExpression/greater_than
+=== RUN   TestParseBinaryExpression/greater_or_equal
+=== RUN   TestParseBinaryExpression/logical_and
+=== RUN   TestParseBinaryExpression/logical_or
+--- PASS: TestParseBinaryExpression (0.00s)
+    --- PASS: TestParseBinaryExpression/addition (0.00s)
+    --- PASS: TestParseBinaryExpression/subtraction (0.00s)
+    --- PASS: TestParseBinaryExpression/multiplication (0.00s)
+    --- PASS: TestParseBinaryExpression/division (0.00s)
+    --- PASS: TestParseBinaryExpression/modulo (0.00s)
+    --- PASS: TestParseBinaryExpression/equality (0.00s)
+    --- PASS: TestParseBinaryExpression/inequality (0.00s)
+    --- PASS: TestParseBinaryExpression/less_than (0.00s)
+    --- PASS: TestParseBinaryExpression/less_or_equal (0.00s)
+    --- PASS: TestParseBinaryExpression/greater_than (0.00s)
+    --- PASS: TestParseBinaryExpression/greater_or_equal (0.00s)
+    --- PASS: TestParseBinaryExpression/logical_and (0.00s)
+    --- PASS: TestParseBinaryExpression/logical_or (0.00s)
+=== RUN   TestParseStructDefinition
+    parser_test.go:383: Struct parsing not yet implemented in parseStatement - requires adding TokenStruct case
+--- SKIP: TestParseStructDefinition (0.00s)
+=== RUN   TestParseTypeName
+=== RUN   TestParseTypeName/int
+=== RUN   TestParseTypeName/int8
+=== RUN   TestParseTypeName/int16
+=== RUN   TestParseTypeName/int32
+=== RUN   TestParseTypeName/int64
+=== RUN   TestParseTypeName/uint
+=== RUN   TestParseTypeName/uint8
+=== RUN   TestParseTypeName/uint16
+=== RUN   TestParseTypeName/uint32
+=== RUN   TestParseTypeName/uint64
+=== RUN   TestParseTypeName/float32
+=== RUN   TestParseTypeName/float64
+=== RUN   TestParseTypeName/string
+=== RUN   TestParseTypeName/char
+=== RUN   TestParseTypeName/bool
+=== RUN   TestParseTypeName/void
+--- PASS: TestParseTypeName (0.00s)
+    --- PASS: TestParseTypeName/int (0.00s)
+    --- PASS: TestParseTypeName/int8 (0.00s)
+    --- PASS: TestParseTypeName/int16 (0.00s)
+    --- PASS: TestParseTypeName/int32 (0.00s)
+    --- PASS: TestParseTypeName/int64 (0.00s)
+    --- PASS: TestParseTypeName/uint (0.00s)
+    --- PASS: TestParseTypeName/uint8 (0.00s)
+    --- PASS: TestParseTypeName/uint16 (0.00s)
+    --- PASS: TestParseTypeName/uint32 (0.00s)
+    --- PASS: TestParseTypeName/uint64 (0.00s)
+    --- PASS: TestParseTypeName/float32 (0.00s)
+    --- PASS: TestParseTypeName/float64 (0.00s)
+    --- PASS: TestParseTypeName/string (0.00s)
+    --- PASS: TestParseTypeName/char (0.00s)
+    --- PASS: TestParseTypeName/bool (0.00s)
+    --- PASS: TestParseTypeName/void (0.00s)
+=== RUN   TestIsTypeToken
+=== RUN   TestIsTypeToken/TypeToken_'int'
+=== RUN   TestIsTypeToken/TypeToken_'int8'
+=== RUN   TestIsTypeToken/TypeToken_'int16'
+=== RUN   TestIsTypeToken/TypeToken_'int32'
+=== RUN   TestIsTypeToken/TypeToken_'int64'
+=== RUN   TestIsTypeToken/TypeToken_'uint'
+=== RUN   TestIsTypeToken/TypeToken_'uint8'
+=== RUN   TestIsTypeToken/TypeToken_'uint16'
+=== RUN   TestIsTypeToken/TypeToken_'uint32'
+=== RUN   TestIsTypeToken/TypeToken_'uint64'
+=== RUN   TestIsTypeToken/TypeToken_'float32'
+=== RUN   TestIsTypeToken/TypeToken_'float64'
+=== RUN   TestIsTypeToken/TypeToken_'string'
+=== RUN   TestIsTypeToken/TypeToken_'bool'
+=== RUN   TestIsTypeToken/TypeToken_'char'
+=== RUN   TestIsTypeToken/TypeToken_token(36)
+=== RUN   TestIsTypeToken/NonTypeToken_'+'
+=== RUN   TestIsTypeToken/NonTypeToken_'-'
+=== RUN   TestIsTypeToken/NonTypeToken_'*'
+=== RUN   TestIsTypeToken/NonTypeToken_'/'
+=== RUN   TestIsTypeToken/NonTypeToken_identifier
+=== RUN   TestIsTypeToken/NonTypeToken_number
+=== RUN   TestIsTypeToken/NonTypeToken_float
+=== RUN   TestIsTypeToken/NonTypeToken_'('
+=== RUN   TestIsTypeToken/NonTypeToken_')'
+=== RUN   TestIsTypeToken/NonTypeToken_'{'
+=== RUN   TestIsTypeToken/NonTypeToken_'}'
+--- PASS: TestIsTypeToken (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'int' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'int8' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'int16' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'int32' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'int64' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'uint' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'uint8' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'uint16' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'uint32' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'uint64' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'float32' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'float64' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'string' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'bool' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_'char' (0.00s)
+    --- PASS: TestIsTypeToken/TypeToken_token(36) (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'+' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'-' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'*' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'/' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_identifier (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_number (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_float (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'(' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_')' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'{' (0.00s)
+    --- PASS: TestIsTypeToken/NonTypeToken_'}' (0.00s)
+=== RUN   TestParseArrayLiteral
+--- PASS: TestParseArrayLiteral (0.00s)
+=== RUN   TestParseEnumDefinition
+    parser_test.go:488: Enum parsing not yet implemented in parseStatement - requires adding TokenEnum case
+--- SKIP: TestParseEnumDefinition (0.00s)
+=== RUN   TestTemplateDeclarationStructure
+--- PASS: TestTemplateDeclarationStructure (0.00s)
+=== RUN   TestTemplateParameterTypes
+--- PASS: TestTemplateParameterTypes (0.00s)
+=== RUN   TestNamespaceDeclarationStructure
+--- PASS: TestNamespaceDeclarationStructure (0.00s)
+=== RUN   TestNamespaceStructure
+--- PASS: TestNamespaceStructure (0.00s)
+=== RUN   TestUsingDeclaration
+--- PASS: TestUsingDeclaration (0.00s)
+=== RUN   TestTokenizeBasicTokens
+--- PASS: TestTokenizeBasicTokens (0.00s)
+=== RUN   TestTokenizeTemplateKeywords
+--- PASS: TestTokenizeTemplateKeywords (0.00s)
+=== RUN   TestTokenizeFloatKeyword
+--- PASS: TestTokenizeFloatKeyword (0.00s)
+=== RUN   TestTokenizeNumbers
+--- PASS: TestTokenizeNumbers (0.00s)
+=== RUN   TestTokenizeStrings
+--- PASS: TestTokenizeStrings (0.00s)
+=== RUN   TestTokenizeOperators
+--- PASS: TestTokenizeOperators (0.00s)
+=== RUN   TestGetTypeSize
+=== RUN   TestGetTypeSize/'int8'
+=== RUN   TestGetTypeSize/'uint8'
+=== RUN   TestGetTypeSize/'bool'
+=== RUN   TestGetTypeSize/'int16'
+=== RUN   TestGetTypeSize/'uint16'
+=== RUN   TestGetTypeSize/'int'
+=== RUN   TestGetTypeSize/'int32'
+=== RUN   TestGetTypeSize/'uint'
+=== RUN   TestGetTypeSize/'uint32'
+=== RUN   TestGetTypeSize/'float32'
+=== RUN   TestGetTypeSize/'char'
+=== RUN   TestGetTypeSize/'int64'
+=== RUN   TestGetTypeSize/'uint64'
+=== RUN   TestGetTypeSize/'float64'
+=== RUN   TestGetTypeSize/'string'
+--- PASS: TestGetTypeSize (0.00s)
+    --- PASS: TestGetTypeSize/'int8' (0.00s)
+    --- PASS: TestGetTypeSize/'uint8' (0.00s)
+    --- PASS: TestGetTypeSize/'bool' (0.00s)
+    --- PASS: TestGetTypeSize/'int16' (0.00s)
+    --- PASS: TestGetTypeSize/'uint16' (0.00s)
+    --- PASS: TestGetTypeSize/'int' (0.00s)
+    --- PASS: TestGetTypeSize/'int32' (0.00s)
+    --- PASS: TestGetTypeSize/'uint' (0.00s)
+    --- PASS: TestGetTypeSize/'uint32' (0.00s)
+    --- PASS: TestGetTypeSize/'float32' (0.00s)
+    --- PASS: TestGetTypeSize/'char' (0.00s)
+    --- PASS: TestGetTypeSize/'int64' (0.00s)
+    --- PASS: TestGetTypeSize/'uint64' (0.00s)
+    --- PASS: TestGetTypeSize/'float64' (0.00s)
+    --- PASS: TestGetTypeSize/'string' (0.00s)
+=== RUN   TestIsIntegerType
+=== RUN   TestIsIntegerType/Integer_'int'
+=== RUN   TestIsIntegerType/Integer_'int8'
+=== RUN   TestIsIntegerType/Integer_'int16'
+=== RUN   TestIsIntegerType/Integer_'int32'
+=== RUN   TestIsIntegerType/Integer_'int64'
+=== RUN   TestIsIntegerType/Integer_'uint'
+=== RUN   TestIsIntegerType/Integer_'uint8'
+=== RUN   TestIsIntegerType/Integer_'uint16'
+=== RUN   TestIsIntegerType/Integer_'uint32'
+=== RUN   TestIsIntegerType/Integer_'uint64'
+=== RUN   TestIsIntegerType/NonInteger_'float32'
+=== RUN   TestIsIntegerType/NonInteger_'float64'
+=== RUN   TestIsIntegerType/NonInteger_'bool'
+=== RUN   TestIsIntegerType/NonInteger_'string'
+=== RUN   TestIsIntegerType/NonInteger_'char'
+=== RUN   TestIsIntegerType/NonInteger_token(36)
+--- PASS: TestIsIntegerType (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'int' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'int8' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'int16' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'int32' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'int64' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'uint' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'uint8' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'uint16' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'uint32' (0.00s)
+    --- PASS: TestIsIntegerType/Integer_'uint64' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_'float32' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_'float64' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_'bool' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_'string' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_'char' (0.00s)
+    --- PASS: TestIsIntegerType/NonInteger_token(36) (0.00s)
+=== RUN   TestIsFloatType
+=== RUN   TestIsFloatType/Float_'float32'
+=== RUN   TestIsFloatType/Float_'float64'
+=== RUN   TestIsFloatType/NonFloat_'int'
+=== RUN   TestIsFloatType/NonFloat_'int8'
+=== RUN   TestIsFloatType/NonFloat_'int16'
+=== RUN   TestIsFloatType/NonFloat_'int32'
+=== RUN   TestIsFloatType/NonFloat_'int64'
+=== RUN   TestIsFloatType/NonFloat_'uint'
+=== RUN   TestIsFloatType/NonFloat_'uint8'
+=== RUN   TestIsFloatType/NonFloat_'uint16'
+=== RUN   TestIsFloatType/NonFloat_'uint32'
+=== RUN   TestIsFloatType/NonFloat_'uint64'
+=== RUN   TestIsFloatType/NonFloat_'bool'
+=== RUN   TestIsFloatType/NonFloat_'string'
+=== RUN   TestIsFloatType/NonFloat_'char'
+=== RUN   TestIsFloatType/NonFloat_token(36)
+--- PASS: TestIsFloatType (0.00s)
+    --- PASS: TestIsFloatType/Float_'float32' (0.00s)
+    --- PASS: TestIsFloatType/Float_'float64' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'int' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'int8' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'int16' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'int32' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'int64' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'uint' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'uint8' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'uint16' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'uint32' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'uint64' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'bool' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'string' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_'char' (0.00s)
+    --- PASS: TestIsFloatType/NonFloat_token(36) (0.00s)
+=== RUN   TestIsNumericType
+=== RUN   TestIsNumericType/Numeric_'int'
+=== RUN   TestIsNumericType/Numeric_'int8'
+=== RUN   TestIsNumericType/Numeric_'int16'
+=== RUN   TestIsNumericType/Numeric_'int32'
+=== RUN   TestIsNumericType/Numeric_'int64'
+=== RUN   TestIsNumericType/Numeric_'uint'
+=== RUN   TestIsNumericType/Numeric_'uint8'
+=== RUN   TestIsNumericType/Numeric_'uint16'
+=== RUN   TestIsNumericType/Numeric_'uint32'
+=== RUN   TestIsNumericType/Numeric_'uint64'
+=== RUN   TestIsNumericType/Numeric_'float32'
+=== RUN   TestIsNumericType/Numeric_'float64'
+=== RUN   TestIsNumericType/NonNumeric_'bool'
+=== RUN   TestIsNumericType/NonNumeric_'string'
+=== RUN   TestIsNumericType/NonNumeric_'char'
+=== RUN   TestIsNumericType/NonNumeric_token(36)
+--- PASS: TestIsNumericType (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'int' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'int8' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'int16' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'int32' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'int64' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'uint' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'uint8' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'uint16' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'uint32' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'uint64' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'float32' (0.00s)
+    --- PASS: TestIsNumericType/Numeric_'float64' (0.00s)
+    --- PASS: TestIsNumericType/NonNumeric_'bool' (0.00s)
+    --- PASS: TestIsNumericType/NonNumeric_'string' (0.00s)
+    --- PASS: TestIsNumericType/NonNumeric_'char' (0.00s)
+    --- PASS: TestIsNumericType/NonNumeric_token(36) (0.00s)
+=== RUN   TestIsPrimitiveType
+=== RUN   TestIsPrimitiveType/Primitive_'int'
+=== RUN   TestIsPrimitiveType/Primitive_'int8'
+=== RUN   TestIsPrimitiveType/Primitive_'int16'
+=== RUN   TestIsPrimitiveType/Primitive_'int32'
+=== RUN   TestIsPrimitiveType/Primitive_'int64'
+=== RUN   TestIsPrimitiveType/Primitive_'uint'
+=== RUN   TestIsPrimitiveType/Primitive_'uint8'
+=== RUN   TestIsPrimitiveType/Primitive_'uint16'
+=== RUN   TestIsPrimitiveType/Primitive_'uint32'
+=== RUN   TestIsPrimitiveType/Primitive_'uint64'
+=== RUN   TestIsPrimitiveType/Primitive_'float32'
+=== RUN   TestIsPrimitiveType/Primitive_'float64'
+=== RUN   TestIsPrimitiveType/Primitive_'bool'
+=== RUN   TestIsPrimitiveType/Primitive_'string'
+=== RUN   TestIsPrimitiveType/Primitive_'char'
+=== RUN   TestIsPrimitiveType/NonPrimitive_token(36)
+=== RUN   TestIsPrimitiveType/NonPrimitive_token(37)
+--- PASS: TestIsPrimitiveType (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'int' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'int8' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'int16' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'int32' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'int64' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'uint' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'uint8' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'uint16' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'uint32' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'uint64' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'float32' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'float64' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'bool' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'string' (0.00s)
+    --- PASS: TestIsPrimitiveType/Primitive_'char' (0.00s)
+    --- PASS: TestIsPrimitiveType/NonPrimitive_token(36) (0.00s)
+    --- PASS: TestIsPrimitiveType/NonPrimitive_token(37) (0.00s)
+=== RUN   TestTypeRegistry
+--- PASS: TestTypeRegistry (0.00s)
+=== RUN   TestVariable
+--- PASS: TestVariable (0.00s)
+FAIL
+FAIL	LOTUS/src	20.134s
+FAIL
+[0;32m[INFO][0m ✓ Go tests passed
+[0;32m[INFO][0m Running .lts compilation tests...
+[0;32m[INFO][0m Testing: examples/const_namespace_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/const_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_for.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_if.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/control_flow_while.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespace_use_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespaces.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/namespaces_simple.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/optional_advanced.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/optional_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/qualified_call_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/struct_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_comprehensive_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_simple.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/template_struct_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_advanced.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_basic.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_functions_only.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/templates_simple_test.lts
+Compilation failed: LLVM codegen error: undefined function: multiply
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/use_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: examples/using_declarations.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/fast_inverse_sqrt.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/ns_test.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m Testing: tests/test_sdl3.lts
+[0;32m[INFO][0m   ✓ Compiled successfully
+[0;32m[INFO][0m ✓ All tests passed!
+
+[0;34m[STEP][0m [0;36mUpdating Version Files: 1.7.1 → 1.7.2[0m
+
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/src/constants.go
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/PKGBUILD
+[0;32m[INFO][0m ✓ Updated /mnt/c/Users/joshu/develLotus/.SRCINFO
+
+[0;34m[STEP][0m [0;36mCreating Release Notes: /mnt/c/Users/joshu/develLotus/RELEASE_NOTES_1.7.2.md[0m
+
+[0;32m[INFO][0m ✓ Created release notes
+
+[0;34m[STEP][0m [0;36mRebuilding with New Version[0m
+
+[0;32m[INFO][0m ✓ Rebuilt successfully
+
+[0;34m[STEP][0m [0;36mCommitting Version Bump[0m
+
+[master 8c5c094] Automated release: Bump version to 1.7.2
+ 3 files changed, 40 insertions(+), 40 deletions(-)
+ rename RELEASE_NOTES_1.7.1.md => RELEASE_NOTES_1.7.2.md (81%)
+[0;32m[INFO][0m ✓ Changes committed
+
+[0;34m[STEP][0m [0;36mCreating and Pushing Tag: 1.7.2[0m
+
+[0;32m[INFO][0m ✓ Created tag: 1.7.2
+To https://github.com/j-alexander3375/Lotus
+   4832e89..8c5c094  master -> master
+To https://github.com/j-alexander3375/Lotus
+ * [new tag]         1.7.2 -> 1.7.2
+[0;32m[INFO][0m ✓ Pushed to GitHub
+
+[0;34m[STEP][0m [0;36mWaiting for GitHub Actions to Complete[0m
+
+[0;32m[INFO][0m Monitor at: https://github.com/j-alexander3375/Lotus/actions
+[0;32m[INFO][0m Waiting 30 seconds for workflow to start...
+[0;32m[INFO][0m Checking for release... (attempt 1/60)
+[0;32m[INFO][0m ✓ Release found!
+
+[0;34m[STEP][0m [0;36mUpdating PKGBUILD Checksums[0m
+
+[0;32m[INFO][0m Downloading: https://github.com/j-alexander3375/Lotus/archive/refs/tags/1.7.2.tar.gz
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0   0     0   0     0     0     0  --:--:-- --:--:-- --:--:--     0  0     0   0     0   0     0     0     0  --:--:-- --:--:-- --:--:--     0
+100 275518   0 275518   0     0 334783     0  --:--:-- --:--:-- --:--:-- 334783
+[0;32m[INFO][0m SHA256: 3056a96bd6998accd0d9b979eda3ac80b61fa7ff3bbcb2b1f9d430326f4d026f
+[0;32m[INFO][0m ✓ Updated PKGBUILD with new checksum
+[0;32m[INFO][0m ✓ Updated .SRCINFO with new checksum
+[master 4524ce0] Update PKGBUILD checksums for 1.7.2
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+To https://github.com/j-alexander3375/Lotus
+   8c5c094..4524ce0  master -> master
+[0;32m[INFO][0m ✓ Pushed checksum updates
+
+[0;34m[STEP][0m [0;36mDeploying to AUR[0m
+
+[0;32m[INFO][0m ✓ Copied PKGBUILD and .SRCINFO
+[0;32m[INFO][0m Skipping test build (code already tested)
+[master 2fc93a1] Update to 1.7.2
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+To ssh://aur.archlinux.org/lotus-lang.git
+   cfda35e..2fc93a1  master -> master
+[0;32m[INFO][0m ✓ Pushed to AUR
+
+[0;34m[STEP][0m [0;36m✅ Release Complete![0m
+
+[0;32m[INFO][0m Version: 1.7.2
+[0;32m[INFO][0m GitHub: https://github.com/j-alexander3375/Lotus/releases/tag/1.7.2
+[0;32m[INFO][0m AUR: https://aur.archlinux.org/packages/lotus-lang

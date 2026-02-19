@@ -1,0 +1,11 @@
+// Test struct parsing
+
+struct Point {
+    int32 x;
+    int32 y;
+}
+
+fn int main() {
+    println(42);
+    ret 0;
+}

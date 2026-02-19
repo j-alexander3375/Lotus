@@ -1,0 +1,174 @@
+// Advanced template examples for Lotus
+// Demonstrates template specialization and complex usage
+
+use "io";
+use "mem";
+
+// Generic stack template
+template<typename T>
+struct stack {
+    T* data;
+    int top;
+    int capacity;
+}
+
+// Template function to create a stack
+template<typename T>
+fn stack<T> create_stack(int initial_capacity) {
+    stack<T> s;
+    s.data = mem::malloc(sizeof(T) * initial_capacity);
+    s.top = 0;
+    s.capacity = initial_capacity;
+    ret s;
+}
+
+// Template function to push onto stack
+template<typename T>
+fn void push(stack<T>* s, T value) {
+    if s.top >= s.capacity {
+        // Resize
+        int new_capacity = s.capacity * 2;
+        T* new_data = mem::malloc(sizeof(T) * new_capacity);
+        mem::memcpy(new_data, s.data, sizeof(T) * s.top);
+        mem::free(s.data);
+        s.data = new_data;
+        s.capacity = new_capacity;
+    }
+    s.data[s.top] = value;
+    s.top = s.top + 1;
+}
+
+// Template function to pop from stack
+template<typename T>
+fn T pop(stack<T>* s) {
+    if s.top > 0 {
+        s.top = s.top - 1;
+        ret s.data[s.top];
+    }
+    ret T(); // Default value
+}
+
+// Template function to check if stack is empty
+template<typename T>
+fn bool is_empty(stack<T>* s) {
+    ret s.top == 0;
+}
+
+// Generic swap function
+template<typename T>
+fn void swap(T* a, T* b) {
+    T temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Template specialization for string (optimized)
+template<>
+fn void swap<string>(string* a, string* b) {
+    io::println("Swapping strings (specialized version)");
+    string temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Generic bubble sort
+template<typename T>
+fn void sort(T* array, int length) {
+    for int i = 0; i < length - 1; i = i + 1 {
+        for int j = 0; j < length - i - 1; j = j + 1 {
+            if array[j] > array[j + 1] {
+                swap<T>(&array[j], &array[j + 1]);
+            }
+        }
+    }
+}
+
+// Fixed-size array template with non-type parameter
+template<typename T, int N>
+struct fixed_array {
+    T[N] data;
+    int size;
+}
+
+// Create a fixed array
+template<typename T, int N>
+fn fixed_array<T, N> create_fixed_array() {
+    fixed_array<T, N> arr;
+    arr.size = N;
+    ret arr;
+}
+
+// Get element from fixed array with bounds checking
+template<typename T, int N>
+fn T get_at(fixed_array<T, N>* arr, int index) {
+    if index >= 0 && index < N {
+        ret arr.data[index];
+    }
+    io::println("Index out of bounds!");
+    ret T();
+}
+
+// Set element in fixed array
+template<typename T, int N>
+fn void set_at(fixed_array<T, N>* arr, int index, T value) {
+    if index >= 0 && index < N {
+        arr.data[index] = value;
+    }
+}
+
+fn int main() {
+    // Test generic stack
+    io::println("=== Stack Test ===");
+    stack<int> int_stack = create_stack<int>(5);
+
+    push<int>(&int_stack, 10);
+    push<int>(&int_stack, 20);
+    push<int>(&int_stack, 30);
+
+    while !is_empty<int>(&int_stack) {
+        int val = pop<int>(&int_stack);
+        io::println("Popped: %d", val);
+    }
+
+    // Test generic sort
+    io::println("\n=== Sort Test ===");
+    int[5] numbers = {64, 34, 25, 12, 22};
+    io::println("Before sort:");
+    for int i = 0; i < 5; i = i + 1 {
+        io::printf("%d ", numbers[i]);
+    }
+    io::println("");
+
+    sort<int>(numbers, 5);
+
+    io::println("After sort:");
+    for int i = 0; i < 5; i = i + 1 {
+        io::printf("%d ", numbers[i]);
+    }
+    io::println("");
+
+    // Test swap specialization
+    io::println("\n=== Swap Specialization Test ===");
+    string s1 = "hello";
+    string s2 = "world";
+    io::println("Before: %s, %s", s1, s2);
+    swap<string>(&s1, &s2);
+    io::println("After: %s, %s", s1, s2);
+
+    // Test fixed array with non-type parameter
+    io::println("\n=== Fixed Array Test ===");
+    fixed_array<int, 10> arr = create_fixed_array<int, 10>();
+
+    for int i = 0; i < 10; i = i + 1 {
+        set_at<int, 10>(&arr, i, i * i);
+    }
+
+    io::println("Fixed array contents:");
+    for int i = 0; i < 10; i = i + 1 {
+        int val = get_at<int, 10>(&arr, i);
+        io::printf("%d ", val);
+    }
+    io::println("");
+
+    ret 0;
+}

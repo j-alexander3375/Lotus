@@ -1,0 +1,72 @@
+use "io"
+
+// Pattern matching with literals
+fn void test_literal_match() {
+    int x = 42;
+
+    match x {
+        case 42 => println("Found 42!"),
+        case 100 => println("Found 100!"),
+        default => println("Something else")
+    }
+}
+
+// Pattern matching with ranges
+fn void test_range_match() {
+    int score = 85;
+
+    match score {
+        case 90..100 => println("Grade: A"),
+        case 80..89 => println("Grade: B"),
+        case 70..79 => println("Grade: C"),
+        default => println("Grade: F")
+    }
+}
+
+// Pattern matching with binding
+fn void test_binding_match() {
+    int value = 123;
+
+    match value {
+        case val => {
+            printf("Matched value: %d\n", val);
+        }
+    }
+}
+
+// Pattern matching with guards
+fn void test_guard_match() {
+    int num = 15;
+
+    match num {
+        case x when x > 10 => println("Greater than 10"),
+        case x when x < 10 => println("Less than 10"),
+        default => println("Equal to 10")
+    }
+}
+
+// Pattern matching with wildcard
+fn void test_wildcard_match() {
+    int num = 999;
+
+    match num {
+        case _ => println("Matches anything!")
+    }
+}
+
+fn void main() {
+    println("=== Testing Literal Match ===");
+    test_literal_match();
+
+    println("\n=== Testing Range Match ===");
+    test_range_match();
+
+    println("\n=== Testing Binding Match ===");
+    test_binding_match();
+
+    println("\n=== Testing Guard Match ===");
+    test_guard_match();
+
+    println("\n=== Testing Wildcard Match ===");
+    test_wildcard_match();
+}

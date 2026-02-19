@@ -1,0 +1,26 @@
+// Test const declarations inside namespaces
+
+namespace math {
+    const float PI = 3.14159;
+    const int MAX_ITER = 1000;
+
+    fn float circle_area(float r) {
+        // Use const within same namespace
+        ret PI * r * r;
+    }
+
+    fn int get_max() {
+        ret MAX_ITER;
+    }
+}
+
+fn int main() {
+    // Call functions that use consts
+    float area = math::circle_area(2.0);
+    println(area);
+
+    int max = math::get_max();
+    println(max);
+
+    ret 0;
+}

@@ -1,0 +1,168 @@
+// Namespace examples for Lotus
+// Demonstrates namespace organization and qualified names
+
+use "io";
+
+// Basic namespace with mathematical functions
+namespace math {
+    const float PI = 3.14159265359;
+    const float E = 2.71828182846;
+
+    fn int add(int a, int b) {
+        ret a + b;
+    }
+
+    fn int multiply(int a, int b) {
+        ret a * b;
+    }
+
+    fn float circle_area(float radius) {
+        ret PI * radius * radius;
+    }
+}
+
+// Nested namespace for graphics
+namespace graphics {
+    namespace shapes {
+        struct circle {
+            float x;
+            float y;
+            float radius;
+        }
+
+        struct rectangle {
+            float x;
+            float y;
+            float width;
+            float height;
+        }
+
+        fn circle create_circle(float x, float y, float r) {
+            circle c;
+            c.x = x;
+            c.y = y;
+            c.radius = r;
+            ret c;
+        }
+
+        fn float area(circle c) {
+            ret 3.14159 * c.radius * c.radius;
+        }
+    }
+
+    namespace colors {
+        const int RED = 0xFF0000;
+        const int GREEN = 0x00FF00;
+        const int BLUE = 0x0000FF;
+        const int WHITE = 0xFFFFFF;
+        const int BLACK = 0x000000;
+
+        fn int blend(int color1, int color2) {
+            // Simple color blending
+            ret (color1 + color2) / 2;
+        }
+    }
+}
+
+// String utilities namespace
+namespace str_utils {
+    fn int length(string s) {
+        int len = 0;
+        // Count characters until null terminator
+        while s[len] != '\0' {
+            len = len + 1;
+        }
+        ret len;
+    }
+
+    fn bool equals(string a, string b) {
+        int i = 0;
+        while a[i] != '\0' && b[i] != '\0' {
+            if a[i] != b[i] {
+                ret false;
+            }
+            i = i + 1;
+        }
+        ret a[i] == b[i];
+    }
+}
+
+// Collections namespace
+namespace collections {
+    template<typename T>
+    struct vector {
+        T* data;
+        int size;
+        int capacity;
+    }
+
+    template<typename T>
+    fn vector<T> new_vector() {
+        vector<T> vec;
+        vec.size = 0;
+        vec.capacity = 10;
+        vec.data = mem::malloc(sizeof(T) * 10);
+        ret vec;
+    }
+
+    template<typename T>
+    fn void push(vector<T>* vec, T value) {
+        if vec.size >= vec.capacity {
+            vec.capacity = vec.capacity * 2;
+            T* new_data = mem::malloc(sizeof(T) * vec.capacity);
+            mem::memcpy(new_data, vec.data, sizeof(T) * vec.size);
+            mem::free(vec.data);
+            vec.data = new_data;
+        }
+        vec.data[vec.size] = value;
+        vec.size = vec.size + 1;
+    }
+}
+
+fn int main() {
+    // Use functions from math namespace with qualified names
+    io::println("=== Math Namespace ===");
+    int sum = math::add(10, 20);
+    io::println("10 + 20 = %d", sum);
+
+    int product = math::multiply(5, 7);
+    io::println("5 * 7 = %d", product);
+
+    float area = math::circle_area(5.0);
+    io::println("Area of circle with radius 5: %v", area);
+    io::println("Pi constant: %v", math::PI);
+
+    // Use nested namespace
+    io::println("\n=== Graphics Namespace ===");
+    graphics::shapes::circle c = graphics::shapes::create_circle(10.0, 10.0, 5.0);
+    float c_area = graphics::shapes::area(c);
+    io::println("Circle area: %v", c_area);
+
+    // Use colors namespace
+    int red = graphics::colors::RED;
+    int blue = graphics::colors::BLUE;
+    io::println("Red color: 0x%x", red);
+    io::println("Blue color: 0x%x", blue);
+
+    int blended = graphics::colors::blend(red, blue);
+    io::println("Blended color: 0x%x", blended);
+
+    // Use string utilities
+    io::println("\n=== String Utils ===");
+    string text = "Hello, Lotus!";
+    int len = str_utils::length(text);
+    io::println("Length of '%s': %d", text, len);
+
+    bool equal = str_utils::equals("test", "test");
+    io::println("'test' equals 'test': %d", equal);
+
+    // Use templated namespace function
+    io::println("\n=== Collections Namespace ===");
+    collections::vector<int> vec = collections::new_vector<int>();
+    collections::push<int>(&vec, 100);
+    collections::push<int>(&vec, 200);
+    collections::push<int>(&vec, 300);
+    io::println("Vector size: %d", vec.size);
+
+    ret 0;
+}

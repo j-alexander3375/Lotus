@@ -1,0 +1,75 @@
+// Fast Inverse Square Root (Quake III Arena)
+// The legendary algorithm from id Software that computes 1/sqrt(x)
+// using bit-level floating point manipulation and Newton-Raphson iteration.
+//
+// Original C code:
+//   float Q_rsqrt(float number) {
+//       long i;
+//       float x2, y;
+//       const float threehalfs = 1.5F;
+//       x2 = number * 0.5F;
+//       y = number;
+//       i = *(long*)&y;                      // evil floating point bit hack
+//       i = 0x5f3759df - (i >> 1);           // what the fuck?
+//       y = *(float*)&i;
+//       y = y * (threehalfs - (x2 * y * y)); // 1st iteration of Newton-Raphson
+//       // y = y * (threehalfs - (x2 * y * y)); // 2nd iteration (optional)
+//       return y;
+//   }
+
+fn float32 fast_inverse_sqrt(float32 number) {
+    float32 threehalfs = 1.5;
+    float32 x2 = number * 0.5;
+    float32 y = number;
+
+    // Evil floating point bit level hacking
+    // Reinterpret the float bits as an integer (both are 32-bit)
+    int32 i = bitcast<int32>(y);
+
+    // The magic constant: 0x5f3759df
+    // This approximates log2(1/sqrt(x)) through integer arithmetic
+    i = 0x5f3759df - (i >> 1);
+
+    // Reinterpret back to float
+    y = bitcast<float32>(i);
+
+    // One iteration of Newton-Raphson refinement
+    // f(y) = 1/y² - x = 0  =>  y_new = y * (1.5 - 0.5*x*y²)
+    y = y * (threehalfs - (x2 * y * y));
+
+    // Optional: second iteration for more precision
+    // y = y * (threehalfs - (x2 * y * y));
+
+    ret y;
+}
+
+fn int main() {
+    // Test the fast inverse square root
+    float32 x = 4.0;
+    float32 result = fast_inverse_sqrt(x);
+
+    // 1/sqrt(4) = 0.5
+    println("Fast inverse sqrt of 4.0:");
+    printf("Result: %f\n", result);
+    printf("Expected: 0.5\n");
+
+    // Test with another value
+    float32 x2 = 2.0;
+    float32 result2 = fast_inverse_sqrt(x2);
+
+    // 1/sqrt(2) ≈ 0.7071
+    println("\nFast inverse sqrt of 2.0:");
+    printf("Result: %f\n", result2);
+    printf("Expected: ~0.7071\n");
+
+    // Test with 1.0
+    float32 x3 = 1.0;
+    float32 result3 = fast_inverse_sqrt(x3);
+
+    // 1/sqrt(1) = 1.0
+    println("\nFast inverse sqrt of 1.0:");
+    printf("Result: %f\n", result3);
+    printf("Expected: 1.0\n");
+
+    ret 0;
+}

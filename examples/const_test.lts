@@ -1,0 +1,17 @@
+// Test const declarations with various types
+
+const int MAX_SIZE = 100;
+const float PI = 3.14159;
+
+fn int main() {
+    // Test integer const
+    int size = MAX_SIZE;
+    println(size);
+
+    // Test float const
+    float radius = 2.0;
+    float area = PI * radius * radius;
+    println(area);
+
+    ret 0;
+}

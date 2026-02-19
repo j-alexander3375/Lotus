@@ -1,0 +1,46 @@
+// Comprehensive template test
+
+// Template with single type parameter
+template<typename T>
+fn T add(T a, T b) {
+    ret a + b;
+}
+
+// Template with comparison
+template<typename T>
+fn T minimum(T a, T b) {
+    if a < b {
+        ret a;
+    }
+    ret b;
+}
+
+// Template with multiple uses
+template<typename T>
+fn T triple(T x) {
+    ret x + x + x;
+}
+
+fn int main() {
+    // Test with integers
+    int sum_int = add(5, 10);
+    println(sum_int);  // Should print 15
+
+    int min_int = minimum(20, 15);
+    println(min_int);  // Should print 15
+
+    int triple_int = triple(7);
+    println(triple_int);  // Should print 21
+
+    // Test with floats
+    float sum_float = add(3.14, 2.86);
+    println(sum_float);  // Should print 6.0
+
+    float min_float = minimum(5.5, 3.3);
+    println(min_float);  // Should print 3.3
+
+    float triple_float = triple(2.5);
+    println(triple_float);  // Should print 7.5
+
+    ret 0;
+}
