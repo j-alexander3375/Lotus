@@ -7,8 +7,8 @@
 set -e
 
 # Configuration
-REPO_DIR="/mnt/c/Users/joshu/develLotus"
-AUR_DIR="/mnt/c/Users/joshu/aur-lotus-lang"
+REPO_DIR="/home/josh_35p/Documents/Code/Lotus"
+AUR_DIR="/home/josh_35p/Documents/Code/aur-lotus-lang"
 CONSTANTS_FILE="$REPO_DIR/src/constants.go"
 PKGBUILD_FILE="$REPO_DIR/PKGBUILD"
 SRCINFO_FILE="$REPO_DIR/.SRCINFO"
@@ -88,7 +88,7 @@ run_tests() {
     > "$TEST_LOG"
 
     log_info "Running Go tests..."
-    if go test -v -timeout 0 ./... 2>&1 | tee -a "$TEST_LOG"; then
+    if go test -mod=vendor -v -timeout 0 ./... 2>&1 | tee -a "$TEST_LOG"; then
         log_info "✓ Go tests passed"
         GO_TESTS_PASSED=true
     else
@@ -440,7 +440,8 @@ main() {
     # Step 4: Rebuild with new version
     log_step "Rebuilding with New Version"
     cd "$REPO_DIR/src"
-    go build -o ../lotus .
+    go build -mod=vendor -o ../lotus .
+    chmod +x "$REPO_DIR/lotus"
     cd "$REPO_DIR"
     log_info "✓ Rebuilt successfully"
 
