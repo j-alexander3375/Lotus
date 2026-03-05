@@ -25,7 +25,7 @@
 === RUN   TestIntegrationCompileAndRun/struct_definition
 === RUN   TestIntegrationCompileAndRun/enum_definition
 === RUN   TestIntegrationCompileAndRun/bitwise_operations
---- PASS: TestIntegrationCompileAndRun (1.07s)
+--- PASS: TestIntegrationCompileAndRun (2.12s)
     --- PASS: TestIntegrationCompileAndRun/simple_return (0.04s)
     --- PASS: TestIntegrationCompileAndRun/variable_declaration (0.04s)
     --- PASS: TestIntegrationCompileAndRun/float32_constant (0.04s)
@@ -62,7 +62,7 @@
 === RUN   TestIntegrationExampleFiles/templates_simple_test.lts
 === RUN   TestIntegrationExampleFiles/use_test.lts
 === RUN   TestIntegrationExampleFiles/using_declarations.lts
---- PASS: TestIntegrationExampleFiles (1.53s)
+--- PASS: TestIntegrationExampleFiles (1.52s)
     --- PASS: TestIntegrationExampleFiles/const_namespace_test.lts (0.04s)
     --- PASS: TestIntegrationExampleFiles/const_test.lts (0.04s)
     --- PASS: TestIntegrationExampleFiles/control_flow_for.lts (0.04s)
@@ -90,13 +90,13 @@
 === RUN   TestIntegrationTestFiles/fast_inverse_sqrt.lts
 === RUN   TestIntegrationTestFiles/ns_test.lts
 === RUN   TestIntegrationTestFiles/test_sdl3.lts
---- PASS: TestIntegrationTestFiles (0.75s)
+--- PASS: TestIntegrationTestFiles (0.74s)
     --- PASS: TestIntegrationTestFiles/fast_inverse_sqrt.lts (0.04s)
     --- PASS: TestIntegrationTestFiles/ns_test.lts (0.04s)
-    --- PASS: TestIntegrationTestFiles/test_sdl3.lts (0.04s)
+    --- PASS: TestIntegrationTestFiles/test_sdl3.lts (0.05s)
 === RUN   TestIntegrationTypeSystem
     integration_test.go:349: Float type system test passed successfully
---- PASS: TestIntegrationTypeSystem (0.64s)
+--- PASS: TestIntegrationTypeSystem (0.66s)
 === RUN   TestOptionExpressionStructure
 --- PASS: TestOptionExpressionStructure (0.00s)
 === RUN   TestParseOptionExpressionSome
@@ -484,4 +484,4 @@
 === RUN   TestVariable
 --- PASS: TestVariable (0.00s)
 PASS
-ok  	LOTUS/src	4.003s
+ok  	LOTUS/src	5.046s
