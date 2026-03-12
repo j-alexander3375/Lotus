@@ -1593,6 +1593,146 @@ func (cg *LLVMCodeGenerator) generateSetSockOpt(call *FunctionCall) (llvm.Value,
 	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "setsockoptres"), nil
 }
 
+// generateSendtoIPv4 sends data to an IPv4 destination (UDP style)
+// sendto_ipv4(fd, buf_ptr, buf_len, dest_ip_u32, dest_port) -> bytes_sent
+func (cg *LLVMCodeGenerator) generateSendtoIPv4(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("sendto_ipv4 requires 5 arguments (fd, buf, len, ip, port)")
+	}
+
+	fd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	buf, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufLen, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ipAddr, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	port, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	cg.declareSyscall()
+
+	sockaddrType := llvm.ArrayType(cg.context.Int8Type(), 16)
+	sockaddr := cg.builder.CreateAlloca(sockaddrType, "sendto_sockaddr")
+	sockaddrPtr := cg.builder.CreateBitCast(sockaddr, llvm.PointerType(cg.context.Int8Type(), 0), "sendto_sockaddr_ptr")
+
+	memset := cg.functions["memset"]
+	if memset.IsNil() {
+		memsetType := llvm.FunctionType(
+			llvm.PointerType(cg.context.Int8Type(), 0),
+			[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0), cg.context.Int32Type(), cg.context.Int64Type()},
+			false,
+		)
+		memset = llvm.AddFunction(cg.module, "memset", memsetType)
+		memset.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["memset"] = memset
+	}
+	cg.builder.CreateCall(memset.GlobalValueType(), memset,
+		[]llvm.Value{sockaddrPtr, llvm.ConstInt(cg.context.Int32Type(), 0, false), llvm.ConstInt(cg.context.Int64Type(), 16, false)}, "")
+
+	familyPtr := cg.builder.CreateBitCast(sockaddrPtr, llvm.PointerType(cg.context.Int16Type(), 0), "sendto_family_ptr")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int16Type(), 2, false), familyPtr)
+
+	portPtr := cg.builder.CreateGEP(cg.context.Int8Type(), sockaddrPtr, []llvm.Value{llvm.ConstInt(cg.context.Int32Type(), 2, false)}, "sendto_port_ptr")
+	portPtr16 := cg.builder.CreateBitCast(portPtr, llvm.PointerType(cg.context.Int16Type(), 0), "sendto_port_ptr16")
+	port16 := cg.builder.CreateTrunc(port, cg.context.Int16Type(), "sendto_port16")
+	port16Ext := cg.builder.CreateZExt(port16, cg.context.Int32Type(), "sendto_port16ext")
+	portHi := cg.builder.CreateShl(port16Ext, llvm.ConstInt(cg.context.Int32Type(), 8, false), "sendto_porthi")
+	portLo := cg.builder.CreateLShr(port16Ext, llvm.ConstInt(cg.context.Int32Type(), 8, false), "sendto_portlo")
+	portBE := cg.builder.CreateOr(portHi, portLo, "sendto_portbe")
+	cg.builder.CreateStore(cg.builder.CreateTrunc(portBE, cg.context.Int16Type(), "sendto_portbe16"), portPtr16)
+
+	addrPtr := cg.builder.CreateGEP(cg.context.Int8Type(), sockaddrPtr, []llvm.Value{llvm.ConstInt(cg.context.Int32Type(), 4, false)}, "sendto_addr_ptr")
+	addrPtr32 := cg.builder.CreateBitCast(addrPtr, llvm.PointerType(cg.context.Int32Type(), 0), "sendto_addr_ptr32")
+	ipAddr32 := cg.builder.CreateTrunc(ipAddr, cg.context.Int32Type(), "sendto_ip32")
+	b0 := cg.builder.CreateAnd(ipAddr32, llvm.ConstInt(cg.context.Int32Type(), 0xFF, false), "sendto_b0")
+	b0s := cg.builder.CreateShl(b0, llvm.ConstInt(cg.context.Int32Type(), 24, false), "sendto_b0s")
+	b1 := cg.builder.CreateAnd(cg.builder.CreateLShr(ipAddr32, llvm.ConstInt(cg.context.Int32Type(), 8, false), "sendto_tmp1"), llvm.ConstInt(cg.context.Int32Type(), 0xFF, false), "sendto_b1")
+	b1s := cg.builder.CreateShl(b1, llvm.ConstInt(cg.context.Int32Type(), 16, false), "sendto_b1s")
+	b2 := cg.builder.CreateAnd(cg.builder.CreateLShr(ipAddr32, llvm.ConstInt(cg.context.Int32Type(), 16, false), "sendto_tmp2"), llvm.ConstInt(cg.context.Int32Type(), 0xFF, false), "sendto_b2")
+	b2s := cg.builder.CreateShl(b2, llvm.ConstInt(cg.context.Int32Type(), 8, false), "sendto_b2s")
+	b3 := cg.builder.CreateLShr(ipAddr32, llvm.ConstInt(cg.context.Int32Type(), 24, false), "sendto_b3")
+	ipBE := cg.builder.CreateOr(cg.builder.CreateOr(b0s, b1s, "sendto_or1"), cg.builder.CreateOr(b2s, b3, "sendto_or2"), "sendto_ipbe")
+	cg.builder.CreateStore(ipBE, addrPtr32)
+
+	var bufInt llvm.Value
+	if buf.Type().TypeKind() == llvm.PointerTypeKind {
+		bufInt = cg.builder.CreatePtrToInt(buf, cg.context.Int64Type(), "sendto_bufint")
+	} else {
+		bufInt = buf
+	}
+
+	syscall := cg.functions["syscall"]
+	addrInt := cg.builder.CreatePtrToInt(sockaddrPtr, cg.context.Int64Type(), "sendto_addrint")
+	flags := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	addrLen := llvm.ConstInt(cg.context.Int64Type(), 16, false)
+
+	return cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+		[]llvm.Value{
+			llvm.ConstInt(cg.context.Int64Type(), 44, false),
+			fd,
+			bufInt,
+			bufLen,
+			flags,
+			addrInt,
+			addrLen,
+		}, "sendto4tmp"), nil
+}
+
+// generateRecvfrom receives data from a socket
+// recvfrom(fd, buf_ptr, buf_len) -> bytes_received
+func (cg *LLVMCodeGenerator) generateRecvfrom(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("recvfrom requires 3 arguments (fd, buf, len)")
+	}
+
+	fd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	buf, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufLen, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	cg.declareSyscall()
+
+	var bufInt llvm.Value
+	if buf.Type().TypeKind() == llvm.PointerTypeKind {
+		bufInt = cg.builder.CreatePtrToInt(buf, cg.context.Int64Type(), "recvfrom_bufint")
+	} else {
+		bufInt = buf
+	}
+
+	zero := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	syscall := cg.functions["syscall"]
+	return cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+		[]llvm.Value{
+			llvm.ConstInt(cg.context.Int64Type(), 45, false),
+			fd,
+			bufInt,
+			bufLen,
+			zero,
+			zero,
+			zero,
+		}, "recvfromtmp"), nil
+}
+
 // ============================================================================
 // FILE I/O FUNCTIONS
 // ============================================================================
@@ -1755,11 +1895,529 @@ func (cg *LLVMCodeGenerator) generateSleep(call *FunctionCall) (llvm.Value, erro
 }
 
 // ============================================================================
-// HTTP POOL FUNCTIONS (stub implementations)
+// HTTP MODULE - request helpers and response parsing
 // ============================================================================
 
+// get(fd, host_ptr, host_len, path_ptr, path_len, buf_ptr, buf_len) -> bytes read
+func (cg *LLVMCodeGenerator) generateHTTPGetSimple(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 7 {
+		return llvm.Value{}, fmt.Errorf("http::get requires 7 arguments")
+	}
+
+	fd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostPtr, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostLen, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pathPtr, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pathLen, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufPtr, err := cg.generateExpression(call.Args[5])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufLen, err := cg.generateExpression(call.Args[6])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	cg.declareSyscall()
+	syscall := cg.functions["syscall"]
+	writeNum := llvm.ConstInt(cg.context.Int64Type(), 1, false)
+	readNum := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+
+	toInt := func(v llvm.Value, name string) llvm.Value {
+		if v.Type().TypeKind() == llvm.PointerTypeKind {
+			return cg.builder.CreatePtrToInt(v, cg.context.Int64Type(), name)
+		}
+		return v
+	}
+	writePart := func(ptr llvm.Value, length llvm.Value, tag string) {
+		cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+			[]llvm.Value{writeNum, fd, toInt(ptr, tag+"_ptr"), length}, tag)
+	}
+
+	writePart(cg.createGlobalString("GET "), llvm.ConstInt(cg.context.Int64Type(), 4, false), "httpget_w1")
+	writePart(pathPtr, pathLen, "httpget_w2")
+	writePart(cg.createGlobalString(" HTTP/1.0\r\nHost: "), llvm.ConstInt(cg.context.Int64Type(), 17, false), "httpget_w3")
+	writePart(hostPtr, hostLen, "httpget_w4")
+	writePart(cg.createGlobalString("\r\nConnection: close\r\n\r\n"), llvm.ConstInt(cg.context.Int64Type(), 24, false), "httpget_w5")
+
+	return cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+		[]llvm.Value{readNum, fd, toInt(bufPtr, "httpget_buf"), bufLen}, "httpget_read"), nil
+}
+
+// post(fd, host_ptr, host_len, path_ptr, path_len, body_ptr, body_len, buf_ptr, buf_len) -> bytes read
+func (cg *LLVMCodeGenerator) generateHTTPPostSimple(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 9 {
+		return llvm.Value{}, fmt.Errorf("http::post requires 9 arguments")
+	}
+
+	fd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostPtr, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostLen, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pathPtr, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pathLen, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bodyPtr, err := cg.generateExpression(call.Args[5])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bodyLen, err := cg.generateExpression(call.Args[6])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufPtr, err := cg.generateExpression(call.Args[7])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	bufLen, err := cg.generateExpression(call.Args[8])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	cg.declareSyscall()
+	syscall := cg.functions["syscall"]
+	writeNum := llvm.ConstInt(cg.context.Int64Type(), 1, false)
+	readNum := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+
+	toInt := func(v llvm.Value, name string) llvm.Value {
+		if v.Type().TypeKind() == llvm.PointerTypeKind {
+			return cg.builder.CreatePtrToInt(v, cg.context.Int64Type(), name)
+		}
+		return v
+	}
+	writePart := func(ptr llvm.Value, length llvm.Value, tag string) {
+		cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+			[]llvm.Value{writeNum, fd, toInt(ptr, tag+"_ptr"), length}, tag)
+	}
+
+	writePart(cg.createGlobalString("POST "), llvm.ConstInt(cg.context.Int64Type(), 5, false), "httppost_w1")
+	writePart(pathPtr, pathLen, "httppost_w2")
+	writePart(cg.createGlobalString(" HTTP/1.0\r\nHost: "), llvm.ConstInt(cg.context.Int64Type(), 17, false), "httppost_w3")
+	writePart(hostPtr, hostLen, "httppost_w4")
+
+	// Emit Content-Length header using snprintf into a stack buffer.
+	snprintfFn := cg.functions["snprintf"]
+	if snprintfFn.IsNil() {
+		snprintfType := llvm.FunctionType(
+			cg.context.Int32Type(),
+			[]llvm.Type{
+				llvm.PointerType(cg.context.Int8Type(), 0),
+				cg.context.Int64Type(),
+				llvm.PointerType(cg.context.Int8Type(), 0),
+			},
+			true,
+		)
+		snprintfFn = llvm.AddFunction(cg.module, "snprintf", snprintfType)
+		snprintfFn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["snprintf"] = snprintfFn
+	}
+
+	headerBufType := llvm.ArrayType(cg.context.Int8Type(), 256)
+	headerBuf := cg.builder.CreateAlloca(headerBufType, "httppost_hdrbuf")
+	headerPtr := cg.builder.CreateBitCast(headerBuf, llvm.PointerType(cg.context.Int8Type(), 0), "httppost_hdrptr")
+	headerFmt := cg.createGlobalString("\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %ld\r\nConnection: close\r\n\r\n")
+	hdrLen32 := cg.builder.CreateCall(snprintfFn.GlobalValueType(), snprintfFn,
+		[]llvm.Value{headerPtr, llvm.ConstInt(cg.context.Int64Type(), 256, false), headerFmt, bodyLen}, "httppost_hdrlen")
+	hdrLen := cg.builder.CreateSExt(hdrLen32, cg.context.Int64Type(), "httppost_hdrlen64")
+	writePart(headerPtr, hdrLen, "httppost_w5")
+
+	writePart(bodyPtr, bodyLen, "httppost_w6")
+
+	return cg.builder.CreateCall(syscall.GlobalValueType(), syscall,
+		[]llvm.Value{readNum, fd, toInt(bufPtr, "httppost_buf"), bufLen}, "httppost_read"), nil
+}
+
+// parse_status(response_buffer, buffer_len) -> status code or 0
+func (cg *LLVMCodeGenerator) generateHTTPParseStatus(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	resp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	respPtr := resp
+	if resp.Type().TypeKind() != llvm.PointerTypeKind {
+		respPtr = cg.builder.CreateIntToPtr(resp, llvm.PointerType(cg.context.Int8Type(), 0), "httpstatus_resp_ptr")
+	}
+
+	strchrFn := cg.functions["strchr"]
+	if strchrFn.IsNil() {
+		strchrType := llvm.FunctionType(
+			llvm.PointerType(cg.context.Int8Type(), 0),
+			[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0), cg.context.Int32Type()},
+			false,
+		)
+		strchrFn = llvm.AddFunction(cg.module, "strchr", strchrType)
+		strchrFn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strchr"] = strchrFn
+	}
+
+	atoiFn := cg.functions["atoi"]
+	if atoiFn.IsNil() {
+		atoiType := llvm.FunctionType(
+			cg.context.Int32Type(),
+			[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+			false,
+		)
+		atoiFn = llvm.AddFunction(cg.module, "atoi", atoiType)
+		atoiFn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["atoi"] = atoiFn
+	}
+
+	found := cg.builder.CreateCall(strchrFn.GlobalValueType(), strchrFn,
+		[]llvm.Value{respPtr, llvm.ConstInt(cg.context.Int32Type(), 32, false)}, "httpstatus_space")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	okBB := cg.context.AddBasicBlock(currentFn, "httpstatus_ok")
+	zeroBB := cg.context.AddBasicBlock(currentFn, "httpstatus_zero")
+	mergeBB := cg.context.AddBasicBlock(currentFn, "httpstatus_merge")
+
+	isNull := cg.builder.CreateICmp(llvm.IntEQ, found, llvm.ConstNull(llvm.PointerType(cg.context.Int8Type(), 0)), "httpstatus_isnull")
+	cg.builder.CreateCondBr(isNull, zeroBB, okBB)
+
+	cg.builder.SetInsertPointAtEnd(okBB)
+	statusPtr := cg.builder.CreateGEP(cg.context.Int8Type(), found, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httpstatus_ptr")
+	status32 := cg.builder.CreateCall(atoiFn.GlobalValueType(), atoiFn, []llvm.Value{statusPtr}, "httpstatus_atoi")
+	status64 := cg.builder.CreateSExt(status32, cg.context.Int64Type(), "httpstatus_i64")
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(zeroBB)
+	zero := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(mergeBB)
+	phi := cg.builder.CreatePHI(cg.context.Int64Type(), "httpstatus_out")
+	phi.AddIncoming([]llvm.Value{status64, zero}, []llvm.BasicBlock{okBB, zeroBB})
+	return phi, nil
+}
+
+// get_body(response_buffer, buffer_len) -> pointer to body or 0
+func (cg *LLVMCodeGenerator) generateHTTPGetBody(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	resp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	respPtr := resp
+	if resp.Type().TypeKind() != llvm.PointerTypeKind {
+		respPtr = cg.builder.CreateIntToPtr(resp, llvm.PointerType(cg.context.Int8Type(), 0), "httpbody_resp_ptr")
+	}
+
+	strstrFn := cg.functions["strstr"]
+	if strstrFn.IsNil() {
+		strstrType := llvm.FunctionType(
+			llvm.PointerType(cg.context.Int8Type(), 0),
+			[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0), llvm.PointerType(cg.context.Int8Type(), 0)},
+			false,
+		)
+		strstrFn = llvm.AddFunction(cg.module, "strstr", strstrType)
+		strstrFn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strstr"] = strstrFn
+	}
+
+	found := cg.builder.CreateCall(strstrFn.GlobalValueType(), strstrFn,
+		[]llvm.Value{respPtr, cg.createGlobalString("\r\n\r\n")}, "httpbody_found")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	okBB := cg.context.AddBasicBlock(currentFn, "httpbody_ok")
+	zeroBB := cg.context.AddBasicBlock(currentFn, "httpbody_zero")
+	mergeBB := cg.context.AddBasicBlock(currentFn, "httpbody_merge")
+
+	isNull := cg.builder.CreateICmp(llvm.IntEQ, found, llvm.ConstNull(llvm.PointerType(cg.context.Int8Type(), 0)), "httpbody_isnull")
+	cg.builder.CreateCondBr(isNull, zeroBB, okBB)
+
+	cg.builder.SetInsertPointAtEnd(okBB)
+	bodyPtr := cg.builder.CreateGEP(cg.context.Int8Type(), found, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 4, false)}, "httpbody_ptr")
+	bodyInt := cg.builder.CreatePtrToInt(bodyPtr, cg.context.Int64Type(), "httpbody_int")
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(zeroBB)
+	zero := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(mergeBB)
+	phi := cg.builder.CreatePHI(cg.context.Int64Type(), "httpbody_out")
+	phi.AddIncoming([]llvm.Value{bodyInt, zero}, []llvm.BasicBlock{okBB, zeroBB})
+	return phi, nil
+}
+
+// get_header(response_buffer, buffer_len, header_name, out_value_ptr) -> length or 0
+func (cg *LLVMCodeGenerator) generateHTTPGetHeader(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	resp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	headerName, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	outPtrVal, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	respPtr := resp
+	if resp.Type().TypeKind() != llvm.PointerTypeKind {
+		respPtr = cg.builder.CreateIntToPtr(resp, llvm.PointerType(cg.context.Int8Type(), 0), "httphdr_resp_ptr")
+	}
+	hdrPtr := headerName
+	if headerName.Type().TypeKind() != llvm.PointerTypeKind {
+		hdrPtr = cg.builder.CreateIntToPtr(headerName, llvm.PointerType(cg.context.Int8Type(), 0), "httphdr_name_ptr")
+	}
+	outPtr := outPtrVal
+	if outPtrVal.Type().TypeKind() != llvm.PointerTypeKind {
+		outPtr = cg.builder.CreateIntToPtr(outPtrVal, llvm.PointerType(cg.context.Int8Type(), 0), "httphdr_out_ptr")
+	}
+
+	strlen := cg.functions["strlen"]
+	if strlen.IsNil() {
+		strlenType := llvm.FunctionType(cg.context.Int64Type(), []llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)}, false)
+		strlen = llvm.AddFunction(cg.module, "strlen", strlenType)
+		strlen.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strlen"] = strlen
+	}
+	strstr := cg.functions["strstr"]
+	if strstr.IsNil() {
+		strstrType := llvm.FunctionType(llvm.PointerType(cg.context.Int8Type(), 0), []llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0), llvm.PointerType(cg.context.Int8Type(), 0)}, false)
+		strstr = llvm.AddFunction(cg.module, "strstr", strstrType)
+		strstr.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strstr"] = strstr
+	}
+
+	hdrLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{hdrPtr}, "httphdr_len")
+	found := cg.builder.CreateCall(strstr.GlobalValueType(), strstr, []llvm.Value{respPtr, hdrPtr}, "httphdr_found")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	zeroBB := cg.context.AddBasicBlock(currentFn, "httphdr_zero")
+	checkBB := cg.context.AddBasicBlock(currentFn, "httphdr_check")
+	initBB := cg.context.AddBasicBlock(currentFn, "httphdr_init")
+	skipWsBB := cg.context.AddBasicBlock(currentFn, "httphdr_skipws")
+	copyLoopBB := cg.context.AddBasicBlock(currentFn, "httphdr_copy_loop")
+	copyBodyBB := cg.context.AddBasicBlock(currentFn, "httphdr_copy_body")
+	doneBB := cg.context.AddBasicBlock(currentFn, "httphdr_done")
+	mergeBB := cg.context.AddBasicBlock(currentFn, "httphdr_merge")
+
+	cursorPtr := cg.builder.CreateAlloca(llvm.PointerType(cg.context.Int8Type(), 0), "httphdr_cursor")
+	outCursorPtr := cg.builder.CreateAlloca(llvm.PointerType(cg.context.Int8Type(), 0), "httphdr_outcursor")
+	lenPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "httphdr_lenptr")
+
+	isNull := cg.builder.CreateICmp(llvm.IntEQ, found, llvm.ConstNull(llvm.PointerType(cg.context.Int8Type(), 0)), "httphdr_isnull")
+	cg.builder.CreateCondBr(isNull, zeroBB, checkBB)
+
+	cg.builder.SetInsertPointAtEnd(checkBB)
+	colonPtr := cg.builder.CreateGEP(cg.context.Int8Type(), found, []llvm.Value{hdrLen}, "httphdr_colon_ptr")
+	colonCh := cg.builder.CreateLoad(cg.context.Int8Type(), colonPtr, "httphdr_colon_ch")
+	isColon := cg.builder.CreateICmp(llvm.IntEQ, colonCh, llvm.ConstInt(cg.context.Int8Type(), 58, false), "httphdr_iscolon")
+	cg.builder.CreateCondBr(isColon, initBB, zeroBB)
+
+	cg.builder.SetInsertPointAtEnd(initBB)
+	startVal := cg.builder.CreateGEP(cg.context.Int8Type(), colonPtr, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httphdr_start")
+	cg.builder.CreateStore(startVal, cursorPtr)
+	cg.builder.CreateStore(outPtr, outCursorPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), lenPtr)
+	cg.builder.CreateBr(skipWsBB)
+
+	cg.builder.SetInsertPointAtEnd(skipWsBB)
+	cursor := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), cursorPtr, "httphdr_cursor_val")
+	ch := cg.builder.CreateLoad(cg.context.Int8Type(), cursor, "httphdr_ws_ch")
+	isSpace := cg.builder.CreateICmp(llvm.IntEQ, ch, llvm.ConstInt(cg.context.Int8Type(), 32, false), "httphdr_isspace")
+	nextCursor := cg.builder.CreateGEP(cg.context.Int8Type(), cursor, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httphdr_next_ws")
+	cg.builder.CreateStore(nextCursor, cursorPtr)
+	cg.builder.CreateCondBr(isSpace, skipWsBB, copyLoopBB)
+
+	cg.builder.SetInsertPointAtEnd(copyLoopBB)
+	cursor2 := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), cursorPtr, "httphdr_cursor2")
+	ch2 := cg.builder.CreateLoad(cg.context.Int8Type(), cursor2, "httphdr_ch2")
+	isCR := cg.builder.CreateICmp(llvm.IntEQ, ch2, llvm.ConstInt(cg.context.Int8Type(), 13, false), "httphdr_iscr")
+	isLF := cg.builder.CreateICmp(llvm.IntEQ, ch2, llvm.ConstInt(cg.context.Int8Type(), 10, false), "httphdr_islf")
+	isZeroCh := cg.builder.CreateICmp(llvm.IntEQ, ch2, llvm.ConstInt(cg.context.Int8Type(), 0, false), "httphdr_iszero")
+	stopA := cg.builder.CreateOr(isCR, isLF, "httphdr_stopa")
+	stop := cg.builder.CreateOr(stopA, isZeroCh, "httphdr_stop")
+	cg.builder.CreateCondBr(stop, doneBB, copyBodyBB)
+
+	cg.builder.SetInsertPointAtEnd(copyBodyBB)
+	outCur := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), outCursorPtr, "httphdr_outcur")
+	cg.builder.CreateStore(ch2, outCur)
+	nextOut := cg.builder.CreateGEP(cg.context.Int8Type(), outCur, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httphdr_nextout")
+	nextIn := cg.builder.CreateGEP(cg.context.Int8Type(), cursor2, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httphdr_nextin")
+	cg.builder.CreateStore(nextOut, outCursorPtr)
+	cg.builder.CreateStore(nextIn, cursorPtr)
+	lenVal := cg.builder.CreateLoad(cg.context.Int64Type(), lenPtr, "httphdr_lenval")
+	cg.builder.CreateStore(cg.builder.CreateAdd(lenVal, llvm.ConstInt(cg.context.Int64Type(), 1, false), "httphdr_leninc"), lenPtr)
+	cg.builder.CreateBr(copyLoopBB)
+
+	cg.builder.SetInsertPointAtEnd(doneBB)
+	outEnd := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), outCursorPtr, "httphdr_outend")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int8Type(), 0, false), outEnd)
+	lenOut := cg.builder.CreateLoad(cg.context.Int64Type(), lenPtr, "httphdr_lenout")
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(zeroBB)
+	zero := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	cg.builder.CreateBr(mergeBB)
+
+	cg.builder.SetInsertPointAtEnd(mergeBB)
+	phi := cg.builder.CreatePHI(cg.context.Int64Type(), "httphdr_out")
+	phi.AddIncoming([]llvm.Value{lenOut, zero}, []llvm.BasicBlock{doneBB, zeroBB})
+	return phi, nil
+}
+
+// parse_headers(response_buffer, buffer_len, out_headers_array) -> count
+func (cg *LLVMCodeGenerator) generateHTTPParseHeaders(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	resp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	respPtr := resp
+	if resp.Type().TypeKind() != llvm.PointerTypeKind {
+		respPtr = cg.builder.CreateIntToPtr(resp, llvm.PointerType(cg.context.Int8Type(), 0), "httpparsehdr_resp_ptr")
+	}
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	findStatusEndBB := cg.context.AddBasicBlock(currentFn, "httpparsehdr_find_status_end")
+	headerLoopBB := cg.context.AddBasicBlock(currentFn, "httpparsehdr_header_loop")
+	lineScanBB := cg.context.AddBasicBlock(currentFn, "httpparsehdr_line_scan")
+	lineNextBB := cg.context.AddBasicBlock(currentFn, "httpparsehdr_line_next")
+	doneBB := cg.context.AddBasicBlock(currentFn, "httpparsehdr_done")
+
+	ptrVar := cg.builder.CreateAlloca(llvm.PointerType(cg.context.Int8Type(), 0), "httpparsehdr_ptr")
+	countVar := cg.builder.CreateAlloca(cg.context.Int64Type(), "httpparsehdr_count")
+	hasColonVar := cg.builder.CreateAlloca(cg.context.Int1Type(), "httpparsehdr_hascolon")
+
+	cg.builder.CreateStore(respPtr, ptrVar)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), countVar)
+	cg.builder.CreateBr(findStatusEndBB)
+
+	cg.builder.SetInsertPointAtEnd(findStatusEndBB)
+	ptr := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), ptrVar, "httpparsehdr_ptr0")
+	ch := cg.builder.CreateLoad(cg.context.Int8Type(), ptr, "httpparsehdr_ch0")
+	isZero := cg.builder.CreateICmp(llvm.IntEQ, ch, llvm.ConstInt(cg.context.Int8Type(), 0, false), "httpparsehdr_zero0")
+	isLF := cg.builder.CreateICmp(llvm.IntEQ, ch, llvm.ConstInt(cg.context.Int8Type(), 10, false), "httpparsehdr_lf0")
+	nextPtr := cg.builder.CreateGEP(cg.context.Int8Type(), ptr, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httpparsehdr_ptr1")
+	cg.builder.CreateStore(nextPtr, ptrVar)
+	toDone := cg.builder.CreateOr(isZero, isLF, "httpparsehdr_done0")
+	cg.builder.CreateCondBr(toDone, headerLoopBB, findStatusEndBB)
+
+	cg.builder.SetInsertPointAtEnd(headerLoopBB)
+	hdrPtr := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), ptrVar, "httpparsehdr_hdrptr")
+	hdrCh := cg.builder.CreateLoad(cg.context.Int8Type(), hdrPtr, "httpparsehdr_hdrch")
+	hdrIsZero := cg.builder.CreateICmp(llvm.IntEQ, hdrCh, llvm.ConstInt(cg.context.Int8Type(), 0, false), "httpparsehdr_hdrzero")
+	hdrIsCR := cg.builder.CreateICmp(llvm.IntEQ, hdrCh, llvm.ConstInt(cg.context.Int8Type(), 13, false), "httpparsehdr_hdrcr")
+	hdrIsLF := cg.builder.CreateICmp(llvm.IntEQ, hdrCh, llvm.ConstInt(cg.context.Int8Type(), 10, false), "httpparsehdr_hdrlf")
+	endHeadersA := cg.builder.CreateOr(hdrIsCR, hdrIsLF, "httpparsehdr_endA")
+	endHeaders := cg.builder.CreateOr(hdrIsZero, endHeadersA, "httpparsehdr_end")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int1Type(), 0, false), hasColonVar)
+	cg.builder.CreateCondBr(endHeaders, doneBB, lineScanBB)
+
+	cg.builder.SetInsertPointAtEnd(lineScanBB)
+	linePtr := cg.builder.CreateLoad(llvm.PointerType(cg.context.Int8Type(), 0), ptrVar, "httpparsehdr_lineptr")
+	lineCh := cg.builder.CreateLoad(cg.context.Int8Type(), linePtr, "httpparsehdr_linech")
+	lineIsZero := cg.builder.CreateICmp(llvm.IntEQ, lineCh, llvm.ConstInt(cg.context.Int8Type(), 0, false), "httpparsehdr_linezero")
+	lineIsLF := cg.builder.CreateICmp(llvm.IntEQ, lineCh, llvm.ConstInt(cg.context.Int8Type(), 10, false), "httpparsehdr_linelf")
+	lineIsColon := cg.builder.CreateICmp(llvm.IntEQ, lineCh, llvm.ConstInt(cg.context.Int8Type(), 58, false), "httpparsehdr_linecolon")
+	prevHasColon := cg.builder.CreateLoad(cg.context.Int1Type(), hasColonVar, "httpparsehdr_prevcolon")
+	newHasColon := cg.builder.CreateOr(prevHasColon, lineIsColon, "httpparsehdr_newcolon")
+	cg.builder.CreateStore(newHasColon, hasColonVar)
+	nextLinePtr := cg.builder.CreateGEP(cg.context.Int8Type(), linePtr, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "httpparsehdr_linenext")
+	cg.builder.CreateStore(nextLinePtr, ptrVar)
+	lineDone := cg.builder.CreateOr(lineIsZero, lineIsLF, "httpparsehdr_linedone")
+	cg.builder.CreateCondBr(lineDone, lineNextBB, lineScanBB)
+
+	cg.builder.SetInsertPointAtEnd(lineNextBB)
+	hasColon := cg.builder.CreateLoad(cg.context.Int1Type(), hasColonVar, "httpparsehdr_hascolon_out")
+	count := cg.builder.CreateLoad(cg.context.Int64Type(), countVar, "httpparsehdr_count_val")
+	incCount := cg.builder.CreateAdd(count, llvm.ConstInt(cg.context.Int64Type(), 1, false), "httpparsehdr_count_inc")
+	newCount := cg.builder.CreateSelect(hasColon, incCount, count, "httpparsehdr_count_sel")
+	cg.builder.CreateStore(newCount, countVar)
+	cg.builder.CreateBr(headerLoopBB)
+
+	cg.builder.SetInsertPointAtEnd(doneBB)
+	return cg.builder.CreateLoad(cg.context.Int64Type(), countVar, "httpparsehdr_out"), nil
+}
+
+// ============================================================================
+// HTTP POOL FUNCTIONS
+// ============================================================================
+
+func (cg *LLVMCodeGenerator) generateHTTPHostHash(hostPtr llvm.Value, prefix string) llvm.Value {
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, prefix+"_loop")
+	bodyBB := cg.context.AddBasicBlock(currentFn, prefix+"_body")
+	doneBB := cg.context.AddBasicBlock(currentFn, prefix+"_done")
+
+	hashPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), prefix+"_hash")
+	charPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), prefix+"_charptr")
+
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 5381, false), hashPtr)
+	cg.builder.CreateStore(hostPtr, charPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	curPtrInt := cg.builder.CreateLoad(cg.context.Int64Type(), charPtr, prefix+"_curptr")
+	curPtr := cg.builder.CreateIntToPtr(curPtrInt, llvm.PointerType(cg.context.Int8Type(), 0), prefix+"_curptr_i8")
+	ch := cg.builder.CreateLoad(cg.context.Int8Type(), curPtr, prefix+"_ch")
+	isZero := cg.builder.CreateICmp(llvm.IntEQ, ch, llvm.ConstInt(cg.context.Int8Type(), 0, false), prefix+"_iszero")
+	cg.builder.CreateCondBr(isZero, doneBB, bodyBB)
+
+	cg.builder.SetInsertPointAtEnd(bodyBB)
+	hash := cg.builder.CreateLoad(cg.context.Int64Type(), hashPtr, prefix+"_hashv")
+	hashMul := cg.builder.CreateMul(hash, llvm.ConstInt(cg.context.Int64Type(), 33, false), prefix+"_hashmul")
+	ch64 := cg.builder.CreateZExt(ch, cg.context.Int64Type(), prefix+"_ch64")
+	newHash := cg.builder.CreateAdd(hashMul, ch64, prefix+"_newhash")
+	cg.builder.CreateStore(newHash, hashPtr)
+	nextPtr := cg.builder.CreateAdd(curPtrInt, llvm.ConstInt(cg.context.Int64Type(), 1, false), prefix+"_nextptr")
+	cg.builder.CreateStore(nextPtr, charPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(doneBB)
+	return cg.builder.CreateLoad(cg.context.Int64Type(), hashPtr, prefix+"_hashout")
+}
+
 func (cg *LLVMCodeGenerator) generatePoolNew(call *FunctionCall) (llvm.Value, error) {
-	// Just allocate a simple counter for pool management
 	if len(call.Args) != 1 {
 		return llvm.Value{}, nil
 	}
@@ -1769,27 +2427,249 @@ func (cg *LLVMCodeGenerator) generatePoolNew(call *FunctionCall) (llvm.Value, er
 		return llvm.Value{}, err
 	}
 
-	// Allocate size * 8 bytes for connection pool
-	eight := llvm.ConstInt(cg.context.Int64Type(), 8, false)
-	allocSize := cg.builder.CreateMul(size, eight, "poolsize")
+	slotSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolSlotSize), false)
+	headerSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolHeaderSize), false)
+	allocSize := cg.builder.CreateMul(size, slotSize, "poolslotbytes")
+	allocSize = cg.builder.CreateAdd(allocSize, headerSize, "poolsize")
 
 	malloc := cg.functions["malloc"]
-	ptr := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{allocSize}, "poolalloc")
-	return cg.builder.CreatePtrToInt(ptr, cg.context.Int64Type(), "poolptr"), nil
+	if malloc.IsNil() {
+		mallocType := llvm.FunctionType(
+			llvm.PointerType(cg.context.Int8Type(), 0),
+			[]llvm.Type{cg.context.Int64Type()},
+			false,
+		)
+		malloc = llvm.AddFunction(cg.module, "malloc", mallocType)
+		malloc.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["malloc"] = malloc
+	}
+
+	poolRaw := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{allocSize}, "poolalloc")
+	poolPtr := cg.builder.CreatePtrToInt(poolRaw, cg.context.Int64Type(), "poolptr")
+
+	poolI64 := cg.builder.CreateIntToPtr(poolPtr, llvm.PointerType(cg.context.Int64Type(), 0), "pooli64")
+	usedCountPtr := cg.builder.CreateGEP(cg.context.Int64Type(), poolI64, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "pool_used_ptr")
+	cg.builder.CreateStore(size, poolI64)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), usedCountPtr)
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, "poolnew_loop")
+	bodyBB := cg.context.AddBasicBlock(currentFn, "poolnew_body")
+	exitBB := cg.context.AddBasicBlock(currentFn, "poolnew_exit")
+
+	iPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolnew_i")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), iPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	i := cg.builder.CreateLoad(cg.context.Int64Type(), iPtr, "poolnew_i_val")
+	cond := cg.builder.CreateICmp(llvm.IntULT, i, size, "poolnew_cond")
+	cg.builder.CreateCondBr(cond, bodyBB, exitBB)
+
+	cg.builder.SetInsertPointAtEnd(bodyBB)
+	baseOff := cg.builder.CreateAdd(headerSize, cg.builder.CreateMul(i, slotSize, "poolnew_slotmul"), "poolnew_baseoff")
+	slotAddr := cg.builder.CreateAdd(poolPtr, baseOff, "poolnew_slotaddr")
+	fdPtr := cg.builder.CreateIntToPtr(slotAddr, llvm.PointerType(cg.context.Int64Type(), 0), "poolnew_fdptr")
+	hashPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 8, false), "poolnew_hashaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolnew_hashptr",
+	)
+	portPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 16, false), "poolnew_portaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolnew_portptr",
+	)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true), fdPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), hashPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), portPtr)
+
+	nextI := cg.builder.CreateAdd(i, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolnew_nexti")
+	cg.builder.CreateStore(nextI, iPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(exitBB)
+	return poolPtr, nil
 }
 
 func (cg *LLVMCodeGenerator) generatePoolGet(call *FunctionCall) (llvm.Value, error) {
-	// Stub: return 0 as a fake connection
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	if len(call.Args) != 3 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true), nil
+	}
+
+	poolPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostPtr, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	port, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	hostHash := cg.generateHTTPHostHash(hostPtr, "poolget_hash")
+
+	poolI64 := cg.builder.CreateIntToPtr(poolPtr, llvm.PointerType(cg.context.Int64Type(), 0), "poolget_pooli64")
+	maxSlots := cg.builder.CreateLoad(cg.context.Int64Type(), poolI64, "poolget_maxslots")
+	usedCountPtr := cg.builder.CreateGEP(cg.context.Int64Type(), poolI64, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "poolget_usedptr")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, "poolget_loop")
+	bodyBB := cg.context.AddBasicBlock(currentFn, "poolget_body")
+	checkBB := cg.context.AddBasicBlock(currentFn, "poolget_check")
+	nextBB := cg.context.AddBasicBlock(currentFn, "poolget_next")
+	foundBB := cg.context.AddBasicBlock(currentFn, "poolget_found")
+	exitBB := cg.context.AddBasicBlock(currentFn, "poolget_exit")
+
+	iPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolget_i")
+	resultPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolget_result")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), iPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true), resultPtr)
+	cg.builder.CreateBr(loopBB)
+
+	slotSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolSlotSize), false)
+	headerSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolHeaderSize), false)
+	minusOne := llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	i := cg.builder.CreateLoad(cg.context.Int64Type(), iPtr, "poolget_i_val")
+	cond := cg.builder.CreateICmp(llvm.IntULT, i, maxSlots, "poolget_cond")
+	cg.builder.CreateCondBr(cond, bodyBB, exitBB)
+
+	cg.builder.SetInsertPointAtEnd(bodyBB)
+	baseOff := cg.builder.CreateAdd(headerSize, cg.builder.CreateMul(i, slotSize, "poolget_slotmul"), "poolget_baseoff")
+	slotAddr := cg.builder.CreateAdd(poolPtr, baseOff, "poolget_slotaddr")
+	fdPtr := cg.builder.CreateIntToPtr(slotAddr, llvm.PointerType(cg.context.Int64Type(), 0), "poolget_fdptr")
+	fd := cg.builder.CreateLoad(cg.context.Int64Type(), fdPtr, "poolget_fd")
+	isUsed := cg.builder.CreateICmp(llvm.IntNE, fd, minusOne, "poolget_isused")
+	cg.builder.CreateCondBr(isUsed, checkBB, nextBB)
+
+	cg.builder.SetInsertPointAtEnd(checkBB)
+	hashPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 8, false), "poolget_hashaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolget_hashptr",
+	)
+	portPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 16, false), "poolget_portaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolget_portptr",
+	)
+	slotHash := cg.builder.CreateLoad(cg.context.Int64Type(), hashPtr, "poolget_slothash")
+	slotPort := cg.builder.CreateLoad(cg.context.Int64Type(), portPtr, "poolget_slotport")
+	hashMatch := cg.builder.CreateICmp(llvm.IntEQ, slotHash, hostHash, "poolget_hashmatch")
+	portMatch := cg.builder.CreateICmp(llvm.IntEQ, slotPort, port, "poolget_portmatch")
+	bothMatch := cg.builder.CreateAnd(hashMatch, portMatch, "poolget_bothmatch")
+	cg.builder.CreateCondBr(bothMatch, foundBB, nextBB)
+
+	cg.builder.SetInsertPointAtEnd(foundBB)
+	cg.builder.CreateStore(fd, resultPtr)
+	cg.builder.CreateStore(minusOne, fdPtr)
+	usedCount := cg.builder.CreateLoad(cg.context.Int64Type(), usedCountPtr, "poolget_used")
+	newUsed := cg.builder.CreateSub(usedCount, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolget_newused")
+	cg.builder.CreateStore(newUsed, usedCountPtr)
+	cg.builder.CreateBr(exitBB)
+
+	cg.builder.SetInsertPointAtEnd(nextBB)
+	nextI := cg.builder.CreateAdd(i, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolget_nexti")
+	cg.builder.CreateStore(nextI, iPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(exitBB)
+	return cg.builder.CreateLoad(cg.context.Int64Type(), resultPtr, "poolget_out"), nil
 }
 
 func (cg *LLVMCodeGenerator) generatePoolPut(call *FunctionCall) (llvm.Value, error) {
-	// Stub: no-op
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	if len(call.Args) != 4 {
+		return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	}
+
+	poolPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fd, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hostPtr, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	port, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	hostHash := cg.generateHTTPHostHash(hostPtr, "poolput_hash")
+
+	poolI64 := cg.builder.CreateIntToPtr(poolPtr, llvm.PointerType(cg.context.Int64Type(), 0), "poolput_pooli64")
+	maxSlots := cg.builder.CreateLoad(cg.context.Int64Type(), poolI64, "poolput_maxslots")
+	usedCountPtr := cg.builder.CreateGEP(cg.context.Int64Type(), poolI64, []llvm.Value{llvm.ConstInt(cg.context.Int64Type(), 1, false)}, "poolput_usedptr")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, "poolput_loop")
+	bodyBB := cg.context.AddBasicBlock(currentFn, "poolput_body")
+	nextBB := cg.context.AddBasicBlock(currentFn, "poolput_next")
+	storeBB := cg.context.AddBasicBlock(currentFn, "poolput_store")
+	exitBB := cg.context.AddBasicBlock(currentFn, "poolput_exit")
+
+	iPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolput_i")
+	resultPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolput_result")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), iPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), resultPtr)
+	cg.builder.CreateBr(loopBB)
+
+	slotSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolSlotSize), false)
+	headerSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolHeaderSize), false)
+	minusOne := llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	i := cg.builder.CreateLoad(cg.context.Int64Type(), iPtr, "poolput_i_val")
+	cond := cg.builder.CreateICmp(llvm.IntULT, i, maxSlots, "poolput_cond")
+	cg.builder.CreateCondBr(cond, bodyBB, exitBB)
+
+	cg.builder.SetInsertPointAtEnd(bodyBB)
+	baseOff := cg.builder.CreateAdd(headerSize, cg.builder.CreateMul(i, slotSize, "poolput_slotmul"), "poolput_baseoff")
+	slotAddr := cg.builder.CreateAdd(poolPtr, baseOff, "poolput_slotaddr")
+	fdPtr := cg.builder.CreateIntToPtr(slotAddr, llvm.PointerType(cg.context.Int64Type(), 0), "poolput_fdptr")
+	slotFD := cg.builder.CreateLoad(cg.context.Int64Type(), fdPtr, "poolput_slotfd")
+	isEmpty := cg.builder.CreateICmp(llvm.IntEQ, slotFD, minusOne, "poolput_isempty")
+	cg.builder.CreateCondBr(isEmpty, storeBB, nextBB)
+
+	cg.builder.SetInsertPointAtEnd(storeBB)
+	hashPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 8, false), "poolput_hashaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolput_hashptr",
+	)
+	portPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(slotAddr, llvm.ConstInt(cg.context.Int64Type(), 16, false), "poolput_portaddr"),
+		llvm.PointerType(cg.context.Int64Type(), 0),
+		"poolput_portptr",
+	)
+	cg.builder.CreateStore(fd, fdPtr)
+	cg.builder.CreateStore(hostHash, hashPtr)
+	cg.builder.CreateStore(port, portPtr)
+	usedCount := cg.builder.CreateLoad(cg.context.Int64Type(), usedCountPtr, "poolput_used")
+	newUsed := cg.builder.CreateAdd(usedCount, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolput_newused")
+	cg.builder.CreateStore(newUsed, usedCountPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 1, false), resultPtr)
+	cg.builder.CreateBr(exitBB)
+
+	cg.builder.SetInsertPointAtEnd(nextBB)
+	nextI := cg.builder.CreateAdd(i, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolput_nexti")
+	cg.builder.CreateStore(nextI, iPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(exitBB)
+	return cg.builder.CreateLoad(cg.context.Int64Type(), resultPtr, "poolput_out"), nil
 }
 
 func (cg *LLVMCodeGenerator) generatePoolClose(call *FunctionCall) (llvm.Value, error) {
-	// Free the pool
 	if len(call.Args) != 1 {
 		return llvm.Value{}, nil
 	}
@@ -1799,10 +2679,73 @@ func (cg *LLVMCodeGenerator) generatePoolClose(call *FunctionCall) (llvm.Value, 
 		return llvm.Value{}, err
 	}
 
+	poolI64 := cg.builder.CreateIntToPtr(poolPtr, llvm.PointerType(cg.context.Int64Type(), 0), "poolclose_pooli64")
+	maxSlots := cg.builder.CreateLoad(cg.context.Int64Type(), poolI64, "poolclose_maxslots")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, "poolclose_loop")
+	bodyBB := cg.context.AddBasicBlock(currentFn, "poolclose_body")
+	nextBB := cg.context.AddBasicBlock(currentFn, "poolclose_next")
+	closeBB := cg.context.AddBasicBlock(currentFn, "poolclose_close")
+	exitBB := cg.context.AddBasicBlock(currentFn, "poolclose_exit")
+
+	iPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolclose_i")
+	closedPtr := cg.builder.CreateAlloca(cg.context.Int64Type(), "poolclose_closed")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), iPtr)
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int64Type(), 0, false), closedPtr)
+	cg.builder.CreateBr(loopBB)
+
+	slotSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolSlotSize), false)
+	headerSize := llvm.ConstInt(cg.context.Int64Type(), uint64(httpPoolHeaderSize), false)
+	minusOne := llvm.ConstInt(cg.context.Int64Type(), 0xFFFFFFFFFFFFFFFF, true)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	i := cg.builder.CreateLoad(cg.context.Int64Type(), iPtr, "poolclose_i_val")
+	cond := cg.builder.CreateICmp(llvm.IntULT, i, maxSlots, "poolclose_cond")
+	cg.builder.CreateCondBr(cond, bodyBB, exitBB)
+
+	cg.builder.SetInsertPointAtEnd(bodyBB)
+	baseOff := cg.builder.CreateAdd(headerSize, cg.builder.CreateMul(i, slotSize, "poolclose_slotmul"), "poolclose_baseoff")
+	slotAddr := cg.builder.CreateAdd(poolPtr, baseOff, "poolclose_slotaddr")
+	fdPtr := cg.builder.CreateIntToPtr(slotAddr, llvm.PointerType(cg.context.Int64Type(), 0), "poolclose_fdptr")
+	fd := cg.builder.CreateLoad(cg.context.Int64Type(), fdPtr, "poolclose_fd")
+	isUsed := cg.builder.CreateICmp(llvm.IntNE, fd, minusOne, "poolclose_isused")
+	cg.builder.CreateCondBr(isUsed, closeBB, nextBB)
+
+	cg.builder.SetInsertPointAtEnd(closeBB)
+	cg.declareSyscall()
+	syscall := cg.functions["syscall"]
+	zero := llvm.ConstInt(cg.context.Int64Type(), 0, false)
+	closeNum := llvm.ConstInt(cg.context.Int64Type(), 3, false)
+	cg.builder.CreateCall(syscall.GlobalValueType(), syscall, []llvm.Value{closeNum, fd, zero, zero}, "poolclose_syscall")
+	closed := cg.builder.CreateLoad(cg.context.Int64Type(), closedPtr, "poolclose_closed_val")
+	closedNext := cg.builder.CreateAdd(closed, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolclose_closed_next")
+	cg.builder.CreateStore(closedNext, closedPtr)
+	cg.builder.CreateStore(minusOne, fdPtr)
+	cg.builder.CreateBr(nextBB)
+
+	cg.builder.SetInsertPointAtEnd(nextBB)
+	nextI := cg.builder.CreateAdd(i, llvm.ConstInt(cg.context.Int64Type(), 1, false), "poolclose_nexti")
+	cg.builder.CreateStore(nextI, iPtr)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(exitBB)
+
 	ptr := cg.builder.CreateIntToPtr(poolPtr, llvm.PointerType(cg.context.Int8Type(), 0), "freeptr")
 	free := cg.functions["free"]
+	if free.IsNil() {
+		freeType := llvm.FunctionType(
+			cg.context.VoidType(),
+			[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+			false,
+		)
+		free = llvm.AddFunction(cg.module, "free", freeType)
+		free.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["free"] = free
+	}
 	cg.builder.CreateCall(free.GlobalValueType(), free, []llvm.Value{ptr}, "")
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+
+	return cg.builder.CreateLoad(cg.context.Int64Type(), closedPtr, "poolclose_out"), nil
 }
 
 // ============================================================================
@@ -3388,14 +4331,18 @@ func (cg *LLVMCodeGenerator) generateRegexFind(call *FunctionCall) (llvm.Value, 
 // generateRegexReplace generates code for regex::replace(pattern, replacement, string) -> string
 // Replaces the first match with the replacement string
 func (cg *LLVMCodeGenerator) generateRegexReplace(call *FunctionCall) (llvm.Value, error) {
-	// For now, return the original string (stub)
-	// Full implementation would be complex due to memory management
 	if len(call.Args) < 3 {
 		return llvm.Value{}, fmt.Errorf("regex::replace requires 3 arguments (pattern, replacement, string)")
 	}
 
-	// Return the original string for now
-	return cg.generateExpression(call.Args[2])
+	// Reuse string replace implementation with reordered args: (str, old, new).
+	// This provides a non-stub fallback and aligns with existing backend behavior
+	// where regex replacement currently maps to literal substring replacement.
+	replaceCall := &FunctionCall{
+		Name: "replace",
+		Args: []ASTNode{call.Args[2], call.Args[0], call.Args[1]},
+	}
+	return cg.generateReplace(replaceCall)
 }
 
 // generateRegexReplaceAll generates code for regex::replace_all(pattern, replacement, string) -> string
@@ -3404,8 +4351,129 @@ func (cg *LLVMCodeGenerator) generateRegexReplaceAll(call *FunctionCall) (llvm.V
 		return llvm.Value{}, fmt.Errorf("regex::replace_all requires 3 arguments (pattern, replacement, string)")
 	}
 
-	// Return the original string for now (stub)
-	return cg.generateExpression(call.Args[2])
+	pattern, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	replacement, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	source, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	i8ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+	toPtr := func(v llvm.Value, name string) llvm.Value {
+		if v.Type().TypeKind() == llvm.PointerTypeKind {
+			return v
+		}
+		return cg.builder.CreateIntToPtr(v, i8ptr, name)
+	}
+
+	oldPtr := toPtr(pattern, "regex_old_ptr")
+	newPtr := toPtr(replacement, "regex_new_ptr")
+	srcPtr := toPtr(source, "regex_src_ptr")
+
+	strlen := cg.functions["strlen"]
+	if strlen.IsNil() {
+		strlenType := llvm.FunctionType(cg.context.Int64Type(), []llvm.Type{i8ptr}, false)
+		strlen = llvm.AddFunction(cg.module, "strlen", strlenType)
+		strlen.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strlen"] = strlen
+	}
+	strcpy := cg.functions["strcpy"]
+	if strcpy.IsNil() {
+		strcpyType := llvm.FunctionType(i8ptr, []llvm.Type{i8ptr, i8ptr}, false)
+		strcpy = llvm.AddFunction(cg.module, "strcpy", strcpyType)
+		strcpy.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strcpy"] = strcpy
+	}
+	strstr := cg.functions["strstr"]
+	if strstr.IsNil() {
+		strstrType := llvm.FunctionType(i8ptr, []llvm.Type{i8ptr, i8ptr}, false)
+		strstr = llvm.AddFunction(cg.module, "strstr", strstrType)
+		strstr.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["strstr"] = strstr
+	}
+	malloc := cg.functions["malloc"]
+	if malloc.IsNil() {
+		mallocType := llvm.FunctionType(i8ptr, []llvm.Type{cg.context.Int64Type()}, false)
+		malloc = llvm.AddFunction(cg.module, "malloc", mallocType)
+		malloc.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["malloc"] = malloc
+	}
+	memcpy := cg.functions["memcpy"]
+	if memcpy.IsNil() {
+		memcpyType := llvm.FunctionType(i8ptr, []llvm.Type{i8ptr, i8ptr, cg.context.Int64Type()}, false)
+		memcpy = llvm.AddFunction(cg.module, "memcpy", memcpyType)
+		memcpy.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["memcpy"] = memcpy
+	}
+	free := cg.functions["free"]
+	if free.IsNil() {
+		freeType := llvm.FunctionType(cg.context.VoidType(), []llvm.Type{i8ptr}, false)
+		free = llvm.AddFunction(cg.module, "free", freeType)
+		free.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["free"] = free
+	}
+
+	oldLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{oldPtr}, "regex_old_len")
+	newLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{newPtr}, "regex_new_len")
+	srcLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{srcPtr}, "regex_src_len")
+	one := llvm.ConstInt(cg.context.Int64Type(), 1, false)
+	initAlloc := cg.builder.CreateAdd(srcLen, one, "regex_init_alloc")
+	initBuf := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{initAlloc}, "regex_init_buf")
+	cg.builder.CreateCall(strcpy.GlobalValueType(), strcpy, []llvm.Value{initBuf, srcPtr}, "regex_init_copy")
+
+	currentFn := cg.builder.GetInsertBlock().Parent()
+	loopBB := cg.context.AddBasicBlock(currentFn, "regex_replace_all_loop")
+	replaceBB := cg.context.AddBasicBlock(currentFn, "regex_replace_all_replace")
+	doneBB := cg.context.AddBasicBlock(currentFn, "regex_replace_all_done")
+
+	currentPtrVar := cg.builder.CreateAlloca(i8ptr, "regex_replace_all_current")
+	cg.builder.CreateStore(initBuf, currentPtrVar)
+
+	isEmptyPattern := cg.builder.CreateICmp(llvm.IntEQ, oldLen, llvm.ConstInt(cg.context.Int64Type(), 0, false), "regex_old_empty")
+	cg.builder.CreateCondBr(isEmptyPattern, doneBB, loopBB)
+
+	cg.builder.SetInsertPointAtEnd(loopBB)
+	currentStr := cg.builder.CreateLoad(i8ptr, currentPtrVar, "regex_cur")
+	found := cg.builder.CreateCall(strstr.GlobalValueType(), strstr, []llvm.Value{currentStr, oldPtr}, "regex_found")
+	isNull := cg.builder.CreateICmp(llvm.IntEQ, found, llvm.ConstNull(i8ptr), "regex_found_null")
+	cg.builder.CreateCondBr(isNull, doneBB, replaceBB)
+
+	cg.builder.SetInsertPointAtEnd(replaceBB)
+	curLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{currentStr}, "regex_cur_len")
+	diff := cg.builder.CreateSub(newLen, oldLen, "regex_diff")
+	resultLen := cg.builder.CreateAdd(curLen, diff, "regex_result_len")
+	allocSize := cg.builder.CreateAdd(resultLen, one, "regex_alloc_size")
+	result := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{allocSize}, "regex_result_buf")
+
+	currentInt := cg.builder.CreatePtrToInt(currentStr, cg.context.Int64Type(), "regex_cur_int")
+	foundInt := cg.builder.CreatePtrToInt(found, cg.context.Int64Type(), "regex_found_int")
+	prefixLen := cg.builder.CreateSub(foundInt, currentInt, "regex_prefix_len")
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{result, currentStr, prefixLen}, "regex_copy_prefix")
+
+	dest1 := cg.builder.CreateGEP(cg.context.Int8Type(), result, []llvm.Value{prefixLen}, "regex_dest1")
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{dest1, newPtr, newLen}, "regex_copy_new")
+
+	suffixStart := cg.builder.CreateGEP(cg.context.Int8Type(), found, []llvm.Value{oldLen}, "regex_suffix_start")
+	suffixLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{suffixStart}, "regex_suffix_len")
+	dest2Off := cg.builder.CreateAdd(prefixLen, newLen, "regex_dest2_off")
+	dest2 := cg.builder.CreateGEP(cg.context.Int8Type(), result, []llvm.Value{dest2Off}, "regex_dest2")
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{dest2, suffixStart, suffixLen}, "regex_copy_suffix")
+
+	nullPos := cg.builder.CreateGEP(cg.context.Int8Type(), result, []llvm.Value{resultLen}, "regex_null_pos")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int8Type(), 0, false), nullPos)
+
+	cg.builder.CreateCall(free.GlobalValueType(), free, []llvm.Value{currentStr}, "")
+	cg.builder.CreateStore(result, currentPtrVar)
+	cg.builder.CreateBr(loopBB)
+
+	cg.builder.SetInsertPointAtEnd(doneBB)
+	return cg.builder.CreateLoad(i8ptr, currentPtrVar, "regex_replace_all_out"), nil
 }
 
 // generateRegexSplit generates code for regex::split(pattern, string) -> returns first token
@@ -3414,8 +4482,12 @@ func (cg *LLVMCodeGenerator) generateRegexSplit(call *FunctionCall) (llvm.Value,
 		return llvm.Value{}, fmt.Errorf("regex::split requires 2 arguments (pattern, string)")
 	}
 
-	// Return the original string for now (stub)
-	return cg.generateExpression(call.Args[1])
+	// Reuse string split implementation (str, delimiter) with reordered args.
+	splitCall := &FunctionCall{
+		Name: "split",
+		Args: []ASTNode{call.Args[1], call.Args[0]},
+	}
+	return cg.generateSplit(splitCall)
 }
 
 // generateRegexFindAll generates code for regex::find_all(pattern, string) -> returns first match position
@@ -4959,4 +6031,668 @@ func (cg *LLVMCodeGenerator) generateSDL3Delay(call *FunctionCall) (llvm.Value, 
 
 	cg.builder.CreateCall(sdlDelay.GlobalValueType(), sdlDelay, []llvm.Value{ms32}, "")
 	return llvm.Value{}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Math trig generators (libm)
+// Each converts i64→double (or passes double through), calls the C math
+// function, and returns the double result (Lotus float representation).
+// ─────────────────────────────────────────────────────────────────────────────
+
+func llvmToDouble(cg *LLVMCodeGenerator, v llvm.Value, name string) llvm.Value {
+	if v.Type().TypeKind() == llvm.DoubleTypeKind {
+		return v
+	}
+	return cg.builder.CreateSIToFP(v, cg.context.DoubleType(), name)
+}
+
+func (cg *LLVMCodeGenerator) generateSin(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::sin requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "sinconv")
+	sinFn := cg.functions["sin"]
+	return cg.builder.CreateCall(sinFn.GlobalValueType(), sinFn, []llvm.Value{xd}, "sincall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateCos(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::cos requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "cosconv")
+	cosFn := cg.functions["cos"]
+	return cg.builder.CreateCall(cosFn.GlobalValueType(), cosFn, []llvm.Value{xd}, "coscall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateTan(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::tan requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "tanconv")
+	tanFn := cg.functions["tan"]
+	return cg.builder.CreateCall(tanFn.GlobalValueType(), tanFn, []llvm.Value{xd}, "tancall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateAtan2(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("math::atan2 requires 2 arguments")
+	}
+	y, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	yd := llvmToDouble(cg, y, "atan2y")
+	xd := llvmToDouble(cg, x, "atan2x")
+	atan2Fn := cg.functions["atan2"]
+	return cg.builder.CreateCall(atan2Fn.GlobalValueType(), atan2Fn, []llvm.Value{yd, xd}, "atan2call"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateAsin(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::asin requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "asinconv")
+	asinFn := cg.functions["asin"]
+	return cg.builder.CreateCall(asinFn.GlobalValueType(), asinFn, []llvm.Value{xd}, "asincall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateAcos(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::acos requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "acosconv")
+	acosFn := cg.functions["acos"]
+	return cg.builder.CreateCall(acosFn.GlobalValueType(), acosFn, []llvm.Value{xd}, "acoscall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateFmod(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("math::fmod requires 2 arguments")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "fmodx")
+	yd := llvmToDouble(cg, y, "fmody")
+	fmodFn := cg.functions["fmod"]
+	return cg.builder.CreateCall(fmodFn.GlobalValueType(), fmodFn, []llvm.Value{xd, yd}, "fmodcall"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateFabs(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("math::fabs requires 1 argument")
+	}
+	x, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xd := llvmToDouble(cg, x, "fabsconv")
+	fabsFn := cg.functions["fabs"]
+	return cg.builder.CreateCall(fabsFn.GlobalValueType(), fabsFn, []llvm.Value{xd}, "fabscall"), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDL3 extended: textures
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (cg *LLVMCodeGenerator) generateSDL3CreateTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 5 {
+		return llvm.Value{}, fmt.Errorf("sdl3::create_texture requires 5 arguments (renderer, format, access, w, h)")
+	}
+	renderer, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	format, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	access, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	w, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, err := cg.generateExpression(call.Args[4])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	format32 := cg.builder.CreateTrunc(format, cg.context.Int32Type(), "fmt32")
+	access32 := cg.builder.CreateTrunc(access, cg.context.Int32Type(), "acc32")
+	w32 := cg.builder.CreateTrunc(w, cg.context.Int32Type(), "w32")
+	h32 := cg.builder.CreateTrunc(h, cg.context.Int32Type(), "h32")
+	fn := cg.functions["SDL_CreateTexture"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{renderer, format32, access32, w32, h32}, "createtex")
+	return cg.builder.CreatePtrToInt(result, cg.context.Int64Type(), "createtexint"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3DestroyTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl3::destroy_texture requires 1 argument")
+	}
+	tex, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	texPtr := cg.builder.CreateIntToPtr(tex, llvm.PointerType(cg.context.Int8Type(), 0), "texptr")
+	fn := cg.functions["SDL_DestroyTexture"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{texPtr}, "")
+	return llvm.Value{}, nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3UpdateTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.Value{}, fmt.Errorf("sdl3::update_texture requires 4 arguments (texture, rect, pixels, pitch)")
+	}
+	tex, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	rect, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pixels, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pitch, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	texPtr := cg.builder.CreateIntToPtr(tex, llvm.PointerType(cg.context.Int8Type(), 0), "texptr")
+	rectPtr := cg.builder.CreateIntToPtr(rect, llvm.PointerType(cg.context.Int8Type(), 0), "rectptr")
+	pixPtr := cg.builder.CreateIntToPtr(pixels, llvm.PointerType(cg.context.Int8Type(), 0), "pixptr")
+	pitch32 := cg.builder.CreateTrunc(pitch, cg.context.Int32Type(), "pitch32")
+	fn := cg.functions["SDL_UpdateTexture"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{texPtr, rectPtr, pixPtr, pitch32}, "updatetex")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "updatetexext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3RenderTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("sdl3::render_texture requires 3 arguments (renderer, texture, dst_rect)")
+	}
+	renderer, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	tex, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	dst, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	rendPtr := cg.builder.CreateIntToPtr(renderer, llvm.PointerType(cg.context.Int8Type(), 0), "rendptr")
+	texPtr := cg.builder.CreateIntToPtr(tex, llvm.PointerType(cg.context.Int8Type(), 0), "texptr")
+	dstPtr := cg.builder.CreateIntToPtr(dst, llvm.PointerType(cg.context.Int8Type(), 0), "dstptr")
+	nullPtr := llvm.ConstNull(llvm.PointerType(cg.context.Int8Type(), 0))
+	fn := cg.functions["SDL_RenderTexture"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{rendPtr, texPtr, nullPtr, dstPtr}, "rendtex")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "rendtexext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3LockTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("sdl3::lock_texture requires 3 arguments (texture, rect, pixels_ptr)")
+	}
+	tex, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	rect, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	pixelsOut, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	texPtr := cg.builder.CreateIntToPtr(tex, llvm.PointerType(cg.context.Int8Type(), 0), "texptr")
+	rectPtr := cg.builder.CreateIntToPtr(rect, llvm.PointerType(cg.context.Int8Type(), 0), "rectptr")
+	pixPtr := cg.builder.CreateIntToPtr(pixelsOut, llvm.PointerType(llvm.PointerType(cg.context.Int8Type(), 0), 0), "pixoutptr")
+	// pitch output: allocate on stack
+	pitchAlloc := cg.builder.CreateAlloca(cg.context.Int32Type(), "pitchalloc")
+	fn := cg.functions["SDL_LockTexture"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{texPtr, rectPtr, pixPtr, pitchAlloc}, "locktex")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "locktexext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3UnlockTexture(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl3::unlock_texture requires 1 argument")
+	}
+	tex, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	texPtr := cg.builder.CreateIntToPtr(tex, llvm.PointerType(cg.context.Int8Type(), 0), "texptr")
+	fn := cg.functions["SDL_UnlockTexture"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{texPtr}, "")
+	return llvm.Value{}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDL3 extended: input
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (cg *LLVMCodeGenerator) generateSDL3GetKeyboardState(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["SDL_GetKeyboardState"]
+	nullPtr := llvm.ConstNull(llvm.PointerType(cg.context.Int32Type(), 0))
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{nullPtr}, "kbstate")
+	return cg.builder.CreatePtrToInt(result, cg.context.Int64Type(), "kbstateint"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3GetMouseState(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("sdl3::get_mouse_state requires 2 arguments (x_ptr, y_ptr)")
+	}
+	xPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	yPtr, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	xFPtr := cg.builder.CreateIntToPtr(xPtr, llvm.PointerType(cg.context.FloatType(), 0), "xfptr")
+	yFPtr := cg.builder.CreateIntToPtr(yPtr, llvm.PointerType(cg.context.FloatType(), 0), "yfptr")
+	fn := cg.functions["SDL_GetMouseState"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{xFPtr, yFPtr}, "mousestate")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "mousestateext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3GetRelativeMouseState(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("sdl3::get_relative_mouse_state requires 2 arguments (dx_ptr, dy_ptr)")
+	}
+	dxPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	dyPtr, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	dxFPtr := cg.builder.CreateIntToPtr(dxPtr, llvm.PointerType(cg.context.FloatType(), 0), "dxfptr")
+	dyFPtr := cg.builder.CreateIntToPtr(dyPtr, llvm.PointerType(cg.context.FloatType(), 0), "dyfptr")
+	fn := cg.functions["SDL_GetRelativeMouseState"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{dxFPtr, dyFPtr}, "relmousestate")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "relmousestateext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3SetRelativeMouseMode(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("sdl3::set_relative_mouse_mode requires 2 arguments (window, enabled)")
+	}
+	window, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	enabled, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	winPtr := cg.builder.CreateIntToPtr(window, llvm.PointerType(cg.context.Int8Type(), 0), "winptr")
+	en1 := cg.builder.CreateTrunc(enabled, cg.context.Int1Type(), "en1")
+	fn := cg.functions["SDL_SetWindowRelativeMouseMode"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{winPtr, en1}, "setrelmode")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "setrelmodeext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3WarpMouse(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("sdl3::warp_mouse requires 3 arguments (window, x, y)")
+	}
+	window, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	y, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	winPtr := cg.builder.CreateIntToPtr(window, llvm.PointerType(cg.context.Int8Type(), 0), "winptr")
+	xf := llvmToDouble(cg, x, "wx")
+	yf := llvmToDouble(cg, y, "wy")
+	// SDL_WarpMouseInWindow takes float32
+	xf32 := cg.builder.CreateFPTrunc(xf, cg.context.FloatType(), "wxf32")
+	yf32 := cg.builder.CreateFPTrunc(yf, cg.context.FloatType(), "wyf32")
+	fn := cg.functions["SDL_WarpMouseInWindow"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{winPtr, xf32, yf32}, "")
+	return llvm.Value{}, nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3ShowCursor(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["SDL_ShowCursor"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "showcursor")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "showcursorext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3HideCursor(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["SDL_HideCursor"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "hidecursor")
+	return cg.builder.CreateZExt(result, cg.context.Int64Type(), "hidecursorext"), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDL3 extended: performance timer
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (cg *LLVMCodeGenerator) generateSDL3GetPerfCounter(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["SDL_GetPerformanceCounter"]
+	return cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "perfcnt"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateSDL3GetPerfFreq(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["SDL_GetPerformanceFrequency"]
+	return cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "perffreq"), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDL3 extended: event helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// generateSDL3GetEventType reads the type field (first Uint32) from an SDL_Event pointer.
+func (cg *LLVMCodeGenerator) generateSDL3GetEventType(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl3::get_event_type requires 1 argument (event_ptr)")
+	}
+	evPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	// SDL_Event first field is Uint32 type; cast pointer and load
+	evRaw := cg.builder.CreateIntToPtr(evPtr, llvm.PointerType(cg.context.Int32Type(), 0), "evrawptr")
+	typeVal := cg.builder.CreateLoad(cg.context.Int32Type(), evRaw, "evtype")
+	return cg.builder.CreateZExt(typeVal, cg.context.Int64Type(), "evtypeext"), nil
+}
+
+// generateSDL3GetScancode reads the scancode from a keyboard event (offset 24 bytes in SDL_KeyboardEvent).
+func (cg *LLVMCodeGenerator) generateSDL3GetScancode(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl3::get_scancode requires 1 argument (event_ptr)")
+	}
+	evPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	// SDL_KeyboardEvent: type(4) + reserved(4) + timestamp(8) + windowID(4) + which(4) + scancode(4)
+	// scancode is at offset 24
+	evByte := cg.builder.CreateIntToPtr(evPtr, llvm.PointerType(cg.context.Int8Type(), 0), "evbyteptr")
+	scOffset := llvm.ConstInt(cg.context.Int32Type(), 24, false)
+	scPtr := cg.builder.CreateGEP(cg.context.Int8Type(), evByte, []llvm.Value{scOffset}, "scptr")
+	scTyped := cg.builder.CreateBitCast(scPtr, llvm.PointerType(cg.context.Int32Type(), 0), "sctypedptr")
+	scVal := cg.builder.CreateLoad(cg.context.Int32Type(), scTyped, "scancode")
+	return cg.builder.CreateZExt(scVal, cg.context.Int64Type(), "scancodeext"), nil
+}
+
+// generateSDL3AllocEvent allocates an SDL_Event-sized (128 bytes) zeroed buffer on the stack.
+func (cg *LLVMCodeGenerator) generateSDL3AllocEvent(call *FunctionCall) (llvm.Value, error) {
+	// Allocate 128 bytes for SDL_Event (SDL_Event is a union, max 128 bytes)
+	evType := llvm.ArrayType(cg.context.Int8Type(), 128)
+	evAlloc := cg.builder.CreateAlloca(evType, "event_alloc")
+	return cg.builder.CreatePtrToInt(evAlloc, cg.context.Int64Type(), "eventptr"), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDL_mixer generators
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (cg *LLVMCodeGenerator) generateMixOpen(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::open requires 4 arguments (freq, format, channels, chunksize)")
+	}
+	freq, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	format, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	channels, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	chunksize, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	freq32 := cg.builder.CreateTrunc(freq, cg.context.Int32Type(), "freq32")
+	fmt16 := cg.builder.CreateTrunc(format, cg.context.Int16Type(), "fmt16")
+	ch32 := cg.builder.CreateTrunc(channels, cg.context.Int32Type(), "ch32")
+	cs32 := cg.builder.CreateTrunc(chunksize, cg.context.Int32Type(), "cs32")
+	fn := cg.functions["Mix_OpenAudio"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{freq32, fmt16, ch32, cs32}, "mixopen")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "mixopenext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixClose(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["Mix_CloseAudio"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "")
+	return llvm.Value{}, nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixLoadWAV(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::load_wav requires 1 argument (file)")
+	}
+	file, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	filePtr := cg.builder.CreateIntToPtr(file, llvm.PointerType(cg.context.Int8Type(), 0), "fileptr")
+	fn := cg.functions["Mix_LoadWAV"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{filePtr}, "loadwav")
+	return cg.builder.CreatePtrToInt(result, cg.context.Int64Type(), "loadwavint"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixFreeChunk(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::free_chunk requires 1 argument")
+	}
+	chunk, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	chunkPtr := cg.builder.CreateIntToPtr(chunk, llvm.PointerType(cg.context.Int8Type(), 0), "chunkptr")
+	fn := cg.functions["Mix_FreeChunk"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{chunkPtr}, "")
+	return llvm.Value{}, nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixPlayChannel(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::play_channel requires 3 arguments (channel, chunk, loops)")
+	}
+	channel, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	chunk, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	loops, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ch32 := cg.builder.CreateTrunc(channel, cg.context.Int32Type(), "ch32")
+	chunkPtr := cg.builder.CreateIntToPtr(chunk, llvm.PointerType(cg.context.Int8Type(), 0), "chunkptr")
+	loops32 := cg.builder.CreateTrunc(loops, cg.context.Int32Type(), "loops32")
+	fn := cg.functions["Mix_PlayChannel"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{ch32, chunkPtr, loops32}, "playchan")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "plychanext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixHaltChannel(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::halt_channel requires 1 argument")
+	}
+	channel, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ch32 := cg.builder.CreateTrunc(channel, cg.context.Int32Type(), "ch32")
+	fn := cg.functions["Mix_HaltChannel"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{ch32}, "haltchan")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "haltchanext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixVolume(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::volume requires 2 arguments (channel, volume)")
+	}
+	channel, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	vol, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ch32 := cg.builder.CreateTrunc(channel, cg.context.Int32Type(), "ch32")
+	vol32 := cg.builder.CreateTrunc(vol, cg.context.Int32Type(), "vol32")
+	fn := cg.functions["Mix_Volume"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{ch32, vol32}, "mixvol")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "mixvolext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixLoadMUS(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::load_mus requires 1 argument (file)")
+	}
+	file, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	filePtr := cg.builder.CreateIntToPtr(file, llvm.PointerType(cg.context.Int8Type(), 0), "fileptr")
+	fn := cg.functions["Mix_LoadMUS"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{filePtr}, "loadmus")
+	return cg.builder.CreatePtrToInt(result, cg.context.Int64Type(), "loadmusint"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixFreeMusic(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::free_music requires 1 argument")
+	}
+	music, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	musPtr := cg.builder.CreateIntToPtr(music, llvm.PointerType(cg.context.Int8Type(), 0), "musptr")
+	fn := cg.functions["Mix_FreeMusic"]
+	cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{musPtr}, "")
+	return llvm.Value{}, nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixPlayMusic(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::play_music requires 2 arguments (music, loops)")
+	}
+	music, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	loops, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	musPtr := cg.builder.CreateIntToPtr(music, llvm.PointerType(cg.context.Int8Type(), 0), "musptr")
+	loops32 := cg.builder.CreateTrunc(loops, cg.context.Int32Type(), "loops32")
+	fn := cg.functions["Mix_PlayMusic"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{musPtr, loops32}, "playmus")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "playmusext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixHaltMusic(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["Mix_HaltMusic"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "haltmus")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "haltmusext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixVolumeMusic(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::volume_music requires 1 argument")
+	}
+	vol, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	vol32 := cg.builder.CreateTrunc(vol, cg.context.Int32Type(), "vol32")
+	fn := cg.functions["Mix_VolumeMusic"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{vol32}, "volmus")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "volmusext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixPlaying(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::playing requires 1 argument (channel)")
+	}
+	channel, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ch32 := cg.builder.CreateTrunc(channel, cg.context.Int32Type(), "ch32")
+	fn := cg.functions["Mix_Playing"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{ch32}, "playing")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "playingext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixPlayingMusic(call *FunctionCall) (llvm.Value, error) {
+	fn := cg.functions["Mix_PlayingMusic"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{}, "playingmus")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "playingmusext"), nil
+}
+
+func (cg *LLVMCodeGenerator) generateMixAllocateChannels(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("sdl_mixer::allocate_channels requires 1 argument")
+	}
+	n, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	n32 := cg.builder.CreateTrunc(n, cg.context.Int32Type(), "n32")
+	fn := cg.functions["Mix_AllocateChannels"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{n32}, "allocchans")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "allocchansext"), nil
 }

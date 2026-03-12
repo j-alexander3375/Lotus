@@ -1,0 +1,41 @@
+use "io";
+use "http";
+
+fn int main() {
+    int pool = http::pool_new(2);
+    if pool == 0 {
+        io::println("http::pool_new failed");
+        ret 1;
+    }
+
+    int put1 = http::pool_put(pool, 42, "example.com", 80);
+    int put2 = http::pool_put(pool, 43, "example.com", 443);
+    int put3 = http::pool_put(pool, 44, "overflow.example", 80);
+
+    int fd1 = http::pool_get(pool, "example.com", 80);
+    int fd2 = http::pool_get(pool, "example.com", 443);
+    int fdMissing = http::pool_get(pool, "example.com", 80);
+
+    int putAfterGet = http::pool_put(pool, 99, "reused.example", 8080);
+    int fdReused = http::pool_get(pool, "reused.example", 8080);
+
+    int closed = http::pool_close(pool);
+
+    io::println("HTTP pool: put1=%d put2=%d put3=%d", put1, put2, put3);
+    io::println("HTTP pool: fd1=%d fd2=%d missing=%d", fd1, fd2, fdMissing);
+    io::println("HTTP pool: putAfterGet=%d fdReused=%d closed=%d", putAfterGet, fdReused, closed);
+
+    if put1 != 1 { ret 2; }
+    if put2 != 1 { ret 3; }
+    if put3 != 0 { ret 4; }
+    if fd1 != 42 { ret 5; }
+    if fd2 != 43 { ret 6; }
+    if fdMissing != -1 { ret 7; }
+    if putAfterGet != 1 { ret 8; }
+    if fdReused != 99 { ret 9; }
+
+    // Should be zero after all gets consumed active entries.
+    if closed != 0 { ret 10; }
+
+    ret 0;
+}

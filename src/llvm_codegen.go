@@ -76,6 +76,11 @@ type LLVMCodeGenerator struct {
 	// Import context for stdlib
 	imports *ImportContext
 
+	// Unqualified aliases registered when a module is imported.
+	// Maps bare function name -> dispatch name (e.g. "replace_all" -> "regex__replace_all").
+	// Only populated for modules whose dispatch names differ from the bare function name.
+	importedFuncAliases map[string]string
+
 	// String counter for unique names
 	stringCounter int
 }
@@ -105,6 +110,7 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 		classDefs:                make(map[string]*ClassDefinition),
 		classTypes:               make(map[string]llvm.Type),
 		imports:                  NewImportContext(),
+		importedFuncAliases:      make(map[string]string),
 		partialApplications:      make(map[string]*PartialApplication),
 		templates:                make(map[string]*TemplateDeclaration),
 		instantiatedTemplates:    make(map[string]bool),
@@ -373,6 +379,393 @@ func (cg *LLVMCodeGenerator) declareExternalFunctions() {
 	sdlGetTicks := llvm.AddFunction(cg.module, "SDL_GetTicks", sdlGetTicksType)
 	sdlGetTicks.SetLinkage(llvm.ExternalLinkage)
 	cg.functions["SDL_GetTicks"] = sdlGetTicks
+
+	// -------------------------------------------------------------------------
+	// SDL3 EXTENDED: Textures
+	// -------------------------------------------------------------------------
+
+	// SDL_CreateTexture(SDL_Renderer*, Uint32 format, SDL_TextureAccess access, int w, int h) -> SDL_Texture*
+	sdlCreateTextureType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			cg.context.Int32Type(),                     // format
+			cg.context.Int32Type(),                     // access
+			cg.context.Int32Type(),                     // w
+			cg.context.Int32Type(),                     // h
+		},
+		false,
+	)
+	sdlCreateTexture := llvm.AddFunction(cg.module, "SDL_CreateTexture", sdlCreateTextureType)
+	sdlCreateTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_CreateTexture"] = sdlCreateTexture
+
+	// SDL_DestroyTexture(SDL_Texture*)
+	sdlDestroyTextureType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlDestroyTexture := llvm.AddFunction(cg.module, "SDL_DestroyTexture", sdlDestroyTextureType)
+	sdlDestroyTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_DestroyTexture"] = sdlDestroyTexture
+
+	// SDL_UpdateTexture(SDL_Texture*, const SDL_Rect* rect, const void* pixels, int pitch) -> bool (SDL3)
+	sdlUpdateTextureType := llvm.FunctionType(
+		cg.context.Int1Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // texture
+			llvm.PointerType(cg.context.Int8Type(), 0), // rect (nullable)
+			llvm.PointerType(cg.context.Int8Type(), 0), // pixels
+			cg.context.Int32Type(),                     // pitch
+		},
+		false,
+	)
+	sdlUpdateTexture := llvm.AddFunction(cg.module, "SDL_UpdateTexture", sdlUpdateTextureType)
+	sdlUpdateTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_UpdateTexture"] = sdlUpdateTexture
+
+	// SDL_RenderTexture(SDL_Renderer*, SDL_Texture*, const SDL_FRect* src, const SDL_FRect* dst) -> bool (SDL3)
+	sdlRenderTextureType := llvm.FunctionType(
+		cg.context.Int1Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // renderer
+			llvm.PointerType(cg.context.Int8Type(), 0), // texture
+			llvm.PointerType(cg.context.Int8Type(), 0), // src rect (nullable)
+			llvm.PointerType(cg.context.Int8Type(), 0), // dst rect (nullable)
+		},
+		false,
+	)
+	sdlRenderTexture := llvm.AddFunction(cg.module, "SDL_RenderTexture", sdlRenderTextureType)
+	sdlRenderTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_RenderTexture"] = sdlRenderTexture
+
+	// SDL_LockTexture(SDL_Texture*, const SDL_Rect* rect, void** pixels, int* pitch) -> bool (SDL3)
+	sdlLockTextureType := llvm.FunctionType(
+		cg.context.Int1Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0),                      // texture
+			llvm.PointerType(cg.context.Int8Type(), 0),                      // rect (nullable)
+			llvm.PointerType(llvm.PointerType(cg.context.Int8Type(), 0), 0), // pixels out
+			llvm.PointerType(cg.context.Int32Type(), 0),                     // pitch out
+		},
+		false,
+	)
+	sdlLockTexture := llvm.AddFunction(cg.module, "SDL_LockTexture", sdlLockTextureType)
+	sdlLockTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_LockTexture"] = sdlLockTexture
+
+	// SDL_UnlockTexture(SDL_Texture*)
+	sdlUnlockTextureType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	sdlUnlockTexture := llvm.AddFunction(cg.module, "SDL_UnlockTexture", sdlUnlockTextureType)
+	sdlUnlockTexture.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_UnlockTexture"] = sdlUnlockTexture
+
+	// -------------------------------------------------------------------------
+	// SDL3 EXTENDED: Input
+	// -------------------------------------------------------------------------
+
+	// SDL_GetKeyboardState(int* numkeys) -> const bool*
+	sdlGetKeyboardStateType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0),
+		[]llvm.Type{llvm.PointerType(cg.context.Int32Type(), 0)},
+		false,
+	)
+	sdlGetKeyboardState := llvm.AddFunction(cg.module, "SDL_GetKeyboardState", sdlGetKeyboardStateType)
+	sdlGetKeyboardState.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetKeyboardState"] = sdlGetKeyboardState
+
+	// SDL_GetMouseState(float* x, float* y) -> SDL_MouseButtonFlags (Uint32) in SDL3
+	sdlGetMouseStateType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.FloatType(), 0), // x out
+			llvm.PointerType(cg.context.FloatType(), 0), // y out
+		},
+		false,
+	)
+	sdlGetMouseState := llvm.AddFunction(cg.module, "SDL_GetMouseState", sdlGetMouseStateType)
+	sdlGetMouseState.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetMouseState"] = sdlGetMouseState
+
+	// SDL_GetRelativeMouseState(float* x, float* y) -> SDL_MouseButtonFlags (SDL3)
+	sdlGetRelMouseStateType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.FloatType(), 0), // dx out
+			llvm.PointerType(cg.context.FloatType(), 0), // dy out
+		},
+		false,
+	)
+	sdlGetRelMouseState := llvm.AddFunction(cg.module, "SDL_GetRelativeMouseState", sdlGetRelMouseStateType)
+	sdlGetRelMouseState.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetRelativeMouseState"] = sdlGetRelMouseState
+
+	// SDL_SetWindowRelativeMouseMode(SDL_Window*, bool) -> bool (SDL3)
+	sdlSetRelMouseModeType := llvm.FunctionType(
+		cg.context.Int1Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // window
+			cg.context.Int1Type(),                      // enabled
+		},
+		false,
+	)
+	sdlSetRelMouseMode := llvm.AddFunction(cg.module, "SDL_SetWindowRelativeMouseMode", sdlSetRelMouseModeType)
+	sdlSetRelMouseMode.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_SetWindowRelativeMouseMode"] = sdlSetRelMouseMode
+
+	// SDL_WarpMouseInWindow(SDL_Window*, float x, float y) in SDL3
+	sdlWarpMouseType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // window
+			cg.context.FloatType(),                     // x
+			cg.context.FloatType(),                     // y
+		},
+		false,
+	)
+	sdlWarpMouse := llvm.AddFunction(cg.module, "SDL_WarpMouseInWindow", sdlWarpMouseType)
+	sdlWarpMouse.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_WarpMouseInWindow"] = sdlWarpMouse
+
+	// SDL_ShowCursor() -> bool (SDL3)
+	sdlShowCursorType := llvm.FunctionType(cg.context.Int1Type(), []llvm.Type{}, false)
+	sdlShowCursor := llvm.AddFunction(cg.module, "SDL_ShowCursor", sdlShowCursorType)
+	sdlShowCursor.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_ShowCursor"] = sdlShowCursor
+
+	// SDL_HideCursor() -> bool (SDL3)
+	sdlHideCursorType := llvm.FunctionType(cg.context.Int1Type(), []llvm.Type{}, false)
+	sdlHideCursor := llvm.AddFunction(cg.module, "SDL_HideCursor", sdlHideCursorType)
+	sdlHideCursor.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_HideCursor"] = sdlHideCursor
+
+	// -------------------------------------------------------------------------
+	// SDL3 EXTENDED: Performance timer
+	// -------------------------------------------------------------------------
+
+	// SDL_GetPerformanceCounter() -> Uint64
+	sdlGetPerfCounterType := llvm.FunctionType(cg.context.Int64Type(), []llvm.Type{}, false)
+	sdlGetPerfCounter := llvm.AddFunction(cg.module, "SDL_GetPerformanceCounter", sdlGetPerfCounterType)
+	sdlGetPerfCounter.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetPerformanceCounter"] = sdlGetPerfCounter
+
+	// SDL_GetPerformanceFrequency() -> Uint64
+	sdlGetPerfFreqType := llvm.FunctionType(cg.context.Int64Type(), []llvm.Type{}, false)
+	sdlGetPerfFreq := llvm.AddFunction(cg.module, "SDL_GetPerformanceFrequency", sdlGetPerfFreqType)
+	sdlGetPerfFreq.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["SDL_GetPerformanceFrequency"] = sdlGetPerfFreq
+
+	// -------------------------------------------------------------------------
+	// libm trig functions
+	// -------------------------------------------------------------------------
+
+	// sin(double) -> double
+	sinType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	sinFn := llvm.AddFunction(cg.module, "sin", sinType)
+	sinFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["sin"] = sinFn
+
+	// cos(double) -> double
+	cosType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	cosFn := llvm.AddFunction(cg.module, "cos", cosType)
+	cosFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["cos"] = cosFn
+
+	// tan(double) -> double
+	tanType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	tanFn := llvm.AddFunction(cg.module, "tan", tanType)
+	tanFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["tan"] = tanFn
+
+	// atan2(double y, double x) -> double
+	atan2Type := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType(), cg.context.DoubleType()}, false)
+	atan2Fn := llvm.AddFunction(cg.module, "atan2", atan2Type)
+	atan2Fn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["atan2"] = atan2Fn
+
+	// asin(double) -> double
+	asinType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	asinFn := llvm.AddFunction(cg.module, "asin", asinType)
+	asinFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["asin"] = asinFn
+
+	// acos(double) -> double
+	acosType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	acosFn := llvm.AddFunction(cg.module, "acos", acosType)
+	acosFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["acos"] = acosFn
+
+	// fmod(double x, double y) -> double
+	fmodType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType(), cg.context.DoubleType()}, false)
+	fmodFn := llvm.AddFunction(cg.module, "fmod", fmodType)
+	fmodFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["fmod"] = fmodFn
+
+	// fabs(double) -> double
+	fabsType := llvm.FunctionType(cg.context.DoubleType(), []llvm.Type{cg.context.DoubleType()}, false)
+	fabsFn := llvm.AddFunction(cg.module, "fabs", fabsType)
+	fabsFn.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["fabs"] = fabsFn
+
+	// -------------------------------------------------------------------------
+	// SDL_mixer
+	// -------------------------------------------------------------------------
+
+	// Mix_OpenAudio(SDL_AudioDeviceID devid, const SDL_AudioSpec* spec) -> bool (SDL3 mixer)
+	// Use Mix_OpenAudio(int frequency, Uint16 format, int channels, int chunksize) -> int (SDL2 mixer compat)
+	mixOpenAudioType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{
+			cg.context.Int32Type(), // frequency
+			cg.context.Int16Type(), // format
+			cg.context.Int32Type(), // channels
+			cg.context.Int32Type(), // chunksize
+		},
+		false,
+	)
+	mixOpenAudio := llvm.AddFunction(cg.module, "Mix_OpenAudio", mixOpenAudioType)
+	mixOpenAudio.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_OpenAudio"] = mixOpenAudio
+
+	// Mix_CloseAudio()
+	mixCloseAudioType := llvm.FunctionType(cg.context.VoidType(), []llvm.Type{}, false)
+	mixCloseAudio := llvm.AddFunction(cg.module, "Mix_CloseAudio", mixCloseAudioType)
+	mixCloseAudio.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_CloseAudio"] = mixCloseAudio
+
+	// Mix_LoadWAV(const char* file) -> Mix_Chunk*
+	mixLoadWAVType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	mixLoadWAV := llvm.AddFunction(cg.module, "Mix_LoadWAV", mixLoadWAVType)
+	mixLoadWAV.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_LoadWAV"] = mixLoadWAV
+
+	// Mix_FreeChunk(Mix_Chunk* chunk)
+	mixFreeChunkType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	mixFreeChunk := llvm.AddFunction(cg.module, "Mix_FreeChunk", mixFreeChunkType)
+	mixFreeChunk.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_FreeChunk"] = mixFreeChunk
+
+	// Mix_PlayChannel(int channel, Mix_Chunk* chunk, int loops) -> int
+	mixPlayChannelType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{
+			cg.context.Int32Type(),                     // channel
+			llvm.PointerType(cg.context.Int8Type(), 0), // chunk
+			cg.context.Int32Type(),                     // loops
+		},
+		false,
+	)
+	mixPlayChannel := llvm.AddFunction(cg.module, "Mix_PlayChannel", mixPlayChannelType)
+	mixPlayChannel.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_PlayChannel"] = mixPlayChannel
+
+	// Mix_HaltChannel(int channel) -> int
+	mixHaltChannelType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	mixHaltChannel := llvm.AddFunction(cg.module, "Mix_HaltChannel", mixHaltChannelType)
+	mixHaltChannel.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_HaltChannel"] = mixHaltChannel
+
+	// Mix_Volume(int channel, int volume) -> int
+	mixVolumeType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{cg.context.Int32Type(), cg.context.Int32Type()},
+		false,
+	)
+	mixVolume := llvm.AddFunction(cg.module, "Mix_Volume", mixVolumeType)
+	mixVolume.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_Volume"] = mixVolume
+
+	// Mix_LoadMUS(const char* file) -> Mix_Music*
+	mixLoadMUSType := llvm.FunctionType(
+		llvm.PointerType(cg.context.Int8Type(), 0),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	mixLoadMUS := llvm.AddFunction(cg.module, "Mix_LoadMUS", mixLoadMUSType)
+	mixLoadMUS.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_LoadMUS"] = mixLoadMUS
+
+	// Mix_FreeMusic(Mix_Music* music)
+	mixFreeMusicType := llvm.FunctionType(
+		cg.context.VoidType(),
+		[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0)},
+		false,
+	)
+	mixFreeMusic := llvm.AddFunction(cg.module, "Mix_FreeMusic", mixFreeMusicType)
+	mixFreeMusic.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_FreeMusic"] = mixFreeMusic
+
+	// Mix_PlayMusic(Mix_Music* music, int loops) -> int
+	mixPlayMusicType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{
+			llvm.PointerType(cg.context.Int8Type(), 0), // music
+			cg.context.Int32Type(),                     // loops
+		},
+		false,
+	)
+	mixPlayMusic := llvm.AddFunction(cg.module, "Mix_PlayMusic", mixPlayMusicType)
+	mixPlayMusic.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_PlayMusic"] = mixPlayMusic
+
+	// Mix_HaltMusic() -> int
+	mixHaltMusicType := llvm.FunctionType(cg.context.Int32Type(), []llvm.Type{}, false)
+	mixHaltMusic := llvm.AddFunction(cg.module, "Mix_HaltMusic", mixHaltMusicType)
+	mixHaltMusic.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_HaltMusic"] = mixHaltMusic
+
+	// Mix_VolumeMusic(int volume) -> int
+	mixVolumeMusicType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	mixVolumeMusic := llvm.AddFunction(cg.module, "Mix_VolumeMusic", mixVolumeMusicType)
+	mixVolumeMusic.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_VolumeMusic"] = mixVolumeMusic
+
+	// Mix_Playing(int channel) -> int
+	mixPlayingType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	mixPlaying := llvm.AddFunction(cg.module, "Mix_Playing", mixPlayingType)
+	mixPlaying.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_Playing"] = mixPlaying
+
+	// Mix_PlayingMusic() -> int
+	mixPlayingMusicType := llvm.FunctionType(cg.context.Int32Type(), []llvm.Type{}, false)
+	mixPlayingMusic := llvm.AddFunction(cg.module, "Mix_PlayingMusic", mixPlayingMusicType)
+	mixPlayingMusic.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_PlayingMusic"] = mixPlayingMusic
+
+	// Mix_AllocateChannels(int numchans) -> int
+	mixAllocChansType := llvm.FunctionType(
+		cg.context.Int32Type(),
+		[]llvm.Type{cg.context.Int32Type()},
+		false,
+	)
+	mixAllocChans := llvm.AddFunction(cg.module, "Mix_AllocateChannels", mixAllocChansType)
+	mixAllocChans.SetLinkage(llvm.ExternalLinkage)
+	cg.functions["Mix_AllocateChannels"] = mixAllocChans
 }
 
 // declareTopLevelItems recursively declares functions and variables, including those in namespaces
@@ -1605,14 +1998,25 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 			funcName := parts[1]
 			// Look up the module and function using GetModuleFunction
 			if fn := GetModuleFunction(moduleName, funcName); fn != nil {
-				// Create a new FunctionCall with just the function name for the switch statement
+				_ = fn
+				prefix := moduleDispatchPrefix(moduleName)
+				dispatchName := prefix + funcName
 				unqualifiedCall := &FunctionCall{
-					Name: funcName,
+					Name: dispatchName,
 					Args: call.Args,
 				}
 				return cg.generateCall(unqualifiedCall)
 			}
 		}
+	}
+
+	// If this call was made without a module qualifier, check whether it
+	// resolves to a function from a previously imported module.  This lets
+	// callers write e.g.  replace_all(...) instead of regex::replace_all(...)
+	// after  use "regex"  has appeared at the top of the file.
+	if dispatchName, ok := cg.importedFuncAliases[call.Name]; ok {
+		aliasCall := &FunctionCall{Name: dispatchName, Args: call.Args}
+		return cg.generateCall(aliasCall)
 	}
 
 	// Handle builtin functions
@@ -1643,6 +2047,22 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateCeil(call)
 	case "round":
 		return cg.generateRound(call)
+	case "sin":
+		return cg.generateSin(call)
+	case "cos":
+		return cg.generateCos(call)
+	case "tan":
+		return cg.generateTan(call)
+	case "atan2":
+		return cg.generateAtan2(call)
+	case "asin":
+		return cg.generateAsin(call)
+	case "acos":
+		return cg.generateAcos(call)
+	case "fmod":
+		return cg.generateFmod(call)
+	case "fabs":
+		return cg.generateFabs(call)
 
 	// Number conversion functions
 	case "toUint32":
@@ -1815,6 +2235,10 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateAccept(call)
 	case "setsockopt":
 		return cg.generateSetSockOpt(call)
+	case "sendto_ipv4":
+		return cg.generateSendtoIPv4(call)
+	case "recvfrom":
+		return cg.generateRecvfrom(call)
 
 	// File I/O functions
 	case "open":
@@ -1836,14 +2260,40 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	case "clock":
 		return cg.generateClock(call)
 
+	// HTTP request/response helpers
+	case "get":
+		return cg.generateHTTPGetSimple(call)
+	case "http__get":
+		return cg.generateHTTPGetSimple(call)
+	case "post":
+		return cg.generateHTTPPostSimple(call)
+	case "http__post":
+		return cg.generateHTTPPostSimple(call)
+	case "parse_status":
+		return cg.generateHTTPParseStatus(call)
+	case "http__parse_status":
+		return cg.generateHTTPParseStatus(call)
+	case "get_header":
+		return cg.generateHTTPGetHeader(call)
+	case "http__get_header":
+		return cg.generateHTTPGetHeader(call)
+	case "get_body":
+		return cg.generateHTTPGetBody(call)
+	case "http__get_body":
+		return cg.generateHTTPGetBody(call)
+	case "parse_headers":
+		return cg.generateHTTPParseHeaders(call)
+	case "http__parse_headers":
+		return cg.generateHTTPParseHeaders(call)
+
 	// HTTP pool functions
-	case "pool_new":
+	case "pool_new", "http__pool_new":
 		return cg.generatePoolNew(call)
-	case "pool_get":
+	case "pool_get", "http__pool_get":
 		return cg.generatePoolGet(call)
-	case "pool_put":
+	case "pool_put", "http__pool_put":
 		return cg.generatePoolPut(call)
-	case "pool_close":
+	case "pool_close", "http__pool_close":
 		return cg.generatePoolClose(call)
 
 	// JSON module functions
@@ -1911,15 +2361,35 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	// Regex functions
 	case "regex::match":
 		return cg.generateRegexMatch(call)
+	case "regex__match":
+		return cg.generateRegexMatch(call)
+	case "match":
+		return cg.generateRegexMatch(call)
 	case "regex::find":
+		return cg.generateRegexFind(call)
+	case "regex__find":
+		return cg.generateRegexFind(call)
+	case "find":
 		return cg.generateRegexFind(call)
 	case "regex::replace":
 		return cg.generateRegexReplace(call)
+	case "regex__replace":
+		return cg.generateRegexReplace(call)
 	case "regex::replace_all":
+		return cg.generateRegexReplaceAll(call)
+	case "regex__replace_all":
+		return cg.generateRegexReplaceAll(call)
+	case "replace_all":
 		return cg.generateRegexReplaceAll(call)
 	case "regex::split":
 		return cg.generateRegexSplit(call)
+	case "regex__split":
+		return cg.generateRegexSplit(call)
 	case "regex::find_all":
+		return cg.generateRegexFindAll(call)
+	case "regex__find_all":
+		return cg.generateRegexFindAll(call)
+	case "find_all":
 		return cg.generateRegexFindAll(call)
 
 	// SDL3 functions
@@ -1953,6 +2423,77 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateSDL3Delay(call)
 	case "get_ticks":
 		return cg.generateSDL3GetTicks(call)
+	// SDL3 extended: textures
+	case "create_texture":
+		return cg.generateSDL3CreateTexture(call)
+	case "destroy_texture":
+		return cg.generateSDL3DestroyTexture(call)
+	case "update_texture":
+		return cg.generateSDL3UpdateTexture(call)
+	case "render_texture":
+		return cg.generateSDL3RenderTexture(call)
+	case "lock_texture":
+		return cg.generateSDL3LockTexture(call)
+	case "unlock_texture":
+		return cg.generateSDL3UnlockTexture(call)
+	// SDL3 extended: input
+	case "get_keyboard_state":
+		return cg.generateSDL3GetKeyboardState(call)
+	case "get_mouse_state":
+		return cg.generateSDL3GetMouseState(call)
+	case "get_relative_mouse_state":
+		return cg.generateSDL3GetRelativeMouseState(call)
+	case "set_relative_mouse_mode":
+		return cg.generateSDL3SetRelativeMouseMode(call)
+	case "warp_mouse":
+		return cg.generateSDL3WarpMouse(call)
+	case "show_cursor":
+		return cg.generateSDL3ShowCursor(call)
+	case "hide_cursor":
+		return cg.generateSDL3HideCursor(call)
+	// SDL3 extended: performance timer
+	case "get_perf_counter":
+		return cg.generateSDL3GetPerfCounter(call)
+	case "get_perf_freq":
+		return cg.generateSDL3GetPerfFreq(call)
+	// SDL3 extended: event helpers
+	case "get_event_type":
+		return cg.generateSDL3GetEventType(call)
+	case "get_scancode":
+		return cg.generateSDL3GetScancode(call)
+	case "alloc_event":
+		return cg.generateSDL3AllocEvent(call)
+	// SDL_mixer
+	case "sdlmixer__open":
+		return cg.generateMixOpen(call)
+	case "sdlmixer__close":
+		return cg.generateMixClose(call)
+	case "sdlmixer__load_wav":
+		return cg.generateMixLoadWAV(call)
+	case "sdlmixer__free_chunk":
+		return cg.generateMixFreeChunk(call)
+	case "sdlmixer__play_channel":
+		return cg.generateMixPlayChannel(call)
+	case "sdlmixer__halt_channel":
+		return cg.generateMixHaltChannel(call)
+	case "sdlmixer__volume":
+		return cg.generateMixVolume(call)
+	case "sdlmixer__load_mus":
+		return cg.generateMixLoadMUS(call)
+	case "sdlmixer__free_music":
+		return cg.generateMixFreeMusic(call)
+	case "sdlmixer__play_music":
+		return cg.generateMixPlayMusic(call)
+	case "sdlmixer__halt_music":
+		return cg.generateMixHaltMusic(call)
+	case "sdlmixer__volume_music":
+		return cg.generateMixVolumeMusic(call)
+	case "sdlmixer__playing":
+		return cg.generateMixPlaying(call)
+	case "sdlmixer__playing_music":
+		return cg.generateMixPlayingMusic(call)
+	case "sdlmixer__allocate_channels":
+		return cg.generateMixAllocateChannels(call)
 	}
 
 	// Look up the function
@@ -2360,9 +2901,60 @@ func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
 	return fmt.Errorf("undefined variable: %s", id.Name)
 }
 
-// handleImport handles import statements
+// moduleDispatchPrefix returns the dispatch-name prefix for a stdlib module.
+// Modules whose function names would collide with builtins need a unique prefix;
+// all others use the bare function name (prefix "").
+func moduleDispatchPrefix(moduleName string) string {
+	switch moduleName {
+	case "sdl_mixer":
+		return "sdlmixer__"
+	case "regex":
+		return "regex__"
+	case "http":
+		return "http__"
+	default:
+		return ""
+	}
+}
+
+// handleImport handles import statements.
+// In addition to updating the ImportContext it registers unqualified aliases
+// so that functions from imported modules can be called without the module
+// qualifier (e.g.  replace_all(...) instead of regex::replace_all(...)).
 func (cg *LLVMCodeGenerator) handleImport(i *ImportStatement) error {
-	return cg.imports.ProcessImport(i)
+	if err := cg.imports.ProcessImport(i); err != nil {
+		return err
+	}
+
+	prefix := moduleDispatchPrefix(i.Module)
+	if prefix == "" {
+		// Default-dispatch modules already work unqualified via the switch.
+		return nil
+	}
+
+	module, ok := StandardLibrary[i.Module]
+	if !ok {
+		return nil
+	}
+
+	registerAlias := func(funcName string) {
+		if _, exists := cg.importedFuncAliases[funcName]; !exists {
+			cg.importedFuncAliases[funcName] = prefix + funcName
+		}
+	}
+
+	if i.IsWildcard || len(i.Items) == 0 {
+		for funcName := range module.Functions {
+			registerAlias(funcName)
+		}
+	} else {
+		for _, item := range i.Items {
+			if _, ok := module.Functions[item]; ok {
+				registerAlias(item)
+			}
+		}
+	}
+	return nil
 }
 
 // createGlobalString creates a global string constant

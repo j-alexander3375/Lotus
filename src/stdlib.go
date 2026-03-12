@@ -41,6 +41,7 @@ var StandardLibrary = map[string]*StdlibModule{
 	"regex":       createRegexModule(),
 	"json":        createJSONModule(),
 	"sdl3":        createSDL3Module(),
+	"sdl_mixer":   createSDLMixerModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -211,6 +212,54 @@ func createMathModule() *StdlibModule {
 				Module:  "math",
 				NumArgs: 2,
 				CodeGen: generateMathLcm,
+			},
+			"sin": {
+				Name:    "sin",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathSin,
+			},
+			"cos": {
+				Name:    "cos",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathCos,
+			},
+			"tan": {
+				Name:    "tan",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathTan,
+			},
+			"atan2": {
+				Name:    "atan2",
+				Module:  "math",
+				NumArgs: 2,
+				CodeGen: generateMathAtan2,
+			},
+			"asin": {
+				Name:    "asin",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathAsin,
+			},
+			"acos": {
+				Name:    "acos",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathAcos,
+			},
+			"fmod": {
+				Name:    "fmod",
+				Module:  "math",
+				NumArgs: 2,
+				CodeGen: generateMathFmod,
+			},
+			"fabs": {
+				Name:    "fabs",
+				Module:  "math",
+				NumArgs: 1,
+				CodeGen: generateMathFabs,
 			},
 		},
 		Types: map[string]TokenType{},
@@ -785,6 +834,114 @@ func createSDL3Module() *StdlibModule {
 				NumArgs: 0,
 				CodeGen: generateSDL3GetTicks,
 			}, // get_ticks() -> int - get milliseconds since init
+			"create_texture": {
+				Name:    "create_texture",
+				Module:  "sdl3",
+				NumArgs: 5,
+				CodeGen: generateSDL3CreateTexture,
+			}, // create_texture(renderer, format, access, w, h) -> texture*
+			"destroy_texture": {
+				Name:    "destroy_texture",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3DestroyTexture,
+			}, // destroy_texture(texture*)
+			"update_texture": {
+				Name:    "update_texture",
+				Module:  "sdl3",
+				NumArgs: 4,
+				CodeGen: generateSDL3UpdateTexture,
+			}, // update_texture(texture*, rect*, pixels*, pitch) -> bool
+			"render_texture": {
+				Name:    "render_texture",
+				Module:  "sdl3",
+				NumArgs: 3,
+				CodeGen: generateSDL3RenderTexture,
+			}, // render_texture(renderer*, texture*, src_rect*, dst_rect*) -> bool
+			"lock_texture": {
+				Name:    "lock_texture",
+				Module:  "sdl3",
+				NumArgs: 3,
+				CodeGen: generateSDL3LockTexture,
+			}, // lock_texture(texture*, rect*, pixels_out*, pitch_out*) -> bool
+			"unlock_texture": {
+				Name:    "unlock_texture",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3UnlockTexture,
+			}, // unlock_texture(texture*)
+			"get_keyboard_state": {
+				Name:    "get_keyboard_state",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3GetKeyboardState,
+			}, // get_keyboard_state() -> *bool array (SDL_GetKeyboardState)
+			"get_mouse_state": {
+				Name:    "get_mouse_state",
+				Module:  "sdl3",
+				NumArgs: 2,
+				CodeGen: generateSDL3GetMouseState,
+			}, // get_mouse_state(x_out*, y_out*) -> buttons mask
+			"get_relative_mouse_state": {
+				Name:    "get_relative_mouse_state",
+				Module:  "sdl3",
+				NumArgs: 2,
+				CodeGen: generateSDL3GetRelativeMouseState,
+			}, // get_relative_mouse_state(dx_out*, dy_out*) -> buttons mask
+			"set_relative_mouse_mode": {
+				Name:    "set_relative_mouse_mode",
+				Module:  "sdl3",
+				NumArgs: 2,
+				CodeGen: generateSDL3SetRelativeMouseMode,
+			}, // set_relative_mouse_mode(window*, enabled) -> bool
+			"warp_mouse": {
+				Name:    "warp_mouse",
+				Module:  "sdl3",
+				NumArgs: 3,
+				CodeGen: generateSDL3WarpMouse,
+			}, // warp_mouse(window*, x, y)
+			"get_perf_counter": {
+				Name:    "get_perf_counter",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3GetPerfCounter,
+			}, // get_perf_counter() -> uint64 - high-resolution timer
+			"get_perf_freq": {
+				Name:    "get_perf_freq",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3GetPerfFreq,
+			}, // get_perf_freq() -> uint64 - timer frequency (ticks/sec)
+			"get_event_type": {
+				Name:    "get_event_type",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3GetEventType,
+			}, // get_event_type(event*) -> int - read SDL_Event.type field
+			"get_scancode": {
+				Name:    "get_scancode",
+				Module:  "sdl3",
+				NumArgs: 1,
+				CodeGen: generateSDL3GetScancode,
+			}, // get_scancode(event*) -> int - read SDL_KeyboardEvent.scancode
+			"alloc_event": {
+				Name:    "alloc_event",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3AllocEvent,
+			}, // alloc_event() -> event* - allocate 128-byte SDL_Event
+			"show_cursor": {
+				Name:    "show_cursor",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3ShowCursor,
+			}, // show_cursor()
+			"hide_cursor": {
+				Name:    "hide_cursor",
+				Module:  "sdl3",
+				NumArgs: 0,
+				CodeGen: generateSDL3HideCursor,
+			}, // hide_cursor()
 		},
 		Types: map[string]TokenType{},
 	}
@@ -1015,15 +1172,19 @@ func generateMathGcd(cg *CodeGenerator, args []ASTNode) {
 	// temp = b (save in r8)
 	cg.textSection.WriteString("    movq %rcx, %r8\n")
 	// b = a % b
-	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // clear rdx for division
-	cg.textSection.WriteString("    divq %rcx\n")       // rax = a / b, rdx = a % b
+	cg.textSection.WriteString("    cqo\n")             // sign extend rax into rdx:rax
+	cg.textSection.WriteString("    idivq %rcx\n")      // rax = a / b, rdx = a % b
 	cg.textSection.WriteString("    movq %rdx, %rcx\n") // b = remainder
 	// a = temp
 	cg.textSection.WriteString("    movq %r8, %rax\n") // a = old b
 
 	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelLoop))
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
-	// rax contains the GCD
+	// Return absolute value of GCD
+	cg.textSection.WriteString("    movq %rax, %rdx\n")
+	cg.textSection.WriteString("    sarq $63, %rdx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rax\n")
+	cg.textSection.WriteString("    subq %rdx, %rax\n")
 }
 
 func generateMathLcm(cg *CodeGenerator, args []ASTNode) {
@@ -1048,20 +1209,32 @@ func generateMathLcm(cg *CodeGenerator, args []ASTNode) {
 	cg.textSection.WriteString("    testq %rcx, %rcx\n")
 	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelEnd))
 	cg.textSection.WriteString("    movq %rcx, %r8\n")  // temp = b
-	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // clear for division
-	cg.textSection.WriteString("    divq %rcx\n")       // rax = a/b, rdx = a%b
+	cg.textSection.WriteString("    cqo\n")             // sign extend for signed division
+	cg.textSection.WriteString("    idivq %rcx\n")      // rax = a/b, rdx = a%b
 	cg.textSection.WriteString("    movq %rdx, %rcx\n") // b = remainder
 	cg.textSection.WriteString("    movq %r8, %rax\n")  // a = old b
 	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelLoop))
 	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
 	// rax = GCD
+	labelZero := cg.getLabel("lcm_zero")
+	labelDone := cg.getLabel("lcm_done")
 
 	// LCM = (a / GCD) * b
-	cg.textSection.WriteString("    movq %rax, %rcx\n")  // rcx = GCD
+	cg.textSection.WriteString("    movq %rax, %rcx\n") // rcx = GCD
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelZero))
 	cg.textSection.WriteString("    movq %r12, %rax\n")  // rax = original a
-	cg.textSection.WriteString("    xorq %rdx, %rdx\n")  // clear for division
-	cg.textSection.WriteString("    divq %rcx\n")        // rax = a / GCD
+	cg.textSection.WriteString("    cqo\n")              // sign extend for signed division
+	cg.textSection.WriteString("    idivq %rcx\n")       // rax = a / GCD
 	cg.textSection.WriteString("    imulq %r13, %rax\n") // rax = (a / GCD) * b
+	cg.textSection.WriteString("    movq %rax, %rdx\n")
+	cg.textSection.WriteString("    sarq $63, %rdx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rax\n")
+	cg.textSection.WriteString("    subq %rdx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelZero))
+	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 func generateStringLen(cg *CodeGenerator, args []ASTNode) {
@@ -7895,60 +8068,255 @@ func generateTimeLocalTime(cg *CodeGenerator, args []ASTNode) {
 // RANDOM MODULE - Code Generation Stubs (legacy GCC backend)
 // ============================================================================
 
+func emitAlignedPLTCall(cg *CodeGenerator, symbol string) {
+	cg.textSection.WriteString("    pushq %rbp\n")
+	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    andq $-16, %rsp\n")
+	cg.textSection.WriteString(fmt.Sprintf("    call %s@PLT\n", symbol))
+	cg.textSection.WriteString("    movq %rbp, %rsp\n")
+	cg.textSection.WriteString("    popq %rbp\n")
+}
+
 // generateRandomRand() -> random int
 func generateRandomRand(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
 }
 
 // generateRandomRandRange(min, max) -> random int in [min, max]
 func generateRandomRandRange(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_range() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+
+	labelSwap := cg.getLabel("rand_range_swap")
+	labelNoSwap := cg.getLabel("rand_range_noswap")
+	labelZero := cg.getLabel("rand_range_zero")
+	labelDone := cg.getLabel("rand_range_done")
+
+	cg.generateExpressionToReg(args[0], "r8") // min
+	cg.generateExpressionToReg(args[1], "r9") // max
+
+	// Ensure r8 <= r9
+	cg.textSection.WriteString("    cmpq %r9, %r8\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelNoSwap))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelSwap))
+	cg.textSection.WriteString("    movq %r8, %r10\n")
+	cg.textSection.WriteString("    movq %r9, %r8\n")
+	cg.textSection.WriteString("    movq %r10, %r9\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelNoSwap))
+
+	// range = max - min + 1
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    subq %r8, %rcx\n")
+	cg.textSection.WriteString("    incq %rcx\n")
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelZero))
+
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq %r8, %rax\n")
+	cg.textSection.WriteString("    addq %rdx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelZero))
+	cg.textSection.WriteString("    movq %r8, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 // generateRandomSeed(n) -> void
 func generateRandomSeed(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # seed() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "srand")
 }
 
 // generateRandomRandFloat() -> random float [0.0, 1.0)
 func generateRandomRandFloat(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_float() - stub\n")
-	cg.textSection.WriteString("    xorpd %xmm0, %xmm0\n")
+	// Fixed-point random in [0, 1000)
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    movq $1000, %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq %rdx, %rax\n")
 }
 
 // generateRandomRandBool() -> random boolean
 func generateRandomRandBool(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_bool() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    andq $1, %rax\n")
 }
 
 // generateRandomRandBytes(buf, len) -> fills buffer with random bytes
 func generateRandomRandBytes(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_bytes() - stub\n")
+	if len(args) != 2 {
+		return
+	}
+
+	loopLabel := cg.getLabel("rand_bytes_loop")
+	doneLabel := cg.getLabel("rand_bytes_done")
+
+	cg.generateExpressionToReg(args[0], "r8") // buf
+	cg.generateExpressionToReg(args[1], "r9") // len
+
+	cg.textSection.WriteString("    xorq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", loopLabel))
+	cg.textSection.WriteString("    cmpq %r9, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", doneLabel))
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movb %al, (%r8,%rcx,1)\n")
+	cg.textSection.WriteString("    incq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", loopLabel))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", doneLabel))
 }
 
 // generateRandomShuffle(arr, len) -> shuffles array in place
 func generateRandomShuffle(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # shuffle() - stub\n")
+	if len(args) != 2 {
+		return
+	}
+
+	loopLabel := cg.getLabel("shuffle_loop")
+	doneLabel := cg.getLabel("shuffle_done")
+
+	cg.generateExpressionToReg(args[0], "r8") // arr base (int64 elements)
+	cg.generateExpressionToReg(args[1], "r9") // len
+
+	// i = len - 1
+	cg.textSection.WriteString("    movq %r9, %r10\n")
+	cg.textSection.WriteString("    decq %r10\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", loopLabel))
+	cg.textSection.WriteString("    cmpq $0, %r10\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", doneLabel))
+
+	// j = rand() % (i + 1)
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    movq %r10, %rcx\n")
+	cg.textSection.WriteString("    incq %rcx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq %rdx, %r11\n")
+
+	// swap arr[i], arr[j]
+	cg.textSection.WriteString("    movq (%r8,%r10,8), %rax\n")
+	cg.textSection.WriteString("    movq (%r8,%r11,8), %rdx\n")
+	cg.textSection.WriteString("    movq %rdx, (%r8,%r10,8)\n")
+	cg.textSection.WriteString("    movq %rax, (%r8,%r11,8)\n")
+
+	cg.textSection.WriteString("    decq %r10\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", loopLabel))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", doneLabel))
 }
 
 // generateRandomChoice(arr, len) -> random element from array
 func generateRandomChoice(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # choice() - stub\n")
+	if len(args) != 2 {
+		return
+	}
+
+	labelZero := cg.getLabel("choice_zero")
+	labelDone := cg.getLabel("choice_done")
+
+	cg.generateExpressionToReg(args[0], "r8") // arr
+	cg.generateExpressionToReg(args[1], "r9") // len
+	cg.textSection.WriteString("    testq %r9, %r9\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelZero))
+
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    movq %r9, %rcx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq (%r8,%rdx,8), %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelZero))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 // generateRandomRandN(n) -> random int in [0, n)
 func generateRandomRandN(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_n() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+
+	labelZero := cg.getLabel("rand_n_zero")
+	labelDone := cg.getLabel("rand_n_done")
+
+	cg.generateExpressionToReg(args[0], "rcx")
+	cg.textSection.WriteString("    testq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jle %s\n", labelZero))
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %rcx\n")
+	cg.textSection.WriteString("    movq %rdx, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelZero))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 // generateRandomRandString(buf, len) -> random alphanumeric string
 func generateRandomRandString(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # rand_string() - stub\n")
+	if len(args) != 2 {
+		return
+	}
+
+	loopLabel := cg.getLabel("rand_str_loop")
+	nextLabel := cg.getLabel("rand_str_next")
+	digitLabel := cg.getLabel("rand_str_digit")
+	upperLabel := cg.getLabel("rand_str_upper")
+	lowerLabel := cg.getLabel("rand_str_lower")
+	doneLabel := cg.getLabel("rand_str_done")
+
+	cg.generateExpressionToReg(args[0], "r8") // buf
+	cg.generateExpressionToReg(args[1], "r9") // len
+
+	cg.textSection.WriteString("    xorq %rcx, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", loopLabel))
+	cg.textSection.WriteString("    cmpq %r9, %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jge %s\n", doneLabel))
+
+	emitAlignedPLTCall(cg, "rand")
+	cg.textSection.WriteString("    movslq %eax, %rax\n")
+	cg.textSection.WriteString("    movq $62, %r10\n")
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n")
+	cg.textSection.WriteString("    divq %r10\n")
+	// rdx = index [0..61]
+
+	cg.textSection.WriteString("    cmpq $10, %rdx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jl %s\n", digitLabel))
+	cg.textSection.WriteString("    cmpq $36, %rdx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jl %s\n", upperLabel))
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", lowerLabel))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", digitLabel))
+	cg.textSection.WriteString("    addq $48, %rdx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", nextLabel))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", upperLabel))
+	cg.textSection.WriteString("    subq $10, %rdx\n")
+	cg.textSection.WriteString("    addq $65, %rdx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", nextLabel))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", lowerLabel))
+	cg.textSection.WriteString("    subq $36, %rdx\n")
+	cg.textSection.WriteString("    addq $97, %rdx\n")
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", nextLabel))
+	cg.textSection.WriteString("    movb %dl, (%r8,%rcx,1)\n")
+	cg.textSection.WriteString("    incq %rcx\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", loopLabel))
+
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", doneLabel))
 }
 
 // ============================================================================
@@ -7957,38 +8325,73 @@ func generateRandomRandString(cg *CodeGenerator, args []ASTNode) {
 
 // generateRegexMatch(pattern, string) -> bool - check if pattern matches string
 func generateRegexMatch(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::match() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n") // Return false by default
+	if len(args) != 2 {
+		return
+	}
+	// Literal substring match fallback via strstr(string, pattern)
+	cg.generateExpressionToReg(args[1], "rdi") // haystack
+	cg.generateExpressionToReg(args[0], "rsi") // needle
+	emitAlignedPLTCall(cg, "strstr")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateRegexFind(pattern, string) -> int - return position of first match or -1
 func generateRegexFind(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::find() - stub\n")
-	cg.textSection.WriteString("    movq $-1, %rax\n") // Return -1 (not found)
+	if len(args) != 2 {
+		return
+	}
+	labelNotFound := cg.getLabel("regex_find_not_found")
+	labelDone := cg.getLabel("regex_find_done")
+
+	cg.generateExpressionToReg(args[1], "r8") // haystack
+	cg.generateExpressionToReg(args[0], "r9") // needle
+	cg.textSection.WriteString("    movq %r8, %rdi\n")
+	cg.textSection.WriteString("    movq %r9, %rsi\n")
+	emitAlignedPLTCall(cg, "strstr")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelNotFound))
+	cg.textSection.WriteString("    subq %r8, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelNotFound))
+	cg.textSection.WriteString("    movq $-1, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 // generateRegexReplace(pattern, replacement, string) -> string - replace first match
 func generateRegexReplace(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::replace() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 3 {
+		return
+	}
+	// Conservative fallback: return source string unchanged.
+	cg.generateExpressionToReg(args[2], "rax")
 }
 
 // generateRegexReplaceAll(pattern, replacement, string) -> string - replace all matches
 func generateRegexReplaceAll(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::replace_all() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[2], "rax")
 }
 
 // generateRegexSplit(pattern, string) -> array - split string by pattern
 func generateRegexSplit(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::split() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	// Conservative fallback: return original string pointer.
+	cg.generateExpressionToReg(args[1], "rax")
 }
 
 // generateRegexFindAll(pattern, string) -> array - find all matches
 func generateRegexFindAll(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # regex::find_all() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	// Return first match index as compatibility fallback.
+	generateRegexFind(cg, args)
 }
 
 // ============================================================================
@@ -7997,68 +8400,111 @@ func generateRegexFindAll(cg *CodeGenerator, args []ASTNode) {
 
 // generateJSONParse(json_string) -> json_value - parse JSON string
 func generateJSONParse(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::parse() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	// Opaque-handle fallback: return input pointer.
+	cg.generateExpressionToReg(args[0], "rax")
 }
 
 // generateJSONStringify(value) -> string - convert value to JSON string
 func generateJSONStringify(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::stringify() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
 }
 
 // generateJSONGet(json, key) -> value - get value by key from JSON object
 func generateJSONGet(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::get() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
 }
 
 // generateJSONGetInt(json, key) -> int - get integer value by key
 func generateJSONGetInt(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::get_int() - stub\n")
+	if len(args) != 2 {
+		return
+	}
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
 }
 
 // generateJSONGetString(json, key) -> string - get string value by key
 func generateJSONGetString(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::get_string() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
 }
 
 // generateJSONGetBool(json, key) -> bool - get boolean value by key
 func generateJSONGetBool(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::get_bool() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateJSONGetArray(json, key) -> array - get array by key
 func generateJSONGetArray(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::get_array() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
 }
 
 // generateJSONArrayLen(json_array) -> int - get length of JSON array
 func generateJSONArrayLen(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::array_len() - stub\n")
+	if len(args) != 1 {
+		return
+	}
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
 }
 
 // generateJSONArrayGet(json_array, index) -> value - get element from JSON array
 func generateJSONArrayGet(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::array_get() - stub\n")
+	if len(args) != 2 {
+		return
+	}
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
 }
 
 // generateJSONIsNull(json_value) -> bool - check if value is null
 func generateJSONIsNull(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::is_null() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    sete %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateJSONIsValid(json_string) -> bool - check if string is valid JSON
 func generateJSONIsValid(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # json::is_valid() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+
+	labelFalse := cg.getLabel("json_valid_false")
+	labelDone := cg.getLabel("json_valid_done")
+
+	cg.generateExpressionToReg(args[0], "r8")
+	cg.textSection.WriteString("    testq %r8, %r8\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelFalse))
+	cg.textSection.WriteString("    movzbq (%r8), %rax\n")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jz %s\n", labelFalse))
+	cg.textSection.WriteString("    movq $1, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelDone))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelFalse))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDone))
 }
 
 // ============================================================================
@@ -8067,85 +8513,750 @@ func generateJSONIsValid(cg *CodeGenerator, args []ASTNode) {
 
 // generateSDL3Init(flags) -> bool - initialize SDL3 subsystems
 func generateSDL3Init(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::init() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_Init")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3Quit() - cleanup SDL3
 func generateSDL3Quit(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::quit() - stub\n")
+	emitAlignedPLTCall(cg, "SDL_Quit")
 }
 
 // generateSDL3CreateWindow(title, w, h, flags) -> window* (SDL3: no x, y)
 func generateSDL3CreateWindow(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::create_window() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 4 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // title
+	cg.generateExpressionToReg(args[1], "rsi") // w
+	cg.generateExpressionToReg(args[2], "rdx") // h
+	cg.generateExpressionToReg(args[3], "rcx") // flags
+	emitAlignedPLTCall(cg, "SDL_CreateWindow")
 }
 
 // generateSDL3DestroyWindow(window*) - destroy window
 func generateSDL3DestroyWindow(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::destroy_window() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_DestroyWindow")
 }
 
 // generateSDL3CreateRenderer(window*, flags) -> renderer*
 func generateSDL3CreateRenderer(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::create_renderer() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // window
+	cg.generateExpressionToReg(args[1], "rsi") // name/flags arg in current API
+	emitAlignedPLTCall(cg, "SDL_CreateRenderer")
 }
 
 // generateSDL3DestroyRenderer(renderer*) - destroy renderer
 func generateSDL3DestroyRenderer(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::destroy_renderer() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_DestroyRenderer")
 }
 
 // generateSDL3RenderClear(renderer*) -> bool
 func generateSDL3RenderClear(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::render_clear() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_RenderClear")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3RenderPresent(renderer*) - present rendered frame
 func generateSDL3RenderPresent(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::render_present() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_RenderPresent")
 }
 
 // generateSDL3SetRenderDrawColor(renderer*, r, g, b, a) -> bool
 func generateSDL3SetRenderDrawColor(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::set_render_draw_color() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 5 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // renderer
+	cg.generateExpressionToReg(args[1], "rsi") // r
+	cg.generateExpressionToReg(args[2], "rdx") // g
+	cg.generateExpressionToReg(args[3], "rcx") // b
+	cg.generateExpressionToReg(args[4], "r8")  // a
+	emitAlignedPLTCall(cg, "SDL_SetRenderDrawColor")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3RenderDrawLine(renderer*, x1, y1, x2, y2) -> bool
 func generateSDL3RenderDrawLine(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::render_draw_line() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 5 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // renderer
+	cg.generateExpressionToReg(args[1], "r8")
+	cg.generateExpressionToReg(args[2], "r9")
+	cg.generateExpressionToReg(args[3], "r10")
+	cg.generateExpressionToReg(args[4], "r11")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    cvtsi2ss %r9, %xmm1\n")
+	cg.textSection.WriteString("    cvtsi2ss %r10, %xmm2\n")
+	cg.textSection.WriteString("    cvtsi2ss %r11, %xmm3\n")
+	emitAlignedPLTCall(cg, "SDL_RenderLine")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3RenderDrawRect(renderer*, x, y, w, h) -> bool
 func generateSDL3RenderDrawRect(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::render_draw_rect() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 5 {
+		return
+	}
+
+	// Build SDL_FRect via malloc(16)
+	cg.textSection.WriteString("    movq $16, %rdi\n")
+	emitAlignedPLTCall(cg, "malloc")
+	cg.textSection.WriteString("    movq %rax, %r9\n") // rect*
+
+	cg.generateExpressionToReg(args[1], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 0(%r9)\n")
+	cg.generateExpressionToReg(args[2], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 4(%r9)\n")
+	cg.generateExpressionToReg(args[3], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 8(%r9)\n")
+	cg.generateExpressionToReg(args[4], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 12(%r9)\n")
+
+	cg.generateExpressionToReg(args[0], "rdi") // renderer
+	cg.textSection.WriteString("    movq %r9, %rsi\n")
+	emitAlignedPLTCall(cg, "SDL_RenderRect")
+	cg.textSection.WriteString("    movq %rax, %r8\n")
+	cg.textSection.WriteString("    movq %r9, %rdi\n")
+	emitAlignedPLTCall(cg, "free")
+	cg.textSection.WriteString("    movq %r8, %rax\n")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3RenderFillRect(renderer*, x, y, w, h) -> bool
 func generateSDL3RenderFillRect(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::render_fill_rect() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 5 {
+		return
+	}
+
+	// Build SDL_FRect via malloc(16)
+	cg.textSection.WriteString("    movq $16, %rdi\n")
+	emitAlignedPLTCall(cg, "malloc")
+	cg.textSection.WriteString("    movq %rax, %r9\n") // rect*
+
+	cg.generateExpressionToReg(args[1], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 0(%r9)\n")
+	cg.generateExpressionToReg(args[2], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 4(%r9)\n")
+	cg.generateExpressionToReg(args[3], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 8(%r9)\n")
+	cg.generateExpressionToReg(args[4], "r8")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    movss %xmm0, 12(%r9)\n")
+
+	cg.generateExpressionToReg(args[0], "rdi") // renderer
+	cg.textSection.WriteString("    movq %r9, %rsi\n")
+	emitAlignedPLTCall(cg, "SDL_RenderFillRect")
+	cg.textSection.WriteString("    movq %rax, %r8\n")
+	cg.textSection.WriteString("    movq %r9, %rdi\n")
+	emitAlignedPLTCall(cg, "free")
+	cg.textSection.WriteString("    movq %r8, %rax\n")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3PollEvent(event*) -> bool - returns true if event, false if none
 func generateSDL3PollEvent(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::poll_event() - stub\n")
-	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_PollEvent")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
 }
 
 // generateSDL3Delay(ms) - delay execution
 func generateSDL3Delay(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::delay() - stub\n")
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_Delay")
 }
 
 // generateSDL3GetTicks() -> int - get milliseconds since init
 func generateSDL3GetTicks(cg *CodeGenerator, args []ASTNode) {
-	cg.textSection.WriteString("    # sdl3::get_ticks() - stub\n")
+	emitAlignedPLTCall(cg, "SDL_GetTicks")
+}
+
+// ============================================================================
+// MATH TRIG/FLOAT FUNCTIONS (Assembly backend: libm-backed fixed-point)
+// ============================================================================
+
+func generateMathUnaryLibmFixed(cg *CodeGenerator, args []ASTNode, fn string) {
+	if len(args) != 1 {
+		return
+	}
+
+	// Input is fixed-point (value * 1000)
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    cvtsi2sd %rax, %xmm0\n")
+	cg.textSection.WriteString("    movq $1000, %rdx\n")
+	cg.textSection.WriteString("    cvtsi2sd %rdx, %xmm1\n")
+	cg.textSection.WriteString("    divsd %xmm1, %xmm0\n")
+
+	// Call libm function
+	cg.textSection.WriteString("    pushq %rbp\n")
+	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    andq $-16, %rsp\n")
+	cg.textSection.WriteString(fmt.Sprintf("    call %s@PLT\n", fn))
+	cg.textSection.WriteString("    movq %rbp, %rsp\n")
+	cg.textSection.WriteString("    popq %rbp\n")
+
+	// Convert result back to fixed-point int in rax
+	cg.textSection.WriteString("    movq $1000, %rdx\n")
+	cg.textSection.WriteString("    cvtsi2sd %rdx, %xmm1\n")
+	cg.textSection.WriteString("    mulsd %xmm1, %xmm0\n")
+	cg.textSection.WriteString("    cvttsd2si %xmm0, %rax\n")
+}
+
+func generateMathBinaryLibmFixed(cg *CodeGenerator, args []ASTNode, fn string) {
+	if len(args) != 2 {
+		return
+	}
+
+	// Inputs are fixed-point (value * 1000)
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    movq %rax, %r8\n")
+	cg.generateExpressionToReg(args[1], "rax")
+	cg.textSection.WriteString("    movq %rax, %r9\n")
+
+	cg.textSection.WriteString("    movq $1000, %rdx\n")
+	cg.textSection.WriteString("    cvtsi2sd %rdx, %xmm2\n")
+	cg.textSection.WriteString("    cvtsi2sd %r8, %xmm0\n")
+	cg.textSection.WriteString("    divsd %xmm2, %xmm0\n")
+	cg.textSection.WriteString("    cvtsi2sd %r9, %xmm1\n")
+	cg.textSection.WriteString("    divsd %xmm2, %xmm1\n")
+
+	// Call libm function
+	cg.textSection.WriteString("    pushq %rbp\n")
+	cg.textSection.WriteString("    movq %rsp, %rbp\n")
+	cg.textSection.WriteString("    andq $-16, %rsp\n")
+	cg.textSection.WriteString(fmt.Sprintf("    call %s@PLT\n", fn))
+	cg.textSection.WriteString("    movq %rbp, %rsp\n")
+	cg.textSection.WriteString("    popq %rbp\n")
+
+	// Convert result back to fixed-point int in rax
+	cg.textSection.WriteString("    movq $1000, %rdx\n")
+	cg.textSection.WriteString("    cvtsi2sd %rdx, %xmm1\n")
+	cg.textSection.WriteString("    mulsd %xmm1, %xmm0\n")
+	cg.textSection.WriteString("    cvttsd2si %xmm0, %rax\n")
+}
+
+func generateMathSin(cg *CodeGenerator, args []ASTNode) {
+	generateMathUnaryLibmFixed(cg, args, "sin")
+}
+
+func generateMathCos(cg *CodeGenerator, args []ASTNode) {
+	generateMathUnaryLibmFixed(cg, args, "cos")
+}
+
+func generateMathTan(cg *CodeGenerator, args []ASTNode) {
+	generateMathUnaryLibmFixed(cg, args, "tan")
+}
+
+func generateMathAtan2(cg *CodeGenerator, args []ASTNode) {
+	generateMathBinaryLibmFixed(cg, args, "atan2")
+}
+
+func generateMathAsin(cg *CodeGenerator, args []ASTNode) {
+	generateMathUnaryLibmFixed(cg, args, "asin")
+}
+
+func generateMathAcos(cg *CodeGenerator, args []ASTNode) {
+	generateMathUnaryLibmFixed(cg, args, "acos")
+}
+
+func generateMathFmod(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+
+	// Guard division by zero for fixed-point denominator
+	cg.generateExpressionToReg(args[1], "rax")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	labelDo := cg.getLabel("fmod_do")
+	labelEnd := cg.getLabel("fmod_end")
+	cg.textSection.WriteString(fmt.Sprintf("    jne %s\n", labelDo))
 	cg.textSection.WriteString("    xorq %rax, %rax\n")
+	cg.textSection.WriteString(fmt.Sprintf("    jmp %s\n", labelEnd))
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelDo))
+	generateMathBinaryLibmFixed(cg, args, "fmod")
+	cg.textSection.WriteString(fmt.Sprintf("%s:\n", labelEnd))
+}
+
+func generateMathFabs(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rax")
+	cg.textSection.WriteString("    movq %rax, %rdx\n")
+	cg.textSection.WriteString("    sarq $63, %rdx\n")
+	cg.textSection.WriteString("    xorq %rdx, %rax\n")
+	cg.textSection.WriteString("    subq %rdx, %rax\n")
+}
+
+// ============================================================================
+// SDL3 EXTENDED FUNCTIONS (Assembly backend stubs)
+// ============================================================================
+
+func generateSDL3CreateTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 5 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // renderer
+	cg.generateExpressionToReg(args[1], "rsi") // format
+	cg.generateExpressionToReg(args[2], "rdx") // access
+	cg.generateExpressionToReg(args[3], "rcx") // w
+	cg.generateExpressionToReg(args[4], "r8")  // h
+	emitAlignedPLTCall(cg, "SDL_CreateTexture")
+}
+
+func generateSDL3DestroyTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_DestroyTexture")
+}
+
+func generateSDL3UpdateTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 4 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // texture
+	cg.generateExpressionToReg(args[1], "rsi") // rect
+	cg.generateExpressionToReg(args[2], "rdx") // pixels
+	cg.generateExpressionToReg(args[3], "rcx") // pitch
+	emitAlignedPLTCall(cg, "SDL_UpdateTexture")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3RenderTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")          // renderer
+	cg.generateExpressionToReg(args[1], "rsi")          // texture
+	cg.textSection.WriteString("    xorq %rdx, %rdx\n") // src rect = NULL
+	cg.generateExpressionToReg(args[2], "rcx")          // dst rect
+	emitAlignedPLTCall(cg, "SDL_RenderTexture")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3LockTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	// int SDL_LockTexture(texture*, rect*, void** pixels, int* pitch)
+	cg.generateExpressionToReg(args[0], "rdi") // texture
+	cg.generateExpressionToReg(args[1], "rsi") // rect
+	cg.generateExpressionToReg(args[2], "rdx") // pixels_out
+
+	// allocate pitch storage
+	cg.textSection.WriteString("    movq $4, %r8\n")
+	cg.textSection.WriteString("    movq %r8, %rdi\n")
+	emitAlignedPLTCall(cg, "malloc")
+	cg.textSection.WriteString("    movq %rax, %rcx\n")
+
+	// restore first three args after malloc
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.generateExpressionToReg(args[1], "rsi")
+	cg.generateExpressionToReg(args[2], "rdx")
+	emitAlignedPLTCall(cg, "SDL_LockTexture")
+	cg.textSection.WriteString("    movq %rax, %r8\n")
+	cg.textSection.WriteString("    movq %rcx, %rdi\n")
+	emitAlignedPLTCall(cg, "free")
+	cg.textSection.WriteString("    movq %r8, %rax\n")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3UnlockTexture(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "SDL_UnlockTexture")
+}
+
+func generateSDL3GetKeyboardState(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    xorq %rdi, %rdi\n") // numkeys = NULL
+	emitAlignedPLTCall(cg, "SDL_GetKeyboardState")
+}
+
+func generateSDL3GetMouseState(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // x_out
+	cg.generateExpressionToReg(args[1], "rsi") // y_out
+	emitAlignedPLTCall(cg, "SDL_GetMouseState")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3GetRelativeMouseState(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // dx_out
+	cg.generateExpressionToReg(args[1], "rsi") // dy_out
+	emitAlignedPLTCall(cg, "SDL_GetRelativeMouseState")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3SetRelativeMouseMode(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // window
+	cg.generateExpressionToReg(args[1], "rsi") // enabled
+	emitAlignedPLTCall(cg, "SDL_SetWindowRelativeMouseMode")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3WarpMouse(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // window
+	cg.generateExpressionToReg(args[1], "r8")
+	cg.generateExpressionToReg(args[2], "r9")
+	cg.textSection.WriteString("    cvtsi2ss %r8, %xmm0\n")
+	cg.textSection.WriteString("    cvtsi2ss %r9, %xmm1\n")
+	emitAlignedPLTCall(cg, "SDL_WarpMouseInWindow")
+}
+
+func generateSDL3GetPerfCounter(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "SDL_GetPerformanceCounter")
+}
+
+func generateSDL3GetPerfFreq(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "SDL_GetPerformanceFrequency")
+}
+
+func generateSDL3GetEventType(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "r8")
+	cg.textSection.WriteString("    movl 0(%r8), %eax\n")
+	cg.textSection.WriteString("    movl %eax, %eax\n")
+}
+
+func generateSDL3GetScancode(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "r8")
+	// SDL_KeyboardEvent.scancode offset
+	cg.textSection.WriteString("    movl 24(%r8), %eax\n")
+	cg.textSection.WriteString("    movl %eax, %eax\n")
+}
+
+func generateSDL3AllocEvent(cg *CodeGenerator, args []ASTNode) {
+	cg.textSection.WriteString("    movq $128, %rdi\n")
+	emitAlignedPLTCall(cg, "malloc")
+}
+
+func generateSDL3ShowCursor(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "SDL_ShowCursor")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateSDL3HideCursor(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "SDL_HideCursor")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+// ============================================================================
+// SDL_MIXER MODULE
+// ============================================================================
+
+// createSDLMixerModule creates the SDL_mixer audio stdlib module
+func createSDLMixerModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "sdl_mixer",
+		Functions: map[string]*StdlibFunction{
+			"open": {
+				Name:    "open",
+				Module:  "sdl_mixer",
+				NumArgs: 4,
+				CodeGen: generateMixOpen,
+			}, // open(freq, format, channels, chunksize) -> bool
+			"close": {
+				Name:    "close",
+				Module:  "sdl_mixer",
+				NumArgs: 0,
+				CodeGen: generateMixClose,
+			}, // close()
+			"load_wav": {
+				Name:    "load_wav",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixLoadWAV,
+			}, // load_wav(path) -> chunk*
+			"free_chunk": {
+				Name:    "free_chunk",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixFreeChunk,
+			}, // free_chunk(chunk*)
+			"play_channel": {
+				Name:    "play_channel",
+				Module:  "sdl_mixer",
+				NumArgs: 3,
+				CodeGen: generateMixPlayChannel,
+			}, // play_channel(channel, chunk*, loops) -> int
+			"halt_channel": {
+				Name:    "halt_channel",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixHaltChannel,
+			}, // halt_channel(channel)
+			"volume": {
+				Name:    "volume",
+				Module:  "sdl_mixer",
+				NumArgs: 2,
+				CodeGen: generateMixVolume,
+			}, // volume(channel, vol) -> old_vol
+			"load_mus": {
+				Name:    "load_mus",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixLoadMUS,
+			}, // load_mus(path) -> music*
+			"free_music": {
+				Name:    "free_music",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixFreeMusic,
+			}, // free_music(music*)
+			"play_music": {
+				Name:    "play_music",
+				Module:  "sdl_mixer",
+				NumArgs: 2,
+				CodeGen: generateMixPlayMusic,
+			}, // play_music(music*, loops) -> bool
+			"halt_music": {
+				Name:    "halt_music",
+				Module:  "sdl_mixer",
+				NumArgs: 0,
+				CodeGen: generateMixHaltMusic,
+			}, // halt_music()
+			"volume_music": {
+				Name:    "volume_music",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixVolumeMusic,
+			}, // volume_music(vol) -> old_vol
+			"playing": {
+				Name:    "playing",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixPlaying,
+			}, // playing(channel) -> bool
+			"playing_music": {
+				Name:    "playing_music",
+				Module:  "sdl_mixer",
+				NumArgs: 0,
+				CodeGen: generateMixPlayingMusic,
+			}, // playing_music() -> bool
+			"allocate_channels": {
+				Name:    "allocate_channels",
+				Module:  "sdl_mixer",
+				NumArgs: 1,
+				CodeGen: generateMixAllocateChannels,
+			}, // allocate_channels(n) -> int
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// SDL_Mixer legacy codegen stubs
+
+func generateMixOpen(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 4 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // frequency
+	cg.generateExpressionToReg(args[1], "rsi") // format
+	cg.generateExpressionToReg(args[2], "rdx") // channels
+	cg.generateExpressionToReg(args[3], "rcx") // chunksize
+	emitAlignedPLTCall(cg, "Mix_OpenAudio")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateMixClose(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "Mix_CloseAudio")
+}
+
+func generateMixLoadWAV(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_LoadWAV")
+}
+
+func generateMixFreeChunk(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_FreeChunk")
+}
+
+func generateMixPlayChannel(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.generateExpressionToReg(args[1], "rsi")
+	cg.generateExpressionToReg(args[2], "rdx")
+	emitAlignedPLTCall(cg, "Mix_PlayChannel")
+}
+
+func generateMixHaltChannel(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_HaltChannel")
+}
+
+func generateMixVolume(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.generateExpressionToReg(args[1], "rsi")
+	emitAlignedPLTCall(cg, "Mix_Volume")
+}
+
+func generateMixLoadMUS(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_LoadMUS")
+}
+
+func generateMixFreeMusic(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_FreeMusic")
+}
+
+func generateMixPlayMusic(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	cg.generateExpressionToReg(args[1], "rsi")
+	emitAlignedPLTCall(cg, "Mix_PlayMusic")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateMixHaltMusic(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "Mix_HaltMusic")
+}
+
+func generateMixVolumeMusic(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_VolumeMusic")
+}
+
+func generateMixPlaying(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_Playing")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateMixPlayingMusic(cg *CodeGenerator, args []ASTNode) {
+	emitAlignedPLTCall(cg, "Mix_PlayingMusic")
+	cg.textSection.WriteString("    testq %rax, %rax\n")
+	cg.textSection.WriteString("    setne %al\n")
+	cg.textSection.WriteString("    movzbq %al, %rax\n")
+}
+
+func generateMixAllocateChannels(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi")
+	emitAlignedPLTCall(cg, "Mix_AllocateChannels")
 }

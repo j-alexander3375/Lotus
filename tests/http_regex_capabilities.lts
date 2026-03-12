@@ -1,0 +1,41 @@
+use "io";
+use "http";
+use "regex";
+use "str";
+use "mem";
+
+fn int main() {
+    string response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Test: yes\r\n\r\nHello";
+    int response_len = len(response);
+
+    int header_buf = malloc(128);
+    if header_buf == 0 {
+        io::println("malloc failed");
+        ret 1;
+    }
+
+    int status = http::parse_status(response, response_len);
+    int header_len = http::get_header(response, response_len, "Content-Type", header_buf);
+    int body_ptr = http::get_body(response, response_len);
+    int header_count = http::parse_headers(response, response_len, 0);
+
+    string replaced = regex::replace_all("ab", "XY", "ab--ab--zz");
+    int old_pos = regex::find("ab", replaced);
+    int new_pos = regex::find("XY", replaced);
+
+    io::println("status=%d header_len=%d header_count=%d", status, header_len, header_count);
+    io::println("header=%s", header_buf);
+    io::println("body=%s", body_ptr);
+    io::println("replaced=%s old_pos=%d new_pos=%d", replaced, old_pos, new_pos);
+
+    if status != 200 { free(header_buf); ret 2; }
+    if header_len <= 0 { free(header_buf); ret 3; }
+    if body_ptr == 0 { free(header_buf); ret 4; }
+    if header_count < 2 { free(header_buf); ret 6; }
+
+    if old_pos != -1 { free(header_buf); ret 7; }
+    if new_pos != 0 { free(header_buf); ret 8; }
+
+    free(header_buf);
+    ret 0;
+}
