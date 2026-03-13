@@ -2392,6 +2392,20 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	case "find_all":
 		return cg.generateRegexFindAll(call)
 
+	// OS / process-execution functions
+	case "os::exec", "exec":
+		return cg.generateOSExec(call)
+	case "os::popen", "popen":
+		return cg.generateOSPopen(call)
+	case "os::pread", "pread":
+		return cg.generateOSPread(call)
+	case "os::pclose", "pclose":
+		return cg.generateOSPclose(call)
+	case "os::getenv", "getenv":
+		return cg.generateOSGetenv(call)
+	case "os::setenv", "setenv":
+		return cg.generateOSSetenv(call)
+
 	// SDL3 functions
 	case "init":
 		return cg.generateSDL3Init(call)

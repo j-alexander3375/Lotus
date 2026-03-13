@@ -162,6 +162,8 @@ func (cg *CodeGenerator) generateExpressionToReg(expr ASTNode, reg string) {
 	switch e := expr.(type) {
 	case *IntLiteral:
 		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%%s\n", e.Value, reg))
+	case *FloatLiteral:
+		cg.textSection.WriteString(fmt.Sprintf("    movq $%d, %%%s\n", e.Value, reg))
 	case *StringLiteral:
 		// Emit string to data section and load address
 		label, _ := emitStringLiteral(cg, e.Value)

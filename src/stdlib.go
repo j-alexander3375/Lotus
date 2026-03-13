@@ -42,6 +42,7 @@ var StandardLibrary = map[string]*StdlibModule{
 	"json":        createJSONModule(),
 	"sdl3":        createSDL3Module(),
 	"sdl_mixer":   createSDLMixerModule(),
+	"os":          createOSModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -574,6 +575,30 @@ func createFileModule() *StdlibModule {
 			"seek":   {Name: "seek", Module: "file", NumArgs: 3, CodeGen: generateFileSeek},     // seek(fd, offset, whence) -> new_pos
 			"stat":   {Name: "stat", Module: "file", NumArgs: 2, CodeGen: generateFileStat},     // stat(path_ptr, stat_buf) -> status
 			"exists": {Name: "exists", Module: "file", NumArgs: 1, CodeGen: generateFileExists}, // exists(path_ptr) -> 0/1
+		},
+		Types: map[string]TokenType{},
+	}
+}
+
+// createOSModule creates the OS / process-execution stdlib module.
+// All functions call POSIX libc helpers (system, popen, pclose, fread,
+// getenv, setenv) via the PLT so no extra link flags are required.
+func createOSModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "os",
+		Functions: map[string]*StdlibFunction{
+			// exec(cmd) -> exit_code  (wraps system(3))
+			"exec": {Name: "exec", Module: "os", NumArgs: 1, CodeGen: generateOSExec},
+			// popen(cmd, mode) -> FILE*  (wraps popen(3); mode 0="r", 1="w")
+			"popen": {Name: "popen", Module: "os", NumArgs: 2, CodeGen: generateOSPopen},
+			// pread(fp, buf, size) -> bytes_read  (wraps fread(3) on a popen pipe)
+			"pread": {Name: "pread", Module: "os", NumArgs: 3, CodeGen: generateOSPread},
+			// pclose(fp) -> exit_code  (wraps pclose(3))
+			"pclose": {Name: "pclose", Module: "os", NumArgs: 1, CodeGen: generateOSPclose},
+			// getenv(name) -> ptr  (wraps getenv(3); returns 0 if unset)
+			"getenv": {Name: "getenv", Module: "os", NumArgs: 1, CodeGen: generateOSGetenv},
+			// setenv(name, value, overwrite) -> status  (wraps setenv(3))
+			"setenv": {Name: "setenv", Module: "os", NumArgs: 3, CodeGen: generateOSSetenv},
 		},
 		Types: map[string]TokenType{},
 	}
@@ -9259,4 +9284,87 @@ func generateMixAllocateChannels(cg *CodeGenerator, args []ASTNode) {
 	}
 	cg.generateExpressionToReg(args[0], "rdi")
 	emitAlignedPLTCall(cg, "Mix_AllocateChannels")
+}
+
+// generateOSExec(cmd) -> exit_code
+// Calls system(3): runs cmd via /bin/sh, returns the shell exit status.
+func generateOSExec(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    movq $-1, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // const char *command
+	emitAlignedPLTCall(cg, "system")
+	cg.textSection.WriteString("    movslq %eax, %rax\n") // sign-extend int -> int64
+}
+
+// generateOSPopen(cmd, mode) -> FILE*
+// Calls popen(3): opens a pipe to cmd.  mode must be a pointer to "r" or "w".
+// Returns the FILE* as an integer (0 on failure).
+func generateOSPopen(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 2 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // const char *command
+	cg.generateExpressionToReg(args[1], "rsi") // const char *mode
+	emitAlignedPLTCall(cg, "popen")
+	// rax = FILE* (integer address; 0 on failure)
+}
+
+// generateOSPread(fp, buf, size) -> bytes_read
+// Calls fread(buf, 1, size, fp): reads up to size bytes from a popen pipe.
+func generateOSPread(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	// fread(ptr=rdi, size=rsi, nmemb=rdx, stream=rcx)
+	// Save FILE* in a scratch register so later evaluations don't clobber it.
+	cg.generateExpressionToReg(args[0], "r10") // FILE* (saved)
+	cg.generateExpressionToReg(args[1], "rdi") // buf
+	cg.textSection.WriteString("    movq $1, %rsi\n")   // element size = 1 byte
+	cg.generateExpressionToReg(args[2], "rdx")          // nmemb = count
+	cg.textSection.WriteString("    movq %r10, %rcx\n") // FILE* stream (4th arg)
+	emitAlignedPLTCall(cg, "fread")
+	// rax = number of bytes read
+}
+
+// generateOSPclose(fp) -> exit_code
+// Calls pclose(3): closes the pipe and returns the exit status of the command.
+func generateOSPclose(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    movq $-1, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // FILE*
+	emitAlignedPLTCall(cg, "pclose")
+	cg.textSection.WriteString("    movslq %eax, %rax\n") // sign-extend int -> int64
+}
+
+// generateOSGetenv(name) -> ptr
+// Calls getenv(3): returns a pointer to the value string, or 0 if unset.
+func generateOSGetenv(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 1 {
+		cg.textSection.WriteString("    xorq %rax, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // const char *name
+	emitAlignedPLTCall(cg, "getenv")
+	// rax = char* value or NULL (0)
+}
+
+// generateOSSetenv(name, value, overwrite) -> status
+// Calls setenv(3): sets env var name=value.  overwrite != 0 replaces existing.
+// Returns 0 on success, -1 on error.
+func generateOSSetenv(cg *CodeGenerator, args []ASTNode) {
+	if len(args) != 3 {
+		cg.textSection.WriteString("    movq $-1, %rax\n")
+		return
+	}
+	cg.generateExpressionToReg(args[0], "rdi") // const char *name
+	cg.generateExpressionToReg(args[1], "rsi") // const char *value
+	cg.generateExpressionToReg(args[2], "rdx") // int overwrite
+	emitAlignedPLTCall(cg, "setenv")
+	cg.textSection.WriteString("    movslq %eax, %rax\n") // sign-extend int -> int64
 }

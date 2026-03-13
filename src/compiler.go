@@ -359,7 +359,7 @@ func (c *Compiler) buildBinary(asm string) error {
 
 	// Invoke GCC to assemble and link
 	assembleStart := time.Now()
-	cmd := exec.Command("gcc", "-nostartfiles", "-no-pie", "-o", c.Options.OutPath, tmpAsm)
+	cmd := exec.Command("gcc", "-nostartfiles", "-no-pie", "-o", c.Options.OutPath, tmpAsm, "-lm")
 
 	if c.Options.Verbose {
 		log.Printf("Assembling: %s", strings.Join(cmd.Args, " "))

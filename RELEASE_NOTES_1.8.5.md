@@ -1,8 +1,8 @@
-# Release Notes for Lotus 1.7.4
+# Release Notes for Lotus 1.8.5
 
 ## Highlights
 
-Automated release 1.7.4 with comprehensive testing and fixes.
+Automated release 1.8.5 with comprehensive testing and fixes.
 
 ## Changes in This Release
 
@@ -23,13 +23,13 @@ Automated release 1.7.4 with comprehensive testing and fixes.
 ## Installation
 
 ### Binary Downloads
-Download pre-built binaries from the [releases page](https://github.com/j-alexander3375/Lotus/releases/tag/1.7.4).
+Download pre-built binaries from the [releases page](https://github.com/j-alexander3375/Lotus/releases/tag/1.8.5).
 
 ### From Source
 ```bash
 git clone https://github.com/j-alexander3375/Lotus
 cd Lotus
-git checkout 1.7.4
+git checkout 1.8.5
 cd src
 go build -o ../lotus .
 ```

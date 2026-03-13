@@ -6696,3 +6696,185 @@ func (cg *LLVMCodeGenerator) generateMixAllocateChannels(call *FunctionCall) (ll
 	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{n32}, "allocchans")
 	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "allocchansext"), nil
 }
+
+// declareOSFunctions declares the POSIX libc functions used by the os module
+// as external symbols so LLVM can emit call instructions for them.
+func (cg *LLVMCodeGenerator) declareOSFunctions() {
+	i8Ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+
+	if _, ok := cg.functions["system"]; !ok {
+		// int system(const char *command)
+		t := llvm.FunctionType(cg.context.Int32Type(), []llvm.Type{i8Ptr}, false)
+		f := llvm.AddFunction(cg.module, "system", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["system"] = f
+	}
+	if _, ok := cg.functions["popen"]; !ok {
+		// FILE *popen(const char *command, const char *mode)
+		t := llvm.FunctionType(i8Ptr, []llvm.Type{i8Ptr, i8Ptr}, false)
+		f := llvm.AddFunction(cg.module, "popen", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["popen"] = f
+	}
+	if _, ok := cg.functions["pclose"]; !ok {
+		// int pclose(FILE *stream)
+		t := llvm.FunctionType(cg.context.Int32Type(), []llvm.Type{i8Ptr}, false)
+		f := llvm.AddFunction(cg.module, "pclose", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["pclose"] = f
+	}
+	if _, ok := cg.functions["fread"]; !ok {
+		// size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
+		t := llvm.FunctionType(
+			cg.context.Int64Type(),
+			[]llvm.Type{i8Ptr, cg.context.Int64Type(), cg.context.Int64Type(), i8Ptr},
+			false,
+		)
+		f := llvm.AddFunction(cg.module, "fread", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["fread"] = f
+	}
+	if _, ok := cg.functions["getenv"]; !ok {
+		// char *getenv(const char *name)
+		t := llvm.FunctionType(i8Ptr, []llvm.Type{i8Ptr}, false)
+		f := llvm.AddFunction(cg.module, "getenv", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["getenv"] = f
+	}
+	if _, ok := cg.functions["setenv"]; !ok {
+		// int setenv(const char *name, const char *value, int overwrite)
+		t := llvm.FunctionType(
+			cg.context.Int32Type(),
+			[]llvm.Type{i8Ptr, i8Ptr, cg.context.Int32Type()},
+			false,
+		)
+		f := llvm.AddFunction(cg.module, "setenv", t)
+		f.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["setenv"] = f
+	}
+}
+
+// generateOSExec generates code for os.exec(cmd) -> exit_code
+// Wraps system(3): runs cmd via /bin/sh and returns the exit status.
+func (cg *LLVMCodeGenerator) generateOSExec(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("os::exec requires 1 argument (cmd)")
+	}
+	cg.declareOSFunctions()
+	cmd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fn := cg.functions["system"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{cmd}, "exec_rc")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "exec_rc64"), nil
+}
+
+// generateOSPopen generates code for os.popen(cmd, mode) -> FILE*
+// Wraps popen(3).  Returns the FILE* as an i64 integer (0 on failure).
+func (cg *LLVMCodeGenerator) generateOSPopen(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("os::popen requires 2 arguments (cmd, mode)")
+	}
+	cg.declareOSFunctions()
+	cmd, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	mode, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fn := cg.functions["popen"]
+	fp := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{cmd, mode}, "popen_fp")
+	return cg.builder.CreatePtrToInt(fp, cg.context.Int64Type(), "popen_fp64"), nil
+}
+
+// generateOSPread generates code for os.pread(fp, buf, size) -> bytes_read
+// Wraps fread(buf, 1, size, fp).
+func (cg *LLVMCodeGenerator) generateOSPread(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("os::pread requires 3 arguments (fp, buf, size)")
+	}
+	cg.declareOSFunctions()
+	i8Ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+
+	fp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	buf, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	size, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	fpPtr := cg.builder.CreateIntToPtr(fp, i8Ptr, "pread_fpptr")
+	bufPtr := cg.builder.CreateIntToPtr(buf, i8Ptr, "pread_bufptr")
+	one := llvm.ConstInt(cg.context.Int64Type(), 1, false)
+	fn := cg.functions["fread"]
+	return cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{bufPtr, one, size, fpPtr}, "pread_n"), nil
+}
+
+// generateOSPclose generates code for os.pclose(fp) -> exit_code
+// Wraps pclose(3).
+func (cg *LLVMCodeGenerator) generateOSPclose(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("os::pclose requires 1 argument (fp)")
+	}
+	cg.declareOSFunctions()
+	i8Ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+
+	fp, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fpPtr := cg.builder.CreateIntToPtr(fp, i8Ptr, "pclose_fpptr")
+	fn := cg.functions["pclose"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{fpPtr}, "pclose_rc")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "pclose_rc64"), nil
+}
+
+// generateOSGetenv generates code for os.getenv(name) -> ptr
+// Wraps getenv(3).  Returns the value pointer as i64, or 0 if unset.
+func (cg *LLVMCodeGenerator) generateOSGetenv(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("os::getenv requires 1 argument (name)")
+	}
+	cg.declareOSFunctions()
+	name, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fn := cg.functions["getenv"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{name}, "getenv_ptr")
+	return cg.builder.CreatePtrToInt(result, cg.context.Int64Type(), "getenv_ptr64"), nil
+}
+
+// generateOSSetenv generates code for os.setenv(name, value, overwrite) -> status
+// Wraps setenv(3).  Returns 0 on success, -1 on error.
+func (cg *LLVMCodeGenerator) generateOSSetenv(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("os::setenv requires 3 arguments (name, value, overwrite)")
+	}
+	cg.declareOSFunctions()
+	name, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	value, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	overwrite, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	overwrite32 := cg.builder.CreateTrunc(overwrite, cg.context.Int32Type(), "setenv_ow32")
+	fn := cg.functions["setenv"]
+	result := cg.builder.CreateCall(fn.GlobalValueType(), fn, []llvm.Value{name, value, overwrite32}, "setenv_rc")
+	return cg.builder.CreateSExt(result, cg.context.Int64Type(), "setenv_rc64"), nil
+}
