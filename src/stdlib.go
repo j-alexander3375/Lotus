@@ -43,6 +43,7 @@ var StandardLibrary = map[string]*StdlibModule{
 	"sdl3":        createSDL3Module(),
 	"sdl_mixer":   createSDLMixerModule(),
 	"os":          createOSModule(),
+	"func":        createFuncModule(),
 }
 
 // createIOModule creates the I/O standard library module
@@ -9321,8 +9322,8 @@ func generateOSPread(cg *CodeGenerator, args []ASTNode) {
 	}
 	// fread(ptr=rdi, size=rsi, nmemb=rdx, stream=rcx)
 	// Save FILE* in a scratch register so later evaluations don't clobber it.
-	cg.generateExpressionToReg(args[0], "r10") // FILE* (saved)
-	cg.generateExpressionToReg(args[1], "rdi") // buf
+	cg.generateExpressionToReg(args[0], "r10")          // FILE* (saved)
+	cg.generateExpressionToReg(args[1], "rdi")          // buf
 	cg.textSection.WriteString("    movq $1, %rsi\n")   // element size = 1 byte
 	cg.generateExpressionToReg(args[2], "rdx")          // nmemb = count
 	cg.textSection.WriteString("    movq %r10, %rcx\n") // FILE* stream (4th arg)
@@ -9367,4 +9368,106 @@ func generateOSSetenv(cg *CodeGenerator, args []ASTNode) {
 	cg.generateExpressionToReg(args[2], "rdx") // int overwrite
 	emitAlignedPLTCall(cg, "setenv")
 	cg.textSection.WriteString("    movslq %eax, %rax\n") // sign-extend int -> int64
+}
+
+// ============================================================================
+// FUNC MODULE - Functional programming utilities
+// ============================================================================
+
+// createFuncModule creates the functional programming stdlib module.
+// These are higher-level combinators that complement the built-in
+// Option/Result method syntax (.map, .and_then, etc.).
+func createFuncModule() *StdlibModule {
+	return &StdlibModule{
+		Name: "func",
+		Functions: map[string]*StdlibFunction{
+			// identity(x) -> x
+			"identity": {
+				Name:    "identity",
+				Module:  "func",
+				NumArgs: 1,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[0], "rax")
+				},
+			},
+			// compose(f, g, x) applies f(x) then g to the result: g(f(x))
+			// For ergonomic composition use the |> pipe operator instead.
+			"compose": {
+				Name:    "compose",
+				Module:  "func",
+				NumArgs: 3,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[2], "rdi") // x
+					cg.generateExpressionToReg(args[0], "r10") // f
+					cg.textSection.WriteString("    call *%r10\n")
+					cg.textSection.WriteString("    movq %rax, %rdi\n")
+					cg.generateExpressionToReg(args[1], "r10") // g
+					cg.textSection.WriteString("    call *%r10\n")
+				},
+			},
+			// flip(f, a, b) -> f(b, a)  (swap the first two arguments of f)
+			"flip": {
+				Name:    "flip",
+				Module:  "func",
+				NumArgs: 3,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[2], "rdi") // b first
+					cg.generateExpressionToReg(args[1], "rsi") // a second
+					cg.generateExpressionToReg(args[0], "r10") // f
+					cg.textSection.WriteString("    call *%r10\n")
+				},
+			},
+			// const_fn(x, _) -> x  (always returns first argument, ignores second)
+			"const_fn": {
+				Name:    "const_fn",
+				Module:  "func",
+				NumArgs: 2,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[0], "rax")
+				},
+			},
+			// apply(f, x) -> f(x)
+			"apply": {
+				Name:    "apply",
+				Module:  "func",
+				NumArgs: 2,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[1], "rdi") // x
+					cg.generateExpressionToReg(args[0], "r10") // f
+					cg.textSection.WriteString("    call *%r10\n")
+				},
+			},
+			// ap is an alias for apply(f, x) to mirror applicative terminology.
+			"ap": {
+				Name:    "ap",
+				Module:  "func",
+				NumArgs: 2,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[1], "rdi") // x
+					cg.generateExpressionToReg(args[0], "r10") // f
+					cg.textSection.WriteString("    call *%r10\n")
+				},
+			},
+			// mempty() -> 0  (additive identity for int monoid)
+			"mempty": {
+				Name:    "mempty",
+				Module:  "func",
+				NumArgs: 0,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.textSection.WriteString("    movq $0, %rax\n")
+				},
+			},
+			// mappend(a, b) -> a + b  (additive int monoid combine)
+			"mappend": {
+				Name:    "mappend",
+				Module:  "func",
+				NumArgs: 2,
+				CodeGen: func(cg *CodeGenerator, args []ASTNode) {
+					cg.generateExpressionToReg(args[0], "rax")
+					cg.generateExpressionToReg(args[1], "rbx")
+					cg.textSection.WriteString("    addq %rbx, %rax\n")
+				},
+			},
+		},
+	}
 }

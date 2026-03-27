@@ -1,0 +1,117 @@
+use "io";
+use "func";
+
+// ============================================================================
+// Functional Programming in Lotus
+// Demonstrates: Option<T>, method chaining, pipe operator, partial application
+// ============================================================================
+
+fn int double(int x) {
+    ret x * 2;
+}
+
+fn int add_ten(int x) {
+    ret x + 10;
+}
+
+fn int main() {
+    printf("=== Lotus Functional Programming ===\n\n");
+
+    // --- Option<T>: Some / None ---
+    printf("-- Option<T> --\n");
+
+    // Create Options
+    int raw_val = 21;
+    int def_val = 42;
+
+    // .is_some() / .is_none()
+    if Some(raw_val).is_some() {
+        printf("Some(21) is_some: true\n");
+    }
+    if None.is_none() {
+        printf("None is_none: true\n");
+    }
+
+    // .unwrap() - extract the value directly
+    int unwrapped = Some(raw_val).unwrap();
+    printf("Some(21).unwrap() = %d\n", unwrapped);
+
+    // .unwrap_or(default) - safe extraction with fallback
+    int safe = None.unwrap_or(def_val);
+    printf("None.unwrap_or(42) = %d\n", safe);
+
+    // .map(f) - Functor: transform the inner value if Some
+    int mapped_val = Some(raw_val).map(fn double).unwrap();
+    printf("Some(21).map(double).unwrap() = %d\n", mapped_val);
+
+    // .and_then(f) - Monad bind: f returns an Option itself
+    int bound_val = Some(raw_val).and_then(fn safe_double).unwrap_or(0);
+    printf("Some(21).and_then(safe_double).unwrap_or(0) = %d\n", bound_val);
+
+    // None propagates through map and and_then unchanged
+    int none_mapped = None.map(fn double).unwrap_or(-1);
+    printf("None.map(double).unwrap_or(-1) = %d\n", none_mapped);
+
+    printf("\n");
+
+    // --- Pipe operator |> for function composition ---
+    printf("-- Pipe operator |> --\n");
+
+    int piped = 5 |> double |> add_ten;
+    printf("5 |> double |> add_ten = %d\n", piped);
+
+    printf("\n");
+
+    // --- func module: compose, identity ---
+    printf("-- func:: module --\n");
+
+    int composed = func::compose(fn double, fn add_ten, 3);
+    printf("compose(double, add_ten, 3) = %d\n", composed);
+
+    int identity_val = func::identity(99);
+    printf("identity(99) = %d\n", identity_val);
+
+    // --- Lambda + Applicative helpers ---
+    printf("-- Lambda + Applicative --\n");
+
+    // call1 invokes a first-class function (including lambdas) with one argument.
+    int lambda_val = call1(|int x| => x + 1, 41);
+    printf("call1(|x| => x + 1, 41) = %d\n", lambda_val);
+
+    int applied = func::apply(fn double, 11);
+    printf("apply(double, 11) = %d\n", applied);
+
+    int ap_val = func::ap(fn add_ten, 5);
+    printf("ap(add_ten, 5) = %d\n", ap_val);
+
+    // --- Monoid helpers (additive int monoid) ---
+    printf("-- Monoid --\n");
+
+    int zero = func::mempty();
+    int combined = func::mappend(7, 8);
+    int folded = func::mappend(func::mappend(1, 2), func::mappend(3, zero));
+    printf("mempty() = %d\n", zero);
+    printf("mappend(7, 8) = %d\n", combined);
+    printf("mappend(mappend(1,2), mappend(3,mempty())) = %d\n", folded);
+
+    // --- Partial application (currying) ---
+    printf("-- Partial Application --\n");
+
+    int partial_val = partial(add_two, 40)(2);
+    printf("partial(add_two, 40)(2) = %d\n", partial_val);
+
+    printf("\n=== Done ===\n");
+    ret 0;
+}
+
+fn int add_two(int a, int b) {
+    ret a + b;
+}
+
+// safe_double: returns Some(x*2) when x > 0, else None
+fn int safe_double(int x) {
+    if x > 0 {
+        ret x * 2;
+    }
+    ret 0;
+}

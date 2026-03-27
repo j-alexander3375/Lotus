@@ -674,6 +674,13 @@ func (cg *LLVMCodeGenerator) generateMethodCall(m *MethodCall) (llvm.Value, erro
 		return llvm.Value{}, err
 	}
 
+	// Check if this is an Option/Result combinator call.
+	// Both types share the struct layout { i1 flag, T value }, so we detect them
+	// by inspecting the LLVM type: a struct whose first field is i1.
+	if isOptionalMethodName(m.MethodName) && isOptionalStructType(obj.Type()) {
+		return cg.generateOptionalMethodCall(m, obj)
+	}
+
 	// Determine class name
 	var className string
 	if _, ok := m.Object.(*Identifier); ok {

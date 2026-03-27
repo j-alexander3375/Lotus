@@ -315,6 +315,10 @@ func Tokenize(input string) []Token {
 				tokens = append(tokens, makeToken(TokenSome, ""))
 			case "None":
 				tokens = append(tokens, makeToken(TokenNone, ""))
+			case "Ok":
+				tokens = append(tokens, makeToken(TokenOk, ""))
+			case "Err":
+				tokens = append(tokens, makeToken(TokenErr, ""))
 			case "Printf":
 				tokens = append(tokens, makeToken(TokenPrintf, ""))
 			case "FPrintf":

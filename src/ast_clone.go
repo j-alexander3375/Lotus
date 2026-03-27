@@ -154,6 +154,37 @@ func CloneASTNode(node ASTNode) ASTNode {
 			Operator: n.Operator,
 		}
 
+	case *OptionExpression:
+		return &OptionExpression{
+			IsSome: n.IsSome,
+			Value:  CloneASTNode(n.Value),
+		}
+
+	case *ResultExpression:
+		return &ResultExpression{
+			IsOk:  n.IsOk,
+			Value: CloneASTNode(n.Value),
+		}
+
+	case *MethodCall:
+		args := make([]ASTNode, len(n.Args))
+		for i, arg := range n.Args {
+			args[i] = CloneASTNode(arg)
+		}
+		return &MethodCall{
+			Object:     CloneASTNode(n.Object),
+			MethodName: n.MethodName,
+			Args:       args,
+			IsPointer:  n.IsPointer,
+		}
+
+	case *FieldAccess:
+		return &FieldAccess{
+			Object:    CloneASTNode(n.Object),
+			FieldName: n.FieldName,
+			IsPointer: n.IsPointer,
+		}
+
 	// For unsupported node types, return the original
 	// This is safe for immutable nodes but may cause issues with mutable ones
 	default:
