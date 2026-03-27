@@ -243,21 +243,15 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 				}, nil
 			}
 			return nil, fmt.Errorf("unexpected single ':' after identifier %s", name)
-		case TokenDot:
-			// Field access: identifier.field or identifier.field = value
-			// Build the field access chain
-			var target ASTNode = &Identifier{Name: name}
-			for p.current().Type == TokenDot {
-				p.advance() // skip '.'
-				if p.current().Type != TokenIdentifier {
-					return nil, p.formatErrorWithCode(ErrExpectedToken, "expected field name after '.', got "+TokenTypeName(p.current().Type))
-				}
-				fieldName := p.current().Value
-				p.advance()
-				target = &FieldAccess{Object: target, FieldName: fieldName, IsPointer: false}
+		case TokenDot, TokenArrow:
+			// Field/method access: obj.field, obj.method(args), obj->field, obj->method(args)
+			base := &Identifier{Name: name}
+			target, err := p.parsePostfixChain(base)
+			if err != nil {
+				return nil, err
 			}
 
-			// Check for assignment
+			// Check for assignment (only valid for field accesses, not method calls)
 			if p.current().Type == TokenAssign {
 				p.advance()
 				value, err := p.parseExpression()
@@ -267,7 +261,18 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 				return &Assignment{Target: target, Value: value}, nil
 			}
 
-			// Just a field access expression
+			// Compound assignment on field: obj.field += expr
+			if p.current().Type == TokenPlusEq || p.current().Type == TokenMinusEq ||
+				p.current().Type == TokenStarEq || p.current().Type == TokenSlashEq || p.current().Type == TokenPercentEq {
+				op := p.current().Type
+				p.advance()
+				value, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				return &CompoundAssignment{Target: target, Operator: op, Value: value}, nil
+			}
+
 			return target, nil
 		case TokenAssign:
 			// Simple assignment: identifier = expression
@@ -1338,7 +1343,90 @@ func (p *Parser) parseUnary() (ASTNode, error) {
 		}, nil
 	}
 
-	return p.parsePrimary()
+	primary, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	return p.parsePostfixChain(primary)
+}
+
+// parsePostfixChain handles postfix operations after a primary expression:
+//   .method(args)  ->  MethodCall
+//   .field         ->  FieldAccess
+//   ->method(args) ->  MethodCall (pointer)
+//   ->field        ->  FieldAccess (pointer)
+//   [index]        ->  ArrayAccess
+func (p *Parser) parsePostfixChain(base ASTNode) (ASTNode, error) {
+	result := base
+	for {
+		switch p.current().Type {
+		case TokenDot:
+			p.advance() // skip '.'
+			if p.current().Type != TokenIdentifier {
+				return nil, p.formatError("expected field or method name after '.'")
+			}
+			name := p.current().Value
+			p.advance()
+			if p.current().Type == TokenLParen {
+				p.advance() // skip '('
+				args, err := p.parseCallArgList()
+				if err != nil {
+					return nil, err
+				}
+				result = &MethodCall{Object: result, MethodName: name, Args: args, IsPointer: false}
+			} else {
+				result = &FieldAccess{Object: result, FieldName: name, IsPointer: false}
+			}
+		case TokenArrow:
+			p.advance() // skip '->'
+			if p.current().Type != TokenIdentifier {
+				return nil, p.formatError("expected field or method name after '->'")
+			}
+			name := p.current().Value
+			p.advance()
+			if p.current().Type == TokenLParen {
+				p.advance() // skip '('
+				args, err := p.parseCallArgList()
+				if err != nil {
+					return nil, err
+				}
+				result = &MethodCall{Object: result, MethodName: name, Args: args, IsPointer: true}
+			} else {
+				result = &FieldAccess{Object: result, FieldName: name, IsPointer: true}
+			}
+		case TokenLBracket:
+			p.advance() // skip '['
+			index, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expect(TokenRBracket); err != nil {
+				return nil, err
+			}
+			result = &ArrayAccess{Array: result, Index: index}
+		default:
+			return result, nil
+		}
+	}
+}
+
+// parseCallArgList parses a comma-separated argument list up to and including ')'
+func (p *Parser) parseCallArgList() ([]ASTNode, error) {
+	var args []ASTNode
+	for p.current().Type != TokenRParen && p.current().Type != TokenEOF {
+		arg, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+		if p.current().Type == TokenComma {
+			p.advance()
+		}
+	}
+	if err := p.expect(TokenRParen); err != nil {
+		return nil, err
+	}
+	return args, nil
 }
 
 // isUnaryContext checks if & should be treated as unary (address-of) vs binary (bitwise AND)
@@ -1404,6 +1492,34 @@ func (p *Parser) parsePrimary() (ASTNode, error) {
 		// None - empty optional
 		p.advance()
 		return &OptionExpression{IsSome: false, Value: nil}, nil
+	case TokenOk:
+		// Ok(value) - result with success value
+		p.advance() // skip 'Ok'
+		if err := p.expect(TokenLParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '(' after 'Ok'")
+		}
+		value, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after Ok value")
+		}
+		return &ResultExpression{IsOk: true, Value: value}, nil
+	case TokenErr:
+		// Err(value) - result with error value
+		p.advance() // skip 'Err'
+		if err := p.expect(TokenLParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected '(' after 'Err'")
+		}
+		value, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, "expected ')' after Err value")
+		}
+		return &ResultExpression{IsOk: false, Value: value}, nil
 	case TokenIdentifier:
 		name := p.current().Value
 		p.advance()

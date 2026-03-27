@@ -777,6 +777,17 @@ func findCallsInNode(node ASTNode) []string {
 	case *PipeExpression:
 		calls = append(calls, findCallsInNode(n.Left)...)
 		calls = append(calls, n.Function) // The function being piped into
+	case *MethodCall:
+		calls = append(calls, findCallsInNode(n.Object)...)
+		for _, arg := range n.Args {
+			calls = append(calls, findCallsInNode(arg)...)
+		}
+	case *FunctionReference:
+		calls = append(calls, n.FunctionName)
+	case *OptionExpression:
+		calls = append(calls, findCallsInNode(n.Value)...)
+	case *ResultExpression:
+		calls = append(calls, findCallsInNode(n.Value)...)
 	case *MatchExpression:
 		calls = append(calls, findCallsInNode(n.Value)...)
 		for _, c := range n.Cases {

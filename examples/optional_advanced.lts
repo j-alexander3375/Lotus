@@ -15,12 +15,11 @@ fn int main() {
     printf("✓ Current: Struct-based representation\n");
     printf("✓ Current: Type-safe at compile time\n\n");
 
-    // Planned Features:
-    printf("⏳ Planned: Pattern matching for unwrapping\n");
-    printf("⏳ Planned: .unwrap(), .unwrap_or() methods\n");
-    printf("⏳ Planned: .is_some(), .is_none() predicates\n");
-    printf("⏳ Planned: .map(), .and_then() combinators\n");
-    printf("⏳ Planned: Result<T, E> type for error handling\n\n");
+    // Implemented functional helpers on Option/Result:
+    printf("✓ Implemented: .unwrap(), .unwrap_or() methods\n");
+    printf("✓ Implemented: .is_some(), .is_none() predicates\n");
+    printf("✓ Implemented: .map(), .and_then() combinators\n");
+    printf("✓ Implemented: Result<T, E> style Ok/Err operations\n\n");
 
     // Example of future syntax (not yet implemented):
     //

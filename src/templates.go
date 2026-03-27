@@ -374,11 +374,234 @@ func (ti *TemplateInstantiator) Instantiate(name string, typeArgs []string, valu
 	return instantiated, nil
 }
 
-// instantiateNode recursively instantiates a node with template parameter substitutions
+// instantiateNode recursively clones an AST node, substituting template type parameters.
+// For example, in template<typename T>, all Identifier nodes whose Name matches "T" in a
+// type position are replaced with the concrete type's identifier.
 func (ti *TemplateInstantiator) instantiateNode(node ASTNode, ctx *TemplateContext) ASTNode {
-	// This would be a deep copy of the AST node with all template parameters replaced
-	// For now, return the node as-is (full implementation would recursively copy and substitute)
-	return node
+	if node == nil {
+		return nil
+	}
+	return substituteNode(node, ctx)
+}
+
+// substituteNode performs deep-clone + template-parameter substitution on any AST node.
+func substituteNode(node ASTNode, ctx *TemplateContext) ASTNode {
+	if node == nil {
+		return nil
+	}
+	switch n := node.(type) {
+	// Literals pass through unchanged
+	case *IntLiteral:
+		return &IntLiteral{Value: n.Value}
+	case *FloatLiteral:
+		return &FloatLiteral{Value: n.Value}
+	case *StringLiteral:
+		return &StringLiteral{Value: n.Value}
+	case *BoolLiteral:
+		return &BoolLiteral{Value: n.Value}
+	case *CharLiteral:
+		return &CharLiteral{Value: n.Value}
+	case *NullLiteral:
+		return &NullLiteral{}
+
+	// Identifiers: if the name is a type parameter, return it unchanged (value identifiers don't change)
+	case *Identifier:
+		return &Identifier{Name: n.Name}
+
+	// VariableDeclaration: substitute type if it is a template parameter
+	case *VariableDeclaration:
+		concreteType := n.Type
+		// Template type parameters are stored as TokenIdentifier (their string name is lost
+		// after parsing). Substitute with the first available type binding, matching the
+		// same convention used for FunctionDefinition parameter substitution.
+		if n.Type == TokenIdentifier {
+			for _, concrete := range ctx.TypeBindings {
+				concreteType = concrete
+				break
+			}
+		} else if concrete, ok := ctx.TypeBindings[TokenTypeName(n.Type)]; ok {
+			concreteType = concrete
+		}
+		return &VariableDeclaration{
+			Name:    n.Name,
+			Type:    concreteType,
+			Value:   substituteNode(n.Value, ctx),
+			Storage: n.Storage,
+			IsArray: n.IsArray,
+		}
+
+	case *ReturnStatement:
+		return &ReturnStatement{Value: substituteNode(n.Value, ctx)}
+
+	case *Assignment:
+		return &Assignment{
+			Target: substituteNode(n.Target, ctx),
+			Value:  substituteNode(n.Value, ctx),
+		}
+
+	case *CompoundAssignment:
+		return &CompoundAssignment{
+			Target:   substituteNode(n.Target, ctx),
+			Operator: n.Operator,
+			Value:    substituteNode(n.Value, ctx),
+		}
+
+	case *BinaryOp:
+		return &BinaryOp{
+			Left:     substituteNode(n.Left, ctx),
+			Operator: n.Operator,
+			Right:    substituteNode(n.Right, ctx),
+		}
+
+	case *UnaryOp:
+		return &UnaryOp{
+			Operator: n.Operator,
+			Operand:  substituteNode(n.Operand, ctx),
+		}
+
+	case *FunctionCall:
+		args := make([]ASTNode, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = substituteNode(a, ctx)
+		}
+		return &FunctionCall{Name: n.Name, Args: args}
+
+	case *MethodCall:
+		args := make([]ASTNode, len(n.Args))
+		for i, a := range n.Args {
+			args[i] = substituteNode(a, ctx)
+		}
+		return &MethodCall{
+			Object:     substituteNode(n.Object, ctx),
+			MethodName: n.MethodName,
+			Args:       args,
+			IsPointer:  n.IsPointer,
+		}
+
+	case *FieldAccess:
+		return &FieldAccess{
+			Object:    substituteNode(n.Object, ctx),
+			FieldName: n.FieldName,
+			IsPointer: n.IsPointer,
+		}
+
+	case *IfStatement:
+		thenBody := substituteBody(n.ThenBody, ctx)
+		elseBody := substituteBody(n.ElseBody, ctx)
+		return &IfStatement{
+			Condition: substituteNode(n.Condition, ctx),
+			ThenBody:  thenBody,
+			ElseBody:  elseBody,
+		}
+
+	case *WhileLoop:
+		return &WhileLoop{
+			Condition: substituteNode(n.Condition, ctx),
+			Body:      substituteBody(n.Body, ctx),
+		}
+
+	case *ForLoop:
+		return &ForLoop{
+			Init:      substituteNode(n.Init, ctx),
+			Condition: substituteNode(n.Condition, ctx),
+			Update:    substituteNode(n.Update, ctx),
+			Body:      substituteBody(n.Body, ctx),
+		}
+
+	case *BreakStatement:
+		return &BreakStatement{}
+	case *ContinueStatement:
+		return &ContinueStatement{}
+
+	case *IncrementOp:
+		return &IncrementOp{
+			Operand:  substituteNode(n.Operand, ctx),
+			IsPrefix: n.IsPrefix,
+			Operator: n.Operator,
+		}
+
+	case *Comparison:
+		return &Comparison{
+			Left:     substituteNode(n.Left, ctx),
+			Operator: n.Operator,
+			Right:    substituteNode(n.Right, ctx),
+		}
+
+	case *OptionExpression:
+		return &OptionExpression{IsSome: n.IsSome, Value: substituteNode(n.Value, ctx)}
+
+	case *ResultExpression:
+		return &ResultExpression{IsOk: n.IsOk, Value: substituteNode(n.Value, ctx)}
+
+	case *PipeExpression:
+		return &PipeExpression{Left: substituteNode(n.Left, ctx), Function: n.Function}
+
+	case *FunctionDefinition:
+		cloned := &FunctionDefinition{
+			Name:       n.Name,
+			IsVirtual:  n.IsVirtual,
+			IsOverride: n.IsOverride,
+			IsStatic:   n.IsStatic,
+			IsInline:   n.IsInline,
+			Storage:    n.Storage,
+			Parameters: make([]FunctionParam, len(n.Parameters)),
+			Body:       make([]ASTNode, len(n.Body)),
+		}
+		// Substitute return type if it is a template type parameter (stored as TokenIdentifier)
+		cloned.ReturnType = n.ReturnType
+		if n.ReturnType == TokenIdentifier {
+			for _, concrete := range ctx.TypeBindings {
+				cloned.ReturnType = concrete
+				break
+			}
+		}
+		// Substitute parameter types
+		for i, param := range n.Parameters {
+			paramType := param.Type
+			if param.Type == TokenIdentifier {
+				for _, concrete := range ctx.TypeBindings {
+					paramType = concrete
+					break
+				}
+			}
+			cloned.Parameters[i] = FunctionParam{Name: param.Name, Type: paramType}
+		}
+		// Recurse into body
+		for i, stmt := range n.Body {
+			cloned.Body[i] = substituteNode(stmt, ctx)
+		}
+		return cloned
+
+	case *StructDefinition:
+		cloned := &StructDefinition{
+			Name:   n.Name,
+			Fields: make([]StructField, len(n.Fields)),
+		}
+		for i, field := range n.Fields {
+			fieldType := field.Type
+			if field.Type == TokenIdentifier {
+				for _, concrete := range ctx.TypeBindings {
+					fieldType = concrete
+					break
+				}
+			}
+			cloned.Fields[i] = StructField{Name: field.Name, Type: fieldType, Offset: field.Offset}
+		}
+		return cloned
+
+	// Fall back to returning the original node for complex nodes not yet handled
+	default:
+		return node
+	}
+}
+
+// substituteBody applies substituteNode to every statement in a block.
+func substituteBody(stmts []ASTNode, ctx *TemplateContext) []ASTNode {
+	result := make([]ASTNode, len(stmts))
+	for i, s := range stmts {
+		result[i] = substituteNode(s, ctx)
+	}
+	return result
 }
 
 // Helper functions

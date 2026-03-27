@@ -1581,6 +1581,9 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 	case *OptionExpression:
 		return cg.generateOptionExpression(e)
 
+	case *ResultExpression:
+		return cg.generateResultExpression(e)
+
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -2508,6 +2511,22 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateMixPlayingMusic(call)
 	case "sdlmixer__allocate_channels":
 		return cg.generateMixAllocateChannels(call)
+
+	// func module: higher-order combinators
+	case "identity":
+		return cg.generateFuncIdentity(call)
+	case "compose":
+		return cg.generateFuncCompose(call)
+	case "flip":
+		return cg.generateFuncFlip(call)
+	case "const_fn":
+		return cg.generateFuncConstFn(call)
+	case "apply", "ap":
+		return cg.generateFuncApply(call)
+	case "mempty":
+		return cg.generateFuncMempty(call)
+	case "mappend":
+		return cg.generateFuncMappend(call)
 	}
 
 	// Look up the function

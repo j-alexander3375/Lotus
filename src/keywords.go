@@ -160,6 +160,11 @@ const (
 	TokenSome   // Some (option with value)
 	TokenNone   // None (empty option)
 
+	// Result types
+	TokenResult // result (result type)
+	TokenOk     // Ok (result with success value)
+	TokenErr    // Err (result with error value)
+
 	// Memory management
 	TokenNew // new
 

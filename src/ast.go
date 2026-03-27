@@ -233,6 +233,16 @@ type BitCastExpression struct {
 
 func (b *BitCastExpression) astNode() {}
 
+// ResultExpression represents Ok(value) or Err(value)
+// Represented in LLVM as { i1 is_ok, T value_or_error }
+type ResultExpression struct {
+	BaseNode
+	IsOk  bool    // true for Ok(value), false for Err(value)
+	Value ASTNode // the wrapped value or error
+}
+
+func (r *ResultExpression) astNode() {}
+
 // ============================================================================
 // Generics Nodes
 // ============================================================================

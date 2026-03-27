@@ -1,0 +1,69 @@
+use "io";
+
+// ============================================================================
+// Result<T> in Lotus
+// Demonstrates: Ok/Err constructors, .is_ok(), .is_err(), .unwrap(),
+//               .unwrap_or(), .map(), .map_err(), .and_then()
+// ============================================================================
+
+fn int double(int x) {
+    ret x * 2;
+}
+
+fn int negate(int x) {
+    ret -x;
+}
+
+fn int main() {
+    printf("=== Lotus Result<T> ===\n\n");
+
+    // --- Constructing Results ---
+    // .is_ok() / .is_err()
+    if Ok(42).is_ok() {
+        printf("Ok(42).is_ok() = true\n");
+    }
+    if Err(0).is_err() {
+        printf("Err(0).is_err() = true\n");
+    }
+
+    // .unwrap() - extract success value
+    int val = Ok(42).unwrap();
+    printf("Ok(42).unwrap() = %d\n", val);
+
+    // .unwrap_or(default) - safe fallback
+    int safe = Err(0).unwrap_or(-1);
+    printf("Err(0).unwrap_or(-1) = %d\n", safe);
+
+    printf("\n");
+
+    // --- .map(f): Functor over the Ok branch ---
+    int mapped = Ok(42).map(fn double).unwrap();
+    printf("Ok(42).map(double).unwrap() = %d\n", mapped);
+
+    // map on Err propagates the error unchanged
+    int err_mapped = Err(0).map(fn double).unwrap_or(999);
+    printf("Err(0).map(double).unwrap_or(999) = %d\n", err_mapped);
+
+    printf("\n");
+
+    // --- .map_err(f): map over the Err branch ---
+    int negated = Err(5).map_err(fn negate).unwrap_or(0);
+    printf("Err(5).map_err(negate).unwrap_or(0) = %d\n", negated);
+
+    printf("\n");
+
+    // --- .and_then(f): Monad bind (f returns a Result) ---
+    int chained_ok = Ok(10).and_then(fn double_result).unwrap();
+    printf("Ok(10).and_then(double_result).unwrap() = %d\n", chained_ok);
+
+    int chained_err = Err(0).and_then(fn double_result).unwrap_or(-1);
+    printf("Err(0).and_then(double_result).unwrap_or(-1) = %d\n", chained_err);
+
+    printf("\n=== Done ===\n");
+    ret 0;
+}
+
+// double_result wraps double in a Result for use with .and_then()
+fn int double_result(int x) {
+    ret x * 2;
+}
