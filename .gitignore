@@ -1,0 +1,12 @@
+/scripts
+lotus
+*.bat
+*.sh
+*.log
+*.tmp
+*.o
+*.out
+/.claude
+/.disabled_tests
+/.github
+*_test.go
