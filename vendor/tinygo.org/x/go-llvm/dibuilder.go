@@ -613,19 +613,14 @@ func (d *DIBuilder) CreateExpression(addr []uint64) Metadata {
 // InsertDeclareAtEnd inserts a call to llvm.dbg.declare at the end of the
 // specified basic block for the given value and associated debug metadata.
 func (d *DIBuilder) InsertDeclareAtEnd(v Value, diVarInfo, expr Metadata, l DebugLoc, bb BasicBlock) Value {
-	loc := C.LLVMDIBuilderCreateDebugLocation(
-		d.m.Context().C, C.uint(l.Line), C.uint(l.Col), l.Scope.C, l.InlinedAt.C)
-	C.LLVMDIBuilderInsertDeclareRecordAtEnd(d.ref, v.C, diVarInfo.C, expr.C, loc, bb.C)
-	return Value{}
+	panic("InsertDeclareAtEnd removed in LLVM 21")
 }
 
 // InsertValueAtEnd inserts a call to llvm.dbg.value at the end of the
 // specified basic block for the given value and associated debug metadata.
+// Removed in LLVM 21.
 func (d *DIBuilder) InsertValueAtEnd(v Value, diVarInfo, expr Metadata, l DebugLoc, bb BasicBlock) Value {
-	loc := C.LLVMDIBuilderCreateDebugLocation(
-		d.m.Context().C, C.uint(l.Line), C.uint(l.Col), l.Scope.C, l.InlinedAt.C)
-	C.LLVMDIBuilderInsertDbgValueRecordAtEnd(d.ref, v.C, diVarInfo.C, expr.C, loc, bb.C)
-	return Value{}
+	panic("InsertValueAtEnd removed in LLVM 21")
 }
 
 func (v Value) SetSubprogram(sp Metadata) {

@@ -12,6 +12,7 @@
 
 - [Features](#features)
 - [Quick Start](#quick-start)
+- [Interactive REPL](#interactive-repl)
 - [Installation](#installation)
 - [Language Overview](#language-overview)
 - [Standard Library](#standard-library)
@@ -44,12 +45,13 @@
 - Complete optional type integration with pattern matching
 
 ### Compiler Features
-- **LLVM backend** (default) - Cross-platform: x86, ARM, RISC-V, WebAssembly
+- **LLVM backend** - Cross-platform: x86, ARM, RISC-V, WebAssembly
+- **Interactive REPL** - Run `lotus` with no arguments for a GHCi-style session (`lts ~` prompt)
+- **Tree-walking interpreter** - Execute `.lts` files without compilation via `--interpret`
 - **Advanced optimizations** - Dead code elimination, constant folding, inlining
 - **Enhanced diagnostics** - Line/column tracking, "did you mean?" suggestions
 - **Semantic analysis** - Unused variable detection, shadowing warnings
 - **Language Server Protocol** - Real-time IDE support with `lotus --lsp`
-- **Legacy GCC backend** - Available with `--gcc` flag
 
 ### Standard Library Modules
 - **io** - printf, println, file operations
@@ -80,8 +82,14 @@ fn int main() {
 ```
 
 ```bash
+# Interactive REPL (no arguments)
+./lotus
+
 # Compile and run immediately
 ./lotus --run program.lts
+
+# Run via interpreter (no compilation)
+./lotus --interpret program.lts
 
 # Compile to binary
 ./lotus program.lts -o myprogram
@@ -89,6 +97,45 @@ fn int main() {
 
 # Show compilation statistics
 ./lotus --stats program.lts
+```
+
+## Interactive REPL
+
+Run `lotus` with no arguments to enter the interactive session. State (variables, functions) persists across inputs. Multi-line blocks are accumulated until the opening `{` is closed.
+
+```text
+$ lotus
+Lotus 1.10.0 REPL  (interpreter)
+Type :help for commands, :quit to exit.
+
+lts ~ int x = 10;
+lts ~ fn int double(int n) {
+      |     return n * 2;
+      | }
+lts ~ println(double(x));
+20
+lts ~ :quit
+Goodbye!
+```
+
+### REPL Commands
+
+| Command | Description |
+| --- | --- |
+| `:q`, `:quit` | Exit the REPL |
+| `:h`, `:help` | Show command reference |
+| `:reset` | Clear all bindings and restart the interpreter |
+| `:load <file>` | Load and evaluate a `.lts` source file |
+| `:type <expr>` | Print the type of an expression |
+| `:! <cmd>` | Run a shell command directly from the REPL |
+
+```text
+lts ~ :load examples/control_flow_if.lts
+Loaded examples/control_flow_if.lts
+lts ~ :! ls examples/*.lts | wc -l
+24
+lts ~ :type x
+int
 ```
 
 ## Installation
@@ -121,7 +168,7 @@ paru -S lotus-lang
 
 - **Go 1.21+** - Compiler is written in Go
 - **LLVM 15+** - Backend (automatically linked via go-llvm)
-- **GCC/Clang** - For linking final binaries
+- **Clang** - For linking final binaries
 
 ## Language Overview
 
@@ -729,12 +776,11 @@ Usage: lotus [options] <source.lts>
 
 Output Options:
   -o <file>        Output file name (default: a.out)
-  -S               Emit assembly instead of binary
   --emit-llvm      Emit LLVM IR instead of binary
   --run            Compile and run immediately
+  --interpret      Run source file via tree-walking interpreter (no compilation)
 
 Backend Options:
-  --gcc            Use legacy GCC/assembly backend (LLVM is default)
   --target <triple> Cross-compile for target (e.g., aarch64-linux-gnu)
 
 Optimization:

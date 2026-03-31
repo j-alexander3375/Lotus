@@ -26,15 +26,14 @@ func NewCompiler(opts *CompilerOptions) *Compiler {
 }
 
 // CompileFile compiles a single Lotus source file through the full pipeline:
-// Source → Tokens → AST → Assembly → Binary
-// Or with LLVM: Source → Tokens → AST → LLVM IR → Binary
+// Source → Tokens → AST → LLVM IR → Binary
 func (c *Compiler) CompileFile(inputPath string) error {
 	// Initialize stats tracking
 	c.Stats = NewCompilationStats(inputPath)
 
 	if c.Options.Verbose {
-		log.Printf("Compiling: input=%s output=%s includes=%v trimpath=%q gcc=%v",
-			inputPath, c.Options.OutPath, c.Options.IncludeDirs, c.Options.Trimpath, c.Options.UseGCC)
+		log.Printf("Compiling: input=%s output=%s includes=%v trimpath=%q",
+			inputPath, c.Options.OutPath, c.Options.IncludeDirs, c.Options.Trimpath)
 	}
 
 	// Phase 1: Read source file
@@ -64,47 +63,42 @@ func (c *Compiler) CompileFile(inputPath string) error {
 		return nil
 	}
 
-	// Check if GCC backend is requested (LLVM is now the default)
-	if c.Options.UseGCC {
-		// Legacy GCC/assembly backend
-		return c.compileWithGCC(inputPath, tokens)
+	// Interpreter mode
+	if c.Options.Interpret {
+		return c.interpretSource(inputPath, tokens)
 	}
 
 	// Default: Use LLVM backend
 	return c.compileWithLLVM(inputPath, tokens)
 }
 
-// compileWithGCC compiles using the legacy GCC/assembly backend
-func (c *Compiler) compileWithGCC(inputPath string, tokens []Token) error {
-	// Phase 3: Syntax analysis and code generation (direct assembly)
-	codegenStart := time.Now()
-	asm, err := GenerateAssembly(tokens)
-	codegenDuration := time.Since(codegenStart)
+// interpretSource runs the source file through the tree-walking interpreter
+func (c *Compiler) interpretSource(inputPath string, tokens []Token) error {
+	if c.Options.Verbose {
+		log.Printf("Using interpreter for: %s", inputPath)
+	}
+
+	parser := NewParser(tokens)
+	statements, err := parser.Parse()
 	if err != nil {
-		return err
-	}
-	asmLines := strings.Count(asm, "\n")
-	c.Stats.RecordCodegen(codegenDuration, asmLines, len(asm), 0, 0)
-
-	// Handle assembly output mode (-S flag)
-	if c.Options.PrintAsm {
-		err := c.writeAssembly(asm)
-		c.printStats()
-		return err
+		return fmt.Errorf("parse error: %w", err)
 	}
 
-	// Phase 4: Assemble and link to binary
-	if err := c.buildBinary(asm); err != nil {
-		return err
+	interp := NewInterpreter()
+
+	// Evaluate all top-level statements (registers functions, constants, etc.)
+	if _, err := interp.EvalStatements(statements, interp.globals); err != nil {
+		return fmt.Errorf("interpreter error: %w", err)
 	}
 
-	// Phase 5: Optionally run the compiled binary (--run flag)
-	if c.Options.RunAfterBuild {
-		c.printStats()
-		return c.runBinary()
+	// Call main() if defined
+	mainVal, ok := interp.globals.Get("main")
+	if ok && mainVal.Kind == KindFunction {
+		if _, err := interp.callValue(mainVal, nil, "main"); err != nil {
+			return fmt.Errorf("runtime error in main: %w", err)
+		}
 	}
 
-	c.printStats()
 	return nil
 }
 
@@ -324,73 +318,6 @@ func (c *Compiler) printFileStat() {
 	runtime.ReadMemStats(&m)
 	fmt.Fprintf(os.Stderr, "Memory: %s allocated, %s from system\n",
 		formatBytes(int(m.Alloc)), formatBytes(int(m.Sys)))
-}
-
-// writeAssembly writes assembly output to a file with appropriate extension
-func (c *Compiler) writeAssembly(asm string) error {
-	asmOut := c.Options.OutPath
-
-	// Auto-generate .s extension if needed
-	if asmOut == "a.out" {
-		asmOut = "a.s"
-	} else if filepath.Ext(asmOut) == "" {
-		asmOut = asmOut + ".s"
-	}
-
-	if err := os.WriteFile(asmOut, []byte(asm), 0644); err != nil {
-		return fmt.Errorf("failed to write assembly file: %w", err)
-	}
-
-	if c.Options.Verbose {
-		log.Printf("Assembly written to: %s", asmOut)
-	}
-
-	return nil
-}
-
-// buildBinary assembles and links the assembly to produce an executable binary
-func (c *Compiler) buildBinary(asm string) error {
-	// Write assembly to temporary file
-	tmpAsm := filepath.Join(os.TempDir(), "lotus_tmp.s")
-	if err := os.WriteFile(tmpAsm, []byte(asm), 0644); err != nil {
-		return fmt.Errorf("failed to write temporary assembly: %w", err)
-	}
-	defer os.Remove(tmpAsm) // Clean up temp file
-
-	// Invoke GCC to assemble and link
-	assembleStart := time.Now()
-	cmd := exec.Command("gcc", "-nostartfiles", "-no-pie", "-o", c.Options.OutPath, tmpAsm, "-lm")
-
-	if c.Options.Verbose {
-		log.Printf("Assembling: %s", strings.Join(cmd.Args, " "))
-	}
-
-	out, err := cmd.CombinedOutput()
-	assembleDuration := time.Since(assembleStart)
-	c.Stats.RecordAssemble(assembleDuration)
-
-	if err != nil {
-		if len(out) > 0 {
-			return fmt.Errorf("assembly failed:\n%s", string(out))
-		}
-		return fmt.Errorf("assembly failed: %w", err)
-	}
-
-	// Record output file info
-	if info, statErr := os.Stat(c.Options.OutPath); statErr == nil {
-		c.Stats.RecordLink(0, c.Options.OutPath, int(info.Size()))
-	} else {
-		c.Stats.RecordLink(0, c.Options.OutPath, 0)
-	}
-
-	if c.Options.Verbose {
-		if len(out) > 0 {
-			log.Printf("Assembler output:\n%s", string(out))
-		}
-		log.Printf("Binary written to: %s", c.Options.OutPath)
-	}
-
-	return nil
 }
 
 // runBinary executes the compiled binary and streams its output

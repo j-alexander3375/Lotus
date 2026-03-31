@@ -2527,6 +2527,18 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateFuncMempty(call)
 	case "mappend":
 		return cg.generateFuncMappend(call)
+	case "negate":
+		return cg.generateFuncNegate(call)
+	case "both":
+		return cg.generateFuncBoth(call)
+	case "either_fn":
+		return cg.generateFuncEitherFn(call)
+	case "on":
+		return cg.generateFuncOn(call)
+	case "converge":
+		return cg.generateFuncConverge(call)
+	case "clamp":
+		return cg.generateFuncClamp(call)
 	}
 
 	// Look up the function

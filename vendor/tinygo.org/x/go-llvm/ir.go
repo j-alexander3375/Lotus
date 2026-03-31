@@ -76,7 +76,7 @@ type (
 	ComdatSelectionKind C.LLVMComdatSelectionKind
 	IntPredicate        C.LLVMIntPredicate
 	FloatPredicate      C.LLVMRealPredicate
-	LandingPadClause    uint32 // LLVMLandingPadClauseTy removed in LLVM 19
+	LandingPadClause    int32 // C.LLVMLandingPadClauseTy removed in LLVM 21
 	InlineAsmDialect    C.LLVMInlineAsmDialect
 )
 
@@ -340,8 +340,8 @@ const (
 //-------------------------------------------------------------------------
 
 const (
-	LandingPadCatch  LandingPadClause = 0 // LLVMLandingPadCatch removed in LLVM 19
-	LandingPadFilter LandingPadClause = 1 // LLVMLandingPadFilter removed in LLVM 19
+	LandingPadCatch  LandingPadClause = 0 // C.LLVMLandingPadCatch removed in LLVM 21
+	LandingPadFilter LandingPadClause = 1 // C.LLVMLandingPadFilter removed in LLVM 21
 )
 
 //-------------------------------------------------------------------------
@@ -920,24 +920,19 @@ func ConstNUWAdd(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNUWAdd(lhs.C, rhs.
 func ConstSub(lhs, rhs Value) (v Value)    { v.C = C.LLVMConstSub(lhs.C, rhs.C); return }
 func ConstNSWSub(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNSWSub(lhs.C, rhs.C); return }
 func ConstNUWSub(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNUWSub(lhs.C, rhs.C); return }
-
-// ConstMul, ConstNSWMul, ConstNUWMul: LLVMConstMul and variants were removed in LLVM 19.
-// Stub implementations return a nil Value; use IRBuilder-based mul instead.
-func ConstMul(lhs, rhs Value) (v Value)    { return }
-func ConstNSWMul(lhs, rhs Value) (v Value) { return }
-func ConstNUWMul(lhs, rhs Value) (v Value) { return }
+func ConstMul(lhs, rhs Value) (v Value)    { panic("ConstMul removed in LLVM 21") }
+func ConstNSWMul(lhs, rhs Value) (v Value) { panic("ConstNSWMul removed in LLVM 21") }
+func ConstNUWMul(lhs, rhs Value) (v Value) { panic("ConstNUWMul removed in LLVM 21") }
 func ConstXor(lhs, rhs Value) (v Value)    { v.C = C.LLVMConstXor(lhs.C, rhs.C); return }
 
-// ConstICmp/ConstFCmp: LLVMConstICmp/LLVMConstFCmp removed in LLVM 19.
 func ConstICmp(pred IntPredicate, lhs, rhs Value) (v Value) {
-	return
+	panic("ConstICmp removed in LLVM 21")
 }
 func ConstFCmp(pred FloatPredicate, lhs, rhs Value) (v Value) {
-	return
+	panic("ConstFCmp removed in LLVM 21")
 }
 
-// ConstShl: LLVMConstShl removed in LLVM 19.
-func ConstShl(lhs, rhs Value) (v Value) { return }
+func ConstShl(lhs, rhs Value) (v Value) { panic("ConstShl removed in LLVM 21") }
 
 func ConstGEP(t Type, v Value, indices []Value) (rv Value) {
 	ptr, nvals := llvmValueRefs(indices)

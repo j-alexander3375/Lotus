@@ -167,6 +167,107 @@ func TestIntegrationCompileAndRun(t *testing.T) {
 			expectedOutput: "",
 			shouldFail:     false,
 		},
+		{
+			name: "func_negate",
+			source: `use "func";
+fn int is_positive(int x) {
+    if x > 0 { ret 1; }
+    ret 0;
+}
+fn int main() {
+    int a = func::negate(fn is_positive, 5);
+    int b = func::negate(fn is_positive, 0);
+    if a != 0 { ret 1; }
+    if b == 0 { ret 2; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
+		{
+			name: "func_both",
+			source: `use "func";
+fn int is_positive(int x) {
+    if x > 0 { ret 1; }
+    ret 0;
+}
+fn int is_even(int x) {
+    if x % 2 == 0 { ret 1; }
+    ret 0;
+}
+fn int main() {
+    int a = func::both(fn is_positive, fn is_even, 4);
+    int b = func::both(fn is_positive, fn is_even, 3);
+    if a == 0 { ret 1; }
+    if b != 0 { ret 2; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
+		{
+			name: "func_either_fn",
+			source: `use "func";
+fn int is_positive(int x) {
+    if x > 0 { ret 1; }
+    ret 0;
+}
+fn int is_even(int x) {
+    if x % 2 == 0 { ret 1; }
+    ret 0;
+}
+fn int main() {
+    int a = func::either_fn(fn is_positive, fn is_even, 3);
+    int b = func::either_fn(fn is_positive, fn is_even, -3);
+    if a == 0 { ret 1; }
+    if b != 0 { ret 2; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
+		{
+			name: "func_on",
+			source: `use "func";
+fn int add(int a, int b) { ret a + b; }
+fn int double(int x) { ret x * 2; }
+fn int main() {
+    int result = func::on(fn add, fn double, 3, 4);
+    if result != 14 { ret 1; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
+		{
+			name: "func_converge",
+			source: `use "func";
+fn int add(int a, int b) { ret a + b; }
+fn int double(int x) { ret x * 2; }
+fn int negate_val(int x) { ret 0 - x; }
+fn int main() {
+    int result = func::converge(fn add, fn double, fn negate_val, 5);
+    if result != 5 { ret 1; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
+		{
+			name: "func_clamp",
+			source: `use "func";
+fn int main() {
+    int a = func::clamp(0, 10, 5);
+    int b = func::clamp(0, 10, -3);
+    int c = func::clamp(0, 10, 15);
+    if a != 5 { ret 1; }
+    if b != 0 { ret 2; }
+    if c != 10 { ret 3; }
+    ret 0;
+}`,
+			expectedOutput: "",
+			shouldFail:     false,
+		},
 	}
 
 	for _, tt := range tests {

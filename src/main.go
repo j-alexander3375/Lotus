@@ -38,11 +38,10 @@ func run() int {
 		return 0
 	}
 
-	// Phase 3: Validate input
+	// Phase 3: No file → interactive REPL (like GHCi)
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Error: no input file specified")
-		printUsage(os.Stderr)
-		return 1
+		RunREPL()
+		return 0
 	}
 
 	// Phase 4: Compile the source file
