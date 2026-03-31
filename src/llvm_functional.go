@@ -365,3 +365,169 @@ func (cg *LLVMCodeGenerator) generateFuncMappend(call *FunctionCall) (llvm.Value
 	}
 	return cg.builder.CreateAdd(a, b, "mappend_result"), nil
 }
+
+// generateFuncNegate generates LLVM IR for func::negate(f, x) → !f(x).
+// Returns 1 (i64) if f(x)==0, 0 otherwise.
+func (cg *LLVMCodeGenerator) generateFuncNegate(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("negate requires exactly 2 arguments (f, x)")
+	}
+	f, fType, err := cg.resolveFunctionArg(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	result := cg.builder.CreateCall(fType, f, []llvm.Value{x}, "negate_call")
+	zero := llvm.ConstInt(result.Type(), 0, false)
+	isZero := cg.builder.CreateICmp(llvm.IntEQ, result, zero, "negate_eq0")
+	return cg.builder.CreateZExt(isZero, cg.context.Int64Type(), "negate_result"), nil
+}
+
+// generateFuncBoth generates LLVM IR for func::both(f, g, x) → f(x) != 0 && g(x) != 0.
+// Returns 1 (i64) if both f(x) and g(x) are non-zero, 0 otherwise.
+func (cg *LLVMCodeGenerator) generateFuncBoth(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("both requires exactly 3 arguments (f, g, x)")
+	}
+	f, fType, err := cg.resolveFunctionArg(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	g, gType, err := cg.resolveFunctionArg(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fResult := cg.builder.CreateCall(fType, f, []llvm.Value{x}, "both_f")
+	gResult := cg.builder.CreateCall(gType, g, []llvm.Value{x}, "both_g")
+	fZero := llvm.ConstInt(fResult.Type(), 0, false)
+	gZero := llvm.ConstInt(gResult.Type(), 0, false)
+	fBool := cg.builder.CreateICmp(llvm.IntNE, fResult, fZero, "both_f_bool")
+	gBool := cg.builder.CreateICmp(llvm.IntNE, gResult, gZero, "both_g_bool")
+	andResult := cg.builder.CreateAnd(fBool, gBool, "both_and")
+	return cg.builder.CreateZExt(andResult, cg.context.Int64Type(), "both_result"), nil
+}
+
+// generateFuncEitherFn generates LLVM IR for func::either_fn(f, g, x) → f(x) != 0 || g(x) != 0.
+// Returns 1 (i64) if either f(x) or g(x) is non-zero, 0 otherwise.
+func (cg *LLVMCodeGenerator) generateFuncEitherFn(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("either_fn requires exactly 3 arguments (f, g, x)")
+	}
+	f, fType, err := cg.resolveFunctionArg(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	g, gType, err := cg.resolveFunctionArg(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	fResult := cg.builder.CreateCall(fType, f, []llvm.Value{x}, "either_f")
+	gResult := cg.builder.CreateCall(gType, g, []llvm.Value{x}, "either_g")
+	fZero := llvm.ConstInt(fResult.Type(), 0, false)
+	gZero := llvm.ConstInt(gResult.Type(), 0, false)
+	fBool := cg.builder.CreateICmp(llvm.IntNE, fResult, fZero, "either_f_bool")
+	gBool := cg.builder.CreateICmp(llvm.IntNE, gResult, gZero, "either_g_bool")
+	orResult := cg.builder.CreateOr(fBool, gBool, "either_or")
+	return cg.builder.CreateZExt(orResult, cg.context.Int64Type(), "either_result"), nil
+}
+
+// generateFuncOn generates LLVM IR for func::on(f, g, a, b) → f(g(a), g(b)).
+// Applies g to both inputs, then combines with binary function f.
+func (cg *LLVMCodeGenerator) generateFuncOn(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.Value{}, fmt.Errorf("on requires exactly 4 arguments (f, g, a, b)")
+	}
+	f, fType, err := cg.resolveFunctionArg(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	g, gType, err := cg.resolveFunctionArg(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	a, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	b, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	ga := cg.builder.CreateCall(gType, g, []llvm.Value{a}, "on_ga")
+	gb := cg.builder.CreateCall(gType, g, []llvm.Value{b}, "on_gb")
+	return cg.builder.CreateCall(fType, f, []llvm.Value{ga, gb}, "on_result"), nil
+}
+
+// generateFuncConverge generates LLVM IR for func::converge(f, g, h, x) → f(g(x), h(x)).
+// Applies g and h to the same input, then merges results with binary function f.
+func (cg *LLVMCodeGenerator) generateFuncConverge(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 4 {
+		return llvm.Value{}, fmt.Errorf("converge requires exactly 4 arguments (f, g, h, x)")
+	}
+	f, fType, err := cg.resolveFunctionArg(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	g, gType, err := cg.resolveFunctionArg(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	h, hType, err := cg.resolveFunctionArg(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[3])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	gx := cg.builder.CreateCall(gType, g, []llvm.Value{x}, "conv_gx")
+	hx := cg.builder.CreateCall(hType, h, []llvm.Value{x}, "conv_hx")
+	return cg.builder.CreateCall(fType, f, []llvm.Value{gx, hx}, "conv_result"), nil
+}
+
+// generateFuncClamp generates LLVM IR for func::clamp(lo, hi, x) → max(lo, min(hi, x)).
+// Clamps integer x to the inclusive range [lo, hi]. All values normalized to i64.
+func (cg *LLVMCodeGenerator) generateFuncClamp(call *FunctionCall) (llvm.Value, error) {
+	if len(call.Args) != 3 {
+		return llvm.Value{}, fmt.Errorf("clamp requires exactly 3 arguments (lo, hi, x)")
+	}
+	lo, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	hi, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	x, err := cg.generateExpression(call.Args[2])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	i64 := cg.context.Int64Type()
+	if lo.Type() != i64 {
+		lo = cg.builder.CreateSExt(lo, i64, "lo_i64")
+	}
+	if hi.Type() != i64 {
+		hi = cg.builder.CreateSExt(hi, i64, "hi_i64")
+	}
+	if x.Type() != i64 {
+		x = cg.builder.CreateSExt(x, i64, "x_i64")
+	}
+	// max(lo, x): if lo > x then clampedLo = lo, else clampedLo = x
+	loGtX := cg.builder.CreateICmp(llvm.IntSGT, lo, x, "lo_gt_x")
+	clampedLo := cg.builder.CreateSelect(loGtX, lo, x, "max_lo_x")
+	// min(hi, clampedLo): if hi < clampedLo then result = hi, else result = clampedLo
+	hiLtClamped := cg.builder.CreateICmp(llvm.IntSLT, hi, clampedLo, "hi_lt_clamped")
+	return cg.builder.CreateSelect(hiLtClamped, hi, clampedLo, "clamp_result"), nil
+}

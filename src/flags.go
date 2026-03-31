@@ -14,8 +14,8 @@ type CompilerOptions struct {
 	OutPath       string   // Output file path (-o)
 	Verbose       bool     // Enable verbose logging (-v)
 	TokenDump     bool     // Print tokens and exit (-td, --token-dump)
-	PrintAsm      bool     // Emit assembly instead of binary (-S)
 	RunAfterBuild bool     // Build and run the binary (-run)
+	Interpret     bool     // Run source file through the interpreter (-interpret, --interpret)
 	Trimpath      string   // Remove prefix from recorded file paths (--trimpath)
 	ShowVersion   bool     // Print version and exit (--version)
 	IncludeDirs   []string // Include directories for imports (-I)
@@ -28,7 +28,6 @@ type CompilerOptions struct {
 	ASTDump      bool // Print AST and exit (--ast-dump)
 
 	// LLVM backend options (LLVM is now default)
-	UseGCC       bool   // Use GCC/assembly backend instead of LLVM (--gcc)
 	EmitLLVMIR   bool   // Emit LLVM IR instead of binary (--emit-llvm)
 	OptLevel     int    // Optimization level (0-3) (-O)
 	TargetTriple string // Target triple for cross-compilation (--target)
@@ -66,8 +65,6 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 
 	// Output options
 	fs.StringVar(&opts.OutPath, "o", "a.out", "write output to `file`")
-	fs.BoolVar(&opts.PrintAsm, "S", false, "emit assembly to -o path (or a.s)")
-
 	// Debug options
 	fs.BoolVar(&opts.Verbose, "v", false, "enable verbose logging")
 	fs.BoolVar(&opts.TokenDump, "td", false, "print tokens and exit")
@@ -82,13 +79,13 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 	fs.BoolVar(&opts.TimingInfo, "timing", false, "show detailed phase timing")
 
 	// LLVM backend options (LLVM is default)
-	fs.BoolVar(&opts.UseGCC, "gcc", false, "use GCC/assembly backend instead of LLVM")
 	fs.BoolVar(&opts.EmitLLVMIR, "emit-llvm", false, "emit LLVM IR instead of binary")
 	fs.IntVar(&opts.OptLevel, "O", 0, "optimization level (0-3)")
 	fs.StringVar(&opts.TargetTriple, "target", "", "target triple for cross-compilation (e.g., x86_64-linux-gnu)")
 
 	// Execution options
 	fs.BoolVar(&opts.RunAfterBuild, "run", false, "build and run the compiled binary")
+	fs.BoolVar(&opts.Interpret, "interpret", false, "run source file through the interpreter")
 
 	// Path options
 	fs.StringVar(&opts.Trimpath, "trimpath", "", "remove `prefix` from recorded file paths")
@@ -128,8 +125,8 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "\nExamples:")
 		fmt.Fprintln(os.Stderr, "  lotus program.lts              # Compile to a.out")
 		fmt.Fprintln(os.Stderr, "  lotus -o myapp program.lts     # Compile to myapp")
-		fmt.Fprintln(os.Stderr, "  lotus -S program.lts           # Generate assembly")
 		fmt.Fprintln(os.Stderr, "  lotus -run program.lts         # Compile and run")
+		fmt.Fprintln(os.Stderr, "  lotus --interpret program.lts  # Run via interpreter")
 		fmt.Fprintln(os.Stderr, "  lotus -td program.lts          # Dump tokens")
 		fmt.Fprintln(os.Stderr, "  lotus --stats program.lts      # Show compilation stats")
 		fmt.Fprintln(os.Stderr, "  lotus --timing program.lts     # Show phase timing")
@@ -144,7 +141,6 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		fmt.Fprintln(os.Stderr, "  lotus --emit-llvm program.lts  # Emit LLVM IR")
 		fmt.Fprintln(os.Stderr, "  lotus -O2 program.lts          # LLVM with optimization")
 		fmt.Fprintln(os.Stderr, "  lotus --target=arm64 prog.lts  # Cross-compile to ARM64")
-		fmt.Fprintln(os.Stderr, "  lotus --gcc program.lts        # Use legacy GCC backend")
 	}
 
 	// Normalize args to accept various flag formats
@@ -166,8 +162,8 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 			norm = append(norm, "-docs")
 		case "--docs-section":
 			norm = append(norm, "-docs-section")
-		case "--gcc":
-			norm = append(norm, "-gcc")
+		case "--interpret":
+			norm = append(norm, "-interpret")
 		case "--emit-llvm":
 			norm = append(norm, "-emit-llvm")
 		case "--target":
