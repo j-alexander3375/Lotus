@@ -177,9 +177,28 @@ func ParseFlags() (*CompilerOptions, []string, error) {
 		}
 	}
 
-	if err := fs.Parse(norm); err != nil {
-		return nil, nil, err
+	// Go's flag.Parse stops at the first non-flag token, so a bare source
+	// file before a later flag (e.g. "lotus file.lts -o out") would leave
+	// "-o" and "out" unparsed. Repeatedly parse, peeling off one positional
+	// argument at a time, so flags and positional args can be interspersed
+	// in any order.
+	var positional []string
+	remaining := norm
+	for {
+		if err := fs.Parse(remaining); err != nil {
+			return nil, nil, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		if rest[0] == "--" {
+			positional = append(positional, rest[1:]...)
+			break
+		}
+		positional = append(positional, rest[0])
+		remaining = rest[1:]
 	}
 
-	return opts, fs.Args(), nil
+	return opts, positional, nil
 }
