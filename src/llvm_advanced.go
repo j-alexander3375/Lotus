@@ -71,33 +71,65 @@ func (cg *LLVMCodeGenerator) generateCompoundAssignment(ca *CompoundAssignment) 
 		return fmt.Errorf("compound assignment target must be an identifier")
 	}
 
-	variable, ok := cg.namedValues[varName]
-	if !ok {
+	// Resolve the storage location (local first, then global)
+	var ptr llvm.Value
+	var elemType llvm.Type
+	if variable, ok := cg.namedValues[varName]; ok {
+		ptr = variable.Alloca
+		elemType = variable.ElementType
+	} else if global, ok := cg.globalVars[varName]; ok {
+		ptr = global
+		elemType = global.GlobalValueType()
+	} else {
 		return fmt.Errorf("undefined variable: %s", varName)
 	}
 
 	// Load current value
-	currentVal := cg.builder.CreateLoad(variable.ElementType, variable.Alloca, varName)
+	currentVal := cg.builder.CreateLoad(elemType, ptr, varName)
 
-	// Generate the right-hand side
+	// Generate the right-hand side and match it to the variable's type
 	rhsVal, err := cg.generateExpression(ca.Value)
 	if err != nil {
 		return err
 	}
+	rhsVal = cg.coerceToType(rhsVal, elemType)
+
+	kind := elemType.TypeKind()
+	isFloat := kind == llvm.FloatTypeKind || kind == llvm.DoubleTypeKind
 
 	// Perform the operation
 	var newVal llvm.Value
 	switch ca.Operator {
 	case TokenPlusEq:
-		newVal = cg.builder.CreateAdd(currentVal, rhsVal, "addassign")
+		if isFloat {
+			newVal = cg.builder.CreateFAdd(currentVal, rhsVal, "addassign")
+		} else {
+			newVal = cg.builder.CreateAdd(currentVal, rhsVal, "addassign")
+		}
 	case TokenMinusEq:
-		newVal = cg.builder.CreateSub(currentVal, rhsVal, "subassign")
+		if isFloat {
+			newVal = cg.builder.CreateFSub(currentVal, rhsVal, "subassign")
+		} else {
+			newVal = cg.builder.CreateSub(currentVal, rhsVal, "subassign")
+		}
 	case TokenStarEq:
-		newVal = cg.builder.CreateMul(currentVal, rhsVal, "mulassign")
+		if isFloat {
+			newVal = cg.builder.CreateFMul(currentVal, rhsVal, "mulassign")
+		} else {
+			newVal = cg.builder.CreateMul(currentVal, rhsVal, "mulassign")
+		}
 	case TokenSlashEq:
-		newVal = cg.builder.CreateSDiv(currentVal, rhsVal, "divassign")
+		if isFloat {
+			newVal = cg.builder.CreateFDiv(currentVal, rhsVal, "divassign")
+		} else {
+			newVal = cg.builder.CreateSDiv(currentVal, rhsVal, "divassign")
+		}
 	case TokenPercentEq:
-		newVal = cg.builder.CreateSRem(currentVal, rhsVal, "modassign")
+		if isFloat {
+			newVal = cg.builder.CreateFRem(currentVal, rhsVal, "modassign")
+		} else {
+			newVal = cg.builder.CreateSRem(currentVal, rhsVal, "modassign")
+		}
 	case TokenAmpersand:
 		newVal = cg.builder.CreateAnd(currentVal, rhsVal, "andassign")
 	case TokenPipe:
@@ -113,7 +145,7 @@ func (cg *LLVMCodeGenerator) generateCompoundAssignment(ca *CompoundAssignment) 
 	}
 
 	// Store the new value
-	cg.builder.CreateStore(newVal, variable.Alloca)
+	cg.builder.CreateStore(newVal, ptr)
 	return nil
 }
 
@@ -129,22 +161,40 @@ func (cg *LLVMCodeGenerator) generateIncrementOp(inc *IncrementOp) error {
 		return fmt.Errorf("increment/decrement operand must be an identifier")
 	}
 
-	variable, ok := cg.namedValues[varName]
-	if !ok {
+	// Resolve the storage location (local first, then global)
+	var ptr llvm.Value
+	var elemType llvm.Type
+	if variable, ok := cg.namedValues[varName]; ok {
+		ptr = variable.Alloca
+		elemType = variable.ElementType
+	} else if global, ok := cg.globalVars[varName]; ok {
+		ptr = global
+		elemType = global.GlobalValueType()
+	} else {
 		return fmt.Errorf("undefined variable: %s", varName)
 	}
 
-	currentVal := cg.builder.CreateLoad(variable.ElementType, variable.Alloca, varName)
-	one := llvm.ConstInt(variable.ElementType, 1, false)
+	currentVal := cg.builder.CreateLoad(elemType, ptr, varName)
 
+	kind := elemType.TypeKind()
 	var newVal llvm.Value
-	if inc.Operator == TokenPlusPlus {
-		newVal = cg.builder.CreateAdd(currentVal, one, "incr")
+	if kind == llvm.FloatTypeKind || kind == llvm.DoubleTypeKind {
+		one := llvm.ConstFloat(elemType, 1)
+		if inc.Operator == TokenPlusPlus {
+			newVal = cg.builder.CreateFAdd(currentVal, one, "incr")
+		} else {
+			newVal = cg.builder.CreateFSub(currentVal, one, "decr")
+		}
 	} else {
-		newVal = cg.builder.CreateSub(currentVal, one, "decr")
+		one := llvm.ConstInt(elemType, 1, false)
+		if inc.Operator == TokenPlusPlus {
+			newVal = cg.builder.CreateAdd(currentVal, one, "incr")
+		} else {
+			newVal = cg.builder.CreateSub(currentVal, one, "decr")
+		}
 	}
 
-	cg.builder.CreateStore(newVal, variable.Alloca)
+	cg.builder.CreateStore(newVal, ptr)
 	return nil
 }
 
@@ -338,96 +388,193 @@ func (cg *LLVMCodeGenerator) generateStructLiteral(s *StructLiteral) (llvm.Value
 	return alloca, nil
 }
 
-func (cg *LLVMCodeGenerator) generateFieldAccess(f *FieldAccess) (llvm.Value, error) {
-	// Generate the object expression
-	obj, err := cg.generateExpression(f.Object)
-	if err != nil {
-		return llvm.Value{}, err
+// generateAggregateLocalVar handles a struct/class-typed local declaration
+// (`point p;`, optionally `point p = <expr>;` - see parser.go's
+// TokenIdentifier VariableDeclaration case, and SP-A-2 in
+// FIXER_HANDOFF.md). tokenTypeToLLVM cannot handle this: it only sees
+// TokenIdentifier with no name attached and defaults to i64.
+//
+// Structs are represented as a stack-allocated aggregate addressed directly
+// by its alloca (matching generateStructLiteral); classes are represented
+// as a heap pointer held in a variable slot (matching generateClassLiteral).
+// Both branches register the variable's struct/class name in
+// cg.varClassNames so later field access and method calls resolve correctly
+// (P1-5).
+func (cg *LLVMCodeGenerator) generateAggregateLocalVar(v *VariableDeclaration) error {
+	if structType, ok := cg.structTypes[v.TypeName]; ok {
+		alloca := cg.builder.CreateAlloca(structType, v.Name)
+		if v.Value != nil {
+			val, err := cg.generateExpression(v.Value)
+			if err != nil {
+				return err
+			}
+			// A struct-typed initializer (e.g. a StructLiteral) already
+			// evaluates to a pointer to a freshly allocated struct of this
+			// type - use it as the variable's storage directly rather than
+			// alloca+copy.
+			if val.Type() == llvm.PointerType(structType, 0) {
+				alloca = val
+			} else {
+				return fmt.Errorf("cannot initialize struct variable %s from a non-struct value", v.Name)
+			}
+		}
+		cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: structType}
+		cg.varClassNames[v.Name] = v.TypeName
+		return nil
 	}
 
-	// Get the struct type name from the object
-	// For now, we need to look up based on the identifier
+	if classType, ok := cg.classTypes[v.TypeName]; ok {
+		ptrType := llvm.PointerType(classType, 0)
+		var instancePtr llvm.Value
+		if v.Value != nil {
+			val, err := cg.generateExpression(v.Value)
+			if err != nil {
+				return err
+			}
+			instancePtr = val
+		} else {
+			// No initializer: heap-allocate a zeroed instance so field
+			// stores/method calls have a valid object to operate on,
+			// mirroring generateClassLiteral's allocation strategy (just
+			// without per-field initializers).
+			classDef := cg.classDefs[v.TypeName]
+			var typeSize uint64
+			for _, field := range classDef.Fields {
+				typeSize += uint64(cg.fieldByteSize(field.Type))
+			}
+			if typeSize == 0 {
+				typeSize = 8
+			}
+			malloc := cg.functions["malloc"]
+			raw := cg.builder.CreateCall(malloc.GlobalValueType(), malloc,
+				[]llvm.Value{llvm.ConstInt(cg.context.Int64Type(), typeSize, false)}, "classalloc")
+			instancePtr = cg.builder.CreateBitCast(raw, ptrType, v.Name+"_inst")
+		}
+		alloca := cg.builder.CreateAlloca(ptrType, v.Name)
+		cg.builder.CreateStore(instancePtr, alloca)
+		cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: ptrType}
+		cg.varClassNames[v.Name] = v.TypeName
+		return nil
+	}
+
+	return fmt.Errorf("undefined struct/class type: %s", v.TypeName)
+}
+
+// resolveFieldPtr computes the address of f.Object.f.FieldName, shared by
+// both the read path (generateFieldAccess) and the write path
+// (generateFieldAssignment, for `p.x = 10;` - see SP-A-2 in
+// FIXER_HANDOFF.md). Returns the field's pointer and its LLVM type.
+func (cg *LLVMCodeGenerator) resolveFieldPtr(f *FieldAccess) (llvm.Value, llvm.Type, error) {
+	// Get the struct type name from the object.
+	// Resolve via the tracked variable->class/struct name (see
+	// recordVarClassName) first - this disambiguates structurally identical
+	// structs, which the old ElementType-equality scan below cannot. Fall
+	// back to the type-based scan for struct variables that predate that
+	// tracking (e.g. constructed indirectly). See P1-5 in FIXER_HANDOFF.md -
+	// the previous "first class in the map" fallback is gone entirely, since
+	// it silently picked a random class under Go's map iteration order.
 	var structName string
 	if id, ok := f.Object.(*Identifier); ok {
-		// Look up the variable's type
-		if variable, ok := cg.namedValues[id.Name]; ok {
-			// Try to find the struct type
-			for name, sType := range cg.structTypes {
-				if sType == variable.ElementType {
-					structName = name
-					break
+		structName = cg.varClassNames[id.Name]
+		if structName == "" {
+			if variable, ok := cg.namedValues[id.Name]; ok {
+				for name, sType := range cg.structTypes {
+					if sType == variable.ElementType {
+						structName = name
+						break
+					}
 				}
 			}
 		}
 	}
 
 	if structName == "" {
-		// Try class types too
-		for name := range cg.classDefs {
-			structName = name
-			break
+		return llvm.Value{}, llvm.Type{}, fmt.Errorf("cannot determine struct/class type for field access .%s (object is not a known instance)", f.FieldName)
+	}
+
+	// Resolve the object to a POINTER (struct/class field access needs an
+	// address, not a value). Struct-typed local variables are represented
+	// as a stack alloca directly (see generateAggregateLocalVar) - the
+	// generic generateExpression(Identifier) path would load the whole
+	// aggregate by value, which CreateStructGEP cannot use as its base
+	// pointer. Every other expression form (a fresh StructLiteral, a class
+	// instance variable holding a heap pointer, ...) already evaluates to
+	// the right pointer via the normal path.
+	var obj llvm.Value
+	_, isStruct := cg.structDefs[structName]
+	if id, ok := f.Object.(*Identifier); ok && isStruct {
+		if variable, ok := cg.namedValues[id.Name]; ok {
+			obj = variable.Alloca
+		}
+	}
+	if obj.IsNil() {
+		var err error
+		obj, err = cg.generateExpression(f.Object)
+		if err != nil {
+			return llvm.Value{}, llvm.Type{}, err
 		}
 	}
 
-	structDef, ok := cg.structDefs[structName]
-	if !ok {
-		// Try class
-		classDef, ok := cg.classDefs[structName]
-		if !ok {
-			return llvm.Value{}, fmt.Errorf("cannot determine struct type for field access")
-		}
-		// Handle class field access
-		return cg.generateClassFieldAccess(obj, classDef, f.FieldName, f.IsPointer)
-	}
-
-	// Find field index
+	var aggType llvm.Type
 	fieldIdx := -1
 	var fieldType llvm.Type
-	for i, field := range structDef.Fields {
-		if field.Name == f.FieldName {
-			fieldIdx = i
-			fieldType = cg.tokenTypeToLLVM(field.Type)
-			break
+	if isStruct {
+		aggType = cg.structTypes[structName]
+		for i, field := range cg.structDefs[structName].Fields {
+			if field.Name == f.FieldName {
+				fieldIdx = i
+				fieldType = cg.tokenTypeToLLVM(field.Type)
+				break
+			}
 		}
+	} else if classDef, ok := cg.classDefs[structName]; ok {
+		aggType = cg.classTypes[structName]
+		for i, field := range classDef.Fields {
+			if field.Name == f.FieldName {
+				fieldIdx = i
+				fieldType = cg.tokenTypeToLLVM(field.Type)
+				break
+			}
+		}
+	} else {
+		return llvm.Value{}, llvm.Type{}, fmt.Errorf("cannot determine struct type for field access")
 	}
 	if fieldIdx == -1 {
-		return llvm.Value{}, fmt.Errorf("unknown field: %s", f.FieldName)
+		return llvm.Value{}, llvm.Type{}, fmt.Errorf("unknown field: %s in %s", f.FieldName, structName)
 	}
-
-	structType := cg.structTypes[structName]
 
 	// If pointer access (->), dereference first
 	if f.IsPointer {
-		obj = cg.builder.CreateLoad(llvm.PointerType(structType, 0), obj, "deref")
+		obj = cg.builder.CreateLoad(llvm.PointerType(aggType, 0), obj, "deref")
 	}
 
-	fieldPtr := cg.builder.CreateStructGEP(structType, obj, fieldIdx, f.FieldName+"_ptr")
+	fieldPtr := cg.builder.CreateStructGEP(aggType, obj, fieldIdx, f.FieldName+"_ptr")
+	return fieldPtr, fieldType, nil
+}
+
+func (cg *LLVMCodeGenerator) generateFieldAccess(f *FieldAccess) (llvm.Value, error) {
+	fieldPtr, fieldType, err := cg.resolveFieldPtr(f)
+	if err != nil {
+		return llvm.Value{}, err
+	}
 	return cg.builder.CreateLoad(fieldType, fieldPtr, f.FieldName), nil
 }
 
-func (cg *LLVMCodeGenerator) generateClassFieldAccess(obj llvm.Value, classDef *ClassDefinition, fieldName string, isPointer bool) (llvm.Value, error) {
-	classType := cg.classTypes[classDef.Name]
-
-	// Find field index
-	fieldIdx := -1
-	var fieldType llvm.Type
-	for i, field := range classDef.Fields {
-		if field.Name == fieldName {
-			fieldIdx = i
-			fieldType = cg.tokenTypeToLLVM(field.Type)
-			break
-		}
+// generateFieldAssignment implements `obj.field = value;` (previously
+// rejected by generateAssignment with "assignment target must be an
+// identifier" - see SP-A-2 in FIXER_HANDOFF.md).
+func (cg *LLVMCodeGenerator) generateFieldAssignment(f *FieldAccess, valueExpr ASTNode) error {
+	fieldPtr, fieldType, err := cg.resolveFieldPtr(f)
+	if err != nil {
+		return err
 	}
-	if fieldIdx == -1 {
-		return llvm.Value{}, fmt.Errorf("unknown field: %s in class %s", fieldName, classDef.Name)
+	val, err := cg.generateExpression(valueExpr)
+	if err != nil {
+		return err
 	}
-
-	if isPointer {
-		obj = cg.builder.CreateLoad(llvm.PointerType(classType, 0), obj, "deref")
-	}
-
-	fieldPtr := cg.builder.CreateStructGEP(classType, obj, fieldIdx, fieldName+"_ptr")
-	return cg.builder.CreateLoad(fieldType, fieldPtr, fieldName), nil
+	val = cg.coerceToType(val, fieldType)
+	cg.builder.CreateStore(val, fieldPtr)
+	return nil
 }
 
 // ============================================================================
@@ -609,6 +756,16 @@ func (cg *LLVMCodeGenerator) generateClassDef(c *ClassDefinition) error {
 	return nil
 }
 
+// fieldByteSize returns the actual byte size of a field's LLVM
+// representation (see the SP-A-3 note at its call site above).
+func (cg *LLVMCodeGenerator) fieldByteSize(tokenType TokenType) int {
+	bits := cg.getTypeSizeInBits(cg.tokenTypeToLLVM(tokenType))
+	if bits == 0 {
+		return PointerSize
+	}
+	return bits / 8
+}
+
 func (cg *LLVMCodeGenerator) generateClassLiteral(c *ClassLiteral) (llvm.Value, error) {
 	classDef, ok := cg.classDefs[c.ClassName]
 	if !ok {
@@ -617,10 +774,15 @@ func (cg *LLVMCodeGenerator) generateClassLiteral(c *ClassLiteral) (llvm.Value, 
 
 	classType := cg.classTypes[c.ClassName]
 
-	// Calculate size based on fields
+	// Calculate size based on fields. GetTypeSize(TokenTypeInt) says 4 bytes
+	// (Int32Size) but tokenTypeToLLVM maps "int" to i64 everywhere in this
+	// backend (see llvm_codegen.go's VariableDeclaration case) - using it
+	// here would under-allocate by 4 bytes per int field while the
+	// CreateStore below still writes 8, corrupting the heap. Size from the
+	// actual LLVM field type instead. See SP-A-3 in FIXER_HANDOFF.md.
 	var typeSize uint64 = 0
 	for _, field := range classDef.Fields {
-		typeSize += uint64(GetTypeSize(field.Type))
+		typeSize += uint64(cg.fieldByteSize(field.Type))
 	}
 	if typeSize == 0 {
 		typeSize = 8 // Minimum size
@@ -681,18 +843,18 @@ func (cg *LLVMCodeGenerator) generateMethodCall(m *MethodCall) (llvm.Value, erro
 		return cg.generateOptionalMethodCall(m, obj)
 	}
 
-	// Determine class name
+	// Determine class name from the tracked variable->class mapping
+	// (populated at StructLiteral/ClassLiteral assignment - see
+	// recordVarClassName). Guessing "the first class in the map" here would
+	// dispatch to a random class under Go's map iteration order whenever
+	// more than one class is defined - see P1-5 in FIXER_HANDOFF.md.
 	var className string
-	if _, ok := m.Object.(*Identifier); ok {
-		// Look up variable type
-		for name := range cg.classDefs {
-			className = name // For now, use first class found
-			break
-		}
+	if id, ok := m.Object.(*Identifier); ok {
+		className = cg.varClassNames[id.Name]
 	}
 
 	if className == "" {
-		return llvm.Value{}, fmt.Errorf("cannot determine class for method call")
+		return llvm.Value{}, fmt.Errorf("cannot determine class for method call .%s (object is not a known class instance)", m.MethodName)
 	}
 
 	methodName := fmt.Sprintf("_class_%s_%s", className, m.MethodName)

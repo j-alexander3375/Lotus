@@ -4,7 +4,7 @@ package main
 
 const (
 	// CompilerVersion is the current version of the Lotus compiler
-	CompilerVersion = "1.10.0"
+	CompilerVersion = "1.11.0"
 
 	// PointerSize is the size of a pointer in bytes (64-bit architecture)
 	PointerSize = 8

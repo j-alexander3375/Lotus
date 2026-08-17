@@ -1,0 +1,44 @@
+use "io";
+
+fn int risky(int x) {
+    if x < 0 {
+        throw "negative input";
+    }
+    ret x * 2;
+}
+
+fn int divide(int a, int b) {
+    if b == 0 {
+        throw 0 - 1;
+    }
+    ret a / b;
+}
+
+fn int main() {
+    // catch binds the exception, reinterpreted as the declared type
+    try {
+        int r = risky(-1);
+        println(r);
+    } catch (string e) {
+        println("caught:");
+        println(e);
+    } finally {
+        println("cleanup always runs");
+    }
+
+    // finally still runs when there's no exception at all
+    try {
+        println(risky(21));
+    } finally {
+        println("cleanup on the happy path too");
+    }
+
+    // a throw inside a nested function call unwinds straight back here
+    try {
+        println(divide(10, 0));
+    } catch (e) {
+        println("divide failed");
+    }
+
+    ret 0;
+}

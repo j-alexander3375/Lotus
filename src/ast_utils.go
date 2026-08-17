@@ -120,7 +120,7 @@ func dumpNode(node ASTNode, indent int) {
 		fmt.Printf("%sIntLiteral: %d\n", prefix, n.Value)
 
 	case *FloatLiteral:
-		fmt.Printf("%sFloatLiteral: %d\n", prefix, n.Value)
+		fmt.Printf("%sFloatLiteral: %g\n", prefix, n.Value)
 
 	case *StringLiteral:
 		fmt.Printf("%sStringLiteral: %q\n", prefix, n.Value)

@@ -149,10 +149,12 @@ func (v *Value) Display() string {
 type returnSignal struct{ val *Value }
 type breakSignal struct{}
 type continueSignal struct{}
+type throwSignal struct{ val *Value }
 
 func (r returnSignal) Error() string   { return "return" }
 func (b breakSignal) Error() string    { return "break" }
 func (c continueSignal) Error() string { return "continue" }
+func (t throwSignal) Error() string    { return "uncaught exception: " + valueStr(t.val) }
 
 // ============================================================================
 // Environment (lexical scope chain)
@@ -271,7 +273,7 @@ func (interp *Interpreter) evalNode(node ASTNode, env *Environment) (*Value, err
 		return &Value{Kind: KindInt, Int: n.Value}, nil
 
 	case *FloatLiteral:
-		return &Value{Kind: KindFloat, Float: float64(n.Value) / 1000.0}, nil
+		return &Value{Kind: KindFloat, Float: n.Value}, nil
 
 	case *BoolLiteral:
 		return &Value{Kind: KindBool, Bool: n.Value}, nil
@@ -388,6 +390,22 @@ func (interp *Interpreter) evalNode(node ASTNode, env *Environment) (*Value, err
 		}
 		return nil, returnSignal{val: val}
 
+	// MatchYield is the single-expression match-arm sugar (`case X => expr`)
+	// - it produces the match expression's result, not a function return, so
+	// (unlike ReturnStatement above) it does not raise returnSignal.
+	case *MatchYield:
+		return interp.evalNode(n.Value, env)
+
+	case *ThrowStatement:
+		val, err := interp.evalNode(n.Exception, env)
+		if err != nil {
+			return nil, err
+		}
+		return nil, throwSignal{val: val}
+
+	case *TryStatement:
+		return interp.evalTry(n, env)
+
 	// ── Functions ─────────────────────────────────────────────────────────────
 	case *FunctionDefinition:
 		fn := &InterpFn{Params: n.Parameters, Body: n.Body, Env: env, Name: n.Name}
@@ -474,7 +492,7 @@ func (interp *Interpreter) registerBuiltins() {
 	define("print", func(args []*Value) (*Value, error) {
 		parts := make([]string, len(args))
 		for i, a := range args {
-			parts[i] = valueStr(a)
+			parts[i] = printValueStr(a)
 		}
 		fmt.Print(strings.Join(parts, " "))
 		return &Value{Kind: KindVoid}, nil
@@ -483,10 +501,25 @@ func (interp *Interpreter) registerBuiltins() {
 	define("println", func(args []*Value) (*Value, error) {
 		parts := make([]string, len(args))
 		for i, a := range args {
-			parts[i] = valueStr(a)
+			parts[i] = printValueStr(a)
 		}
 		fmt.Println(strings.Join(parts, " "))
 		return &Value{Kind: KindVoid}, nil
+	})
+
+	define("printf", func(args []*Value) (*Value, error) {
+		if len(args) == 0 {
+			return nil, fmt.Errorf("printf() expects a format string")
+		}
+		fmt.Print(cFormat(valueStr(args[0]), args[1:]))
+		return &Value{Kind: KindVoid}, nil
+	})
+
+	define("sprintf", func(args []*Value) (*Value, error) {
+		if len(args) == 0 {
+			return nil, fmt.Errorf("sprintf() expects a format string")
+		}
+		return &Value{Kind: KindString, Str: cFormat(valueStr(args[0]), args[1:])}, nil
 	})
 
 	define("len", func(args []*Value) (*Value, error) {
@@ -1241,6 +1274,41 @@ func (interp *Interpreter) evalFieldAccess(n *FieldAccess, env *Environment) (*V
 	return v, nil
 }
 
+// evalTry implements try/catch/finally. Unlike the compiled backend (which
+// needs explicit compile-time bookkeeping to make finally run on an early
+// ret/break/continue - see llvm_trycatch.go), the interpreter gets this for
+// free: EvalStatements already propagates returnSignal/breakSignal/
+// continueSignal as plain Go errors through ordinary call-stack unwinding,
+// so "always run finally after try+catch, whatever happened" is correct
+// with no extra cases needed for those signals specifically.
+func (interp *Interpreter) evalTry(t *TryStatement, env *Environment) (*Value, error) {
+	result, err := interp.EvalStatements(t.TryBlock, NewEnvironment(env))
+
+	if ts, ok := err.(throwSignal); ok && len(t.CatchClauses) == 1 {
+		clause := t.CatchClauses[0]
+		catchEnv := NewEnvironment(env)
+		if clause.ExceptionVar != "" {
+			catchEnv.Define(clause.ExceptionVar, ts.val, false)
+		}
+		result, err = interp.EvalStatements(clause.Body, catchEnv)
+	}
+	// If err is a throwSignal but there's no catch clause, result/err are
+	// left untouched here - correctly re-propagating the exception (after
+	// finally runs, below) to the next enclosing try/function call.
+
+	if len(t.FinallyBlock) > 0 {
+		finallyResult, finallyErr := interp.EvalStatements(t.FinallyBlock, NewEnvironment(env))
+		if finallyErr != nil {
+			// finally's own outcome (return/break/continue/throw) supersedes
+			// whatever the try/catch was doing, matching how most languages
+			// treat a control-flow exit from a finally block.
+			return finallyResult, finallyErr
+		}
+	}
+
+	return result, err
+}
+
 func (interp *Interpreter) evalMatch(n *MatchExpression, env *Environment) (*Value, error) {
 	subject, err := interp.evalNode(n.Value, env)
 	if err != nil {
@@ -1423,6 +1491,86 @@ func valueStr(v *Value) string {
 		return "[" + strings.Join(parts, ", ") + "]"
 	}
 	return v.Display()
+}
+
+// printValueStr renders a value the way the compiled print/println does:
+// floats get C printf's "%f" (six decimals) instead of "%g".
+func printValueStr(v *Value) string {
+	if v.Kind == KindFloat {
+		return fmt.Sprintf("%f", v.Float)
+	}
+	return valueStr(v)
+}
+
+// cFormat interprets a C-style printf format string against interpreter
+// values, matching the verbs the compiled backend supports (it passes the
+// format straight to C printf). Length modifiers (l, ll, h, z, ...) are
+// accepted and ignored; missing arguments format as zero values.
+func cFormat(format string, args []*Value) string {
+	var out strings.Builder
+	argi := 0
+	next := func() *Value {
+		if argi < len(args) {
+			v := args[argi]
+			argi++
+			return v
+		}
+		return &Value{Kind: KindVoid}
+	}
+	i := 0
+	for i < len(format) {
+		if format[i] != '%' {
+			out.WriteByte(format[i])
+			i++
+			continue
+		}
+		// Parse %[flags][width][.precision][length]verb
+		j := i + 1
+		specEnd := j
+		for j < len(format) && strings.ContainsRune("-+ #0123456789.*", rune(format[j])) {
+			j++
+			specEnd = j
+		}
+		for j < len(format) && strings.ContainsRune("lhzjt", rune(format[j])) {
+			j++ // skip C length modifiers, Go doesn't use them
+		}
+		if j >= len(format) {
+			out.WriteString(format[i:])
+			break
+		}
+		spec := "%" + format[i+1:specEnd]
+		verb := format[j]
+		switch verb {
+		case '%':
+			out.WriteByte('%')
+		case 'd', 'i', 'u':
+			fmt.Fprintf(&out, spec+"d", int64(toFloat(next())))
+		case 'x', 'X', 'o', 'b':
+			fmt.Fprintf(&out, spec+string(verb), int64(toFloat(next())))
+		case 'f', 'F', 'e', 'E', 'g', 'G':
+			if !strings.Contains(spec, ".") && (verb == 'f' || verb == 'F') {
+				spec += ".6" // C default precision for %f
+			}
+			fmt.Fprintf(&out, spec+string(verb), toFloat(next()))
+		case 's':
+			fmt.Fprintf(&out, spec+"s", valueStr(next()))
+		case 'c':
+			v := next()
+			switch {
+			case v.Kind == KindChar:
+				out.WriteString(string(v.Char))
+			case v.Kind == KindString && len(v.Str) > 0:
+				out.WriteString(string([]rune(v.Str)[0]))
+			default:
+				out.WriteString(string(rune(int64(toFloat(v)))))
+			}
+		default:
+			// Unknown verb: emit it verbatim
+			out.WriteString(format[i : j+1])
+		}
+		i = j + 1
+	}
+	return out.String()
 }
 
 func valuesEqual(a, b *Value) bool {

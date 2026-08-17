@@ -12,6 +12,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"tinygo.org/x/go-llvm"
@@ -21,6 +22,17 @@ import (
 type LLVMVariable struct {
 	Alloca      llvm.Value
 	ElementType llvm.Type
+}
+
+// finallyFrame is a currently-open try/finally scope - see the
+// LLVMCodeGenerator.finallyStack field doc comment.
+type finallyFrame struct {
+	body []ASTNode
+	// The loop's exit block active when this try was entered (IsNil if not
+	// inside a loop). A break/continue only needs to run finally frames
+	// opened during the loop it is actually breaking/continuing - i.e.
+	// frames whose loopExitAtPush equals the loop's own exit block.
+	loopExitAtPush llvm.BasicBlock
 }
 
 // pendingTemplateFunction holds a template function and its type substitution map
@@ -81,6 +93,23 @@ type LLVMCodeGenerator struct {
 	// Only populated for modules whose dispatch names differ from the bare function name.
 	importedFuncAliases map[string]string
 
+	// varClassNames maps a variable name to the struct/class name it was
+	// constructed with (populated at StructLiteral/ClassLiteral assignment).
+	// generateMethodCall and generateFieldAccess use this to resolve the
+	// object's actual type instead of guessing "the first class/struct
+	// found" - see P1-5 in FIXER_HANDOFF.md.
+	varClassNames map[string]string
+
+	// finallyStack tracks currently-open try/finally scopes (within THIS
+	// function only) so an early `ret`/`break`/`continue` written directly
+	// inside a try/catch/finally body can run pending finally blocks before
+	// actually exiting. This is unrelated to how `throw` itself propagates
+	// (that's handled entirely at runtime via setjmp/longjmp - see
+	// lotus_runtime.c - which needs no compile-time bookkeeping since it
+	// physically jumps over intervening stack frames). See generateReturn/
+	// generateBreak/generateContinue and generateTryStatement.
+	finallyStack []*finallyFrame
+
 	// String counter for unique names
 	stringCounter int
 }
@@ -111,6 +140,7 @@ func NewLLVMCodeGenerator(moduleName string) *LLVMCodeGenerator {
 		classTypes:               make(map[string]llvm.Type),
 		imports:                  NewImportContext(),
 		importedFuncAliases:      make(map[string]string),
+		varClassNames:            make(map[string]string),
 		partialApplications:      make(map[string]*PartialApplication),
 		templates:                make(map[string]*TemplateDeclaration),
 		instantiatedTemplates:    make(map[string]bool),
@@ -920,7 +950,7 @@ func (cg *LLVMCodeGenerator) tryGetConstantValue(expr ASTNode, targetType llvm.T
 		}
 		return llvm.ConstInt(targetType, 0, false)
 	case *FloatLiteral:
-		return llvm.ConstFloat(targetType, float64(e.Value)/1000.0)
+		return llvm.ConstFloat(targetType, e.Value)
 	case *StringLiteral:
 		// Create a global string constant using the builder-free method
 		return cg.createGlobalStringConstant(e.Value)
@@ -1061,6 +1091,10 @@ func (cg *LLVMCodeGenerator) generateStatementWithNamespace(stmt ASTNode, namesp
 		// Match expressions can be used as statements (result is discarded)
 		_, err := cg.generateMatchExpression(s)
 		return err
+	case *TryStatement:
+		return cg.generateTryStatement(s)
+	case *ThrowStatement:
+		return cg.generateThrowStatement(s)
 	default:
 		return fmt.Errorf("unsupported statement type: %T", stmt)
 	}
@@ -1098,16 +1132,21 @@ func (cg *LLVMCodeGenerator) generateFunctionWithNamespace(fn *FunctionDefinitio
 		cg.namedValues[param.Name] = LLVMVariable{Alloca: alloca, ElementType: paramType}
 	}
 
-	// Generate function body
+	// Generate function body. Stop once a statement has terminated the
+	// current block (e.g. a top-level `ret` or `throw`) - continuing to
+	// generate statements into an already-terminated block produces invalid
+	// IR ("terminator found in the middle of a basic block").
 	for _, stmt := range fn.Body {
 		if err := cg.generateStatement(stmt); err != nil {
 			return err
 		}
+		if cg.blockTerminated() {
+			break
+		}
 	}
 
 	// Add implicit return if needed
-	lastBlock := cg.builder.GetInsertBlock()
-	if lastBlock.LastInstruction().IsNil() || lastBlock.LastInstruction().InstructionOpcode() != llvm.Ret {
+	if !cg.blockTerminated() {
 		// Use the function definition's return type instead of querying LLVM
 		if fn.ReturnType == TokenTypeVoid || fn.ReturnType == TokenRet || fn.ReturnType == TokenReturn {
 			cg.builder.CreateRetVoid()
@@ -1122,6 +1161,16 @@ func (cg *LLVMCodeGenerator) generateFunctionWithNamespace(fn *FunctionDefinitio
 
 // generateVarDecl generates a variable declaration
 func (cg *LLVMCodeGenerator) generateVarDecl(v *VariableDeclaration) error {
+	// Struct/class-typed local declaration: `point p;` (see parser.go's
+	// TokenIdentifier VariableDeclaration case). tokenTypeToLLVM has no name
+	// to work with and would default TokenIdentifier to i64, silently
+	// turning the struct into a lone 8-byte scalar - see SP-A-2 in
+	// FIXER_HANDOFF.md. Handle it here instead, where the type name is
+	// available.
+	if v.Type == TokenIdentifier && v.TypeName != "" && v.Storage != StorageGlobal && v.Storage != StorageStatic {
+		return cg.generateAggregateLocalVar(v)
+	}
+
 	varType := cg.tokenTypeToLLVM(v.Type)
 
 	switch v.Storage {
@@ -1241,6 +1290,7 @@ func (cg *LLVMCodeGenerator) generateLocalVar(v *VariableDeclaration, varType ll
 		// Coerce value to match variable type (e.g., double to float for float32)
 		val = cg.coerceToType(val, varType)
 		cg.builder.CreateStore(val, alloca)
+		cg.recordVarClassName(v.Name, v.Value)
 	}
 
 	cg.namedValues[v.Name] = LLVMVariable{Alloca: alloca, ElementType: varType}
@@ -1282,7 +1332,51 @@ func (cg *LLVMCodeGenerator) coerceToType(val llvm.Value, targetType llvm.Type) 
 		}
 	}
 
+	// Integer -> float
+	if valKind == llvm.IntegerTypeKind && (targetKind == llvm.DoubleTypeKind || targetKind == llvm.FloatTypeKind) {
+		if valType.IntTypeWidth() == 1 {
+			return cg.builder.CreateUIToFP(val, targetType, "uitofp")
+		}
+		return cg.builder.CreateSIToFP(val, targetType, "sitofp")
+	}
+
+	// Float -> integer (C-style truncation toward zero)
+	if (valKind == llvm.DoubleTypeKind || valKind == llvm.FloatTypeKind) && targetKind == llvm.IntegerTypeKind {
+		return cg.builder.CreateFPToSI(val, targetType, "fptosi")
+	}
+
 	return val
+}
+
+// toBool converts a value of any scalar type to an i1 truth value
+func (cg *LLVMCodeGenerator) toBool(val llvm.Value, name string) llvm.Value {
+	t := val.Type()
+	switch t.TypeKind() {
+	case llvm.IntegerTypeKind:
+		if t.IntTypeWidth() == 1 {
+			return val
+		}
+		return cg.builder.CreateICmp(llvm.IntNE, val, llvm.ConstInt(t, 0, false), name)
+	case llvm.FloatTypeKind, llvm.DoubleTypeKind:
+		return cg.builder.CreateFCmp(llvm.FloatONE, val, llvm.ConstFloat(t, 0), name)
+	case llvm.PointerTypeKind:
+		return cg.builder.CreateICmp(llvm.IntNE, val, llvm.ConstNull(t), name)
+	default:
+		return cg.builder.CreateICmp(llvm.IntNE, val, llvm.ConstInt(cg.context.Int64Type(), 0, false), name)
+	}
+}
+
+// blockTerminated reports whether the current insert block already ends in a terminator
+func (cg *LLVMCodeGenerator) blockTerminated() bool {
+	last := cg.builder.GetInsertBlock().LastInstruction()
+	if last.IsNil() {
+		return false
+	}
+	switch last.InstructionOpcode() {
+	case llvm.Ret, llvm.Br, llvm.Switch, llvm.IndirectBr, llvm.Unreachable:
+		return true
+	}
+	return false
 }
 
 // coerceBinaryOperands ensures both operands have the same type for binary operations
@@ -1315,11 +1409,21 @@ func (cg *LLVMCodeGenerator) coerceBinaryOperands(left, right llvm.Value) (llvm.
 		leftBits := leftType.IntTypeWidth()
 		rightBits := rightType.IntTypeWidth()
 		if leftBits > rightBits {
-			right = cg.builder.CreateSExt(right, leftType, "sext")
+			right = cg.coerceToType(right, leftType)
 		} else if rightBits > leftBits {
-			left = cg.builder.CreateSExt(left, rightType, "sext")
+			left = cg.coerceToType(left, rightType)
 		}
 		return left, right
+	}
+
+	// Mixed int/float - promote the integer side to the float type
+	if leftKind == llvm.IntegerTypeKind &&
+		(rightKind == llvm.FloatTypeKind || rightKind == llvm.DoubleTypeKind) {
+		return cg.coerceToType(left, rightType), right
+	}
+	if (leftKind == llvm.FloatTypeKind || leftKind == llvm.DoubleTypeKind) &&
+		rightKind == llvm.IntegerTypeKind {
+		return left, cg.coerceToType(right, leftType)
 	}
 
 	return left, right
@@ -1437,8 +1541,21 @@ func (cg *LLVMCodeGenerator) getConstantValue(node ASTNode, varType llvm.Type) l
 }
 
 // generateReturn generates a return statement
+// returnExitsAllFinally matches every pending finally frame: a `ret` exits
+// the whole function, past every enclosing try/finally regardless of loop
+// nesting.
+func returnExitsAllFinally(*finallyFrame) bool { return true }
+
 func (cg *LLVMCodeGenerator) generateReturn(r *ReturnStatement) error {
 	if r.Value == nil {
+		if err := cg.runPendingFinally(returnExitsAllFinally); err != nil {
+			return err
+		}
+		if cg.blockTerminated() {
+			// A pending finally block itself returned/threw/etc. and
+			// already terminated this block, superseding this bare return.
+			return nil
+		}
 		cg.builder.CreateRetVoid()
 		return nil
 	}
@@ -1447,6 +1564,27 @@ func (cg *LLVMCodeGenerator) generateReturn(r *ReturnStatement) error {
 	if err != nil {
 		return err
 	}
+	// Coerce to the function's declared return type (e.g. i64 literal from an i32 function)
+	if !cg.currentFn.IsNil() {
+		retType := cg.currentFn.GlobalValueType().ReturnType()
+		if retType.TypeKind() != llvm.VoidTypeKind {
+			val = cg.coerceToType(val, retType)
+		}
+	}
+
+	// Run any enclosing try/finally blocks before actually returning (e.g.
+	// `try { ret 5; } finally { cleanup(); }` must run cleanup() first). The
+	// return value is computed above from state as of the `ret`, matching
+	// how most languages treat this - finally can still override the
+	// return by doing its own `ret`, which is exactly what blockTerminated
+	// below detects.
+	if err := cg.runPendingFinally(returnExitsAllFinally); err != nil {
+		return err
+	}
+	if cg.blockTerminated() {
+		return nil
+	}
+
 	cg.builder.CreateRet(val)
 	return nil
 }
@@ -1471,8 +1609,7 @@ func (cg *LLVMCodeGenerator) generateExpression(expr ASTNode) (llvm.Value, error
 		return llvm.ConstInt(cg.context.Int1Type(), val, false), nil
 
 	case *FloatLiteral:
-		// FloatLiteral stores value as int64 * 1000 for precision
-		return llvm.ConstFloat(cg.context.DoubleType(), float64(e.Value)/1000.0), nil
+		return llvm.ConstFloat(cg.context.DoubleType(), e.Value), nil
 
 	case *CharLiteral:
 		// CharLiteral stores a single Unicode character as string
@@ -1692,6 +1829,9 @@ func (cg *LLVMCodeGenerator) generateComparison(c *Comparison) (llvm.Value, erro
 		return llvm.Value{}, err
 	}
 
+	// Unify operand types (width promotion, int<->float)
+	left, right = cg.coerceBinaryOperands(left, right)
+
 	// Check if we're comparing floats
 	leftType := left.Type()
 	isFloat := leftType.TypeKind() == llvm.FloatTypeKind || leftType.TypeKind() == llvm.DoubleTypeKind
@@ -1750,8 +1890,9 @@ func (cg *LLVMCodeGenerator) generateLogicalOp(l *LogicalOp) (llvm.Value, error)
 		return llvm.Value{}, err
 	}
 
-	leftBool := cg.builder.CreateICmp(llvm.IntNE, left, llvm.ConstInt(cg.context.Int64Type(), 0, false), "leftbool")
-	rightBool := cg.builder.CreateICmp(llvm.IntNE, right, llvm.ConstInt(cg.context.Int64Type(), 0, false), "rightbool")
+	// Note: both operands are always evaluated (no short-circuit)
+	leftBool := cg.toBool(left, "leftbool")
+	rightBool := cg.toBool(right, "rightbool")
 
 	var result llvm.Value
 	switch l.Operator {
@@ -1774,12 +1915,17 @@ func (cg *LLVMCodeGenerator) generateUnaryExpr(u *UnaryOp) (llvm.Value, error) {
 
 	switch u.Operator {
 	case TokenMinus:
+		kind := operand.Type().TypeKind()
+		if kind == llvm.FloatTypeKind || kind == llvm.DoubleTypeKind {
+			return cg.builder.CreateFNeg(operand, "fnegtmp"), nil
+		}
 		return cg.builder.CreateNeg(operand, "negtmp"), nil
 	case TokenTilde:
 		return cg.builder.CreateNot(operand, "nottmp"), nil
 	case TokenExclaim:
-		cmp := cg.builder.CreateICmp(llvm.IntEQ, operand, llvm.ConstInt(cg.context.Int64Type(), 0, false), "lnottmp")
-		return cg.builder.CreateZExt(cmp, cg.context.Int64Type(), "lnotext"), nil
+		b := cg.toBool(operand, "lnottmp")
+		inverted := cg.builder.CreateXor(b, llvm.ConstInt(cg.context.Int1Type(), 1, false), "lnotinv")
+		return cg.builder.CreateZExt(inverted, cg.context.Int64Type(), "lnotext"), nil
 	default:
 		return llvm.Value{}, fmt.Errorf("unsupported unary operator: %v", u.Operator)
 	}
@@ -2028,6 +2174,12 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generatePrint(call)
 	case "printf":
 		return cg.generatePrintf(call)
+	case "fprintf":
+		return cg.generateFprintf(call)
+	case "sprint":
+		return cg.generateSprint(call, false)
+	case "sprintln":
+		return cg.generateSprint(call, true)
 
 	// Math stdlib functions
 	case "abs":
@@ -2114,6 +2266,8 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateTrim(call)
 	case "split":
 		return cg.generateSplit(call)
+	case "join":
+		return cg.generateRuntimeCall(call, "lotus_str_join", []runtimeArgKind{rtInt, rtStr}, rtStr)
 	case "replace":
 		return cg.generateReplace(call)
 	case "startsWith":
@@ -2130,6 +2284,12 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateMemset(call)
 	case "memcpy":
 		return cg.generateMemcpy(call)
+	case "mmap":
+		return cg.generateRuntimeCall(call, "lotus_mmap", []runtimeArgKind{rtInt}, rtInt)
+	case "munmap":
+		return cg.generateRuntimeCall(call, "lotus_munmap", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sizeof":
+		return cg.generateMemSizeof(call)
 
 	// Hash functions
 	case "djb2":
@@ -2140,6 +2300,10 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateCrc32(call)
 	case "murmur":
 		return cg.generateMurmur(call)
+	case "sha256":
+		return cg.generateRuntimeCall(call, "lotus_sha256", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "md5":
+		return cg.generateRuntimeCall(call, "lotus_md5", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
 
 	// Collections stdlib functions
 	case "array_int_new":
@@ -2211,6 +2375,109 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	case "heap_int_len":
 		return cg.generateHeapIntLen(call)
 
+	// Hashmap/hashset (int & string keys), sorted set/map, binary search
+	// (see lotus_runtime.c - P1-1 in FIXER_HANDOFF.md)
+	case "hashmap_int_new":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_new", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_int_put":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_put", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "hashmap_int_get":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_get", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "hashmap_int_remove":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_remove", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "hashmap_int_len":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_len", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_int_clear":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_clear", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_int_free":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_int_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "hashset_int_new":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_new", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_int_add":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_add", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "hashset_int_contains":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_contains", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "hashset_int_remove":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_remove", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "hashset_int_len":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_len", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_int_clear":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_clear", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_int_free":
+		return cg.generateRuntimeCall(call, "lotus_hashset_int_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "hashmap_str_new":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_new", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_str_put":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_put", []runtimeArgKind{rtInt, rtStr, rtInt}, rtInt)
+	case "hashmap_str_get":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_get", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashmap_str_contains":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_contains", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashmap_str_remove":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_remove", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashmap_str_len":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_len", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_str_clear":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_clear", []runtimeArgKind{rtInt}, rtInt)
+	case "hashmap_str_free":
+		return cg.generateRuntimeCall(call, "lotus_hashmap_str_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "hashset_str_new":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_new", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_str_add":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_add", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashset_str_contains":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_contains", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashset_str_remove":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_remove", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "hashset_str_len":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_len", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_str_clear":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_clear", []runtimeArgKind{rtInt}, rtInt)
+	case "hashset_str_free":
+		return cg.generateRuntimeCall(call, "lotus_hashset_str_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "sortedset_int_new":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_new", nil, rtInt)
+	case "sortedset_int_add":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_add", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedset_int_contains":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_contains", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedset_int_remove":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_remove", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedset_int_min":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_min", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedset_int_max":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_max", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedset_int_len":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_len", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedset_int_free":
+		return cg.generateRuntimeCall(call, "lotus_sortedset_int_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "sortedmap_int_new":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_new", nil, rtInt)
+	case "sortedmap_int_put":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_put", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "sortedmap_int_get":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_get", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedmap_int_contains":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_contains", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedmap_int_remove":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_remove", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "sortedmap_int_min_key":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_min_key", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedmap_int_max_key":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_max_key", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedmap_int_len":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_len", []runtimeArgKind{rtInt}, rtInt)
+	case "sortedmap_int_free":
+		return cg.generateRuntimeCall(call, "lotus_sortedmap_int_free", []runtimeArgKind{rtInt}, rtInt)
+
+	case "binary_search_int":
+		return cg.generateRuntimeCall(call, "lotus_binary_search_int", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+
 	// First-class function support
 	case "call":
 		return cg.generateIndirectCall(call)
@@ -2243,6 +2510,19 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 	case "recvfrom":
 		return cg.generateRecvfrom(call)
 
+	// IPv6 + DNS (via the embedded C runtime's socket()/getaddrinfo() calls;
+	// see lotus_runtime.c - P1-1 in FIXER_HANDOFF.md)
+	case "connect_ipv6":
+		return cg.generateRuntimeCall(call, "lotus_connect_ipv6", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "bind_ipv6":
+		return cg.generateRuntimeCall(call, "lotus_bind_ipv6", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "sendto_ipv6":
+		return cg.generateRuntimeCall(call, "lotus_sendto_ipv6", []runtimeArgKind{rtInt, rtInt, rtInt, rtInt, rtInt}, rtInt)
+	case "resolve":
+		return cg.generateRuntimeCall(call, "lotus_resolve", []runtimeArgKind{rtStr, rtInt}, rtInt)
+	case "resolve_ipv6":
+		return cg.generateRuntimeCall(call, "lotus_resolve_ipv6", []runtimeArgKind{rtStr, rtInt}, rtInt)
+
 	// File I/O functions
 	case "open":
 		return cg.generateOpen(call)
@@ -2250,6 +2530,12 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateRead(call)
 	case "write":
 		return cg.generateWrite(call)
+	case "seek":
+		return cg.generateRuntimeCall(call, "lotus_file_seek", []runtimeArgKind{rtInt, rtInt, rtInt}, rtInt)
+	case "stat":
+		return cg.generateRuntimeCall(call, "lotus_file_stat", []runtimeArgKind{rtStr, rtInt}, rtInt)
+	case "exists":
+		return cg.generateRuntimeCall(call, "lotus_file_exists", []runtimeArgKind{rtStr}, rtInt)
 
 	// Time functions
 	case "now":
@@ -2262,6 +2548,10 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateSleep(call)
 	case "clock":
 		return cg.generateClock(call)
+	case "gmtime":
+		return cg.generateRuntimeCall(call, "lotus_gmtime", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "localtime":
+		return cg.generateRuntimeCall(call, "lotus_localtime", []runtimeArgKind{rtInt, rtInt}, rtInt)
 
 	// HTTP request/response helpers
 	case "get":
@@ -2322,6 +2612,33 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		return cg.generateJSONNew(call)
 	case "json_free":
 		return cg.generateJSONFree(call)
+
+	// JSON module (documented names, real recursive-descent parser via the
+	// embedded C runtime - see lotus_runtime.c / SP-E in FIXER_HANDOFF.md).
+	// Dispatched under the "json__" prefix (see moduleDispatchPrefix) so
+	// json::get can't collide with http's bare "get".
+	case "json__parse":
+		return cg.generateRuntimeCall(call, "lotus_json_parse", []runtimeArgKind{rtStr}, rtInt)
+	case "json__stringify":
+		return cg.generateRuntimeCall(call, "lotus_json_stringify", []runtimeArgKind{rtInt}, rtStr)
+	case "json__get":
+		return cg.generateRuntimeCall(call, "lotus_json_get", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "json__get_int":
+		return cg.generateRuntimeCall(call, "lotus_json_get_int", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "json__get_string":
+		return cg.generateRuntimeCall(call, "lotus_json_get_string", []runtimeArgKind{rtInt, rtStr}, rtStr)
+	case "json__get_bool":
+		return cg.generateRuntimeCall(call, "lotus_json_get_bool", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "json__get_array":
+		return cg.generateRuntimeCall(call, "lotus_json_get_array", []runtimeArgKind{rtInt, rtStr}, rtInt)
+	case "json__array_len":
+		return cg.generateRuntimeCall(call, "lotus_json_array_len", []runtimeArgKind{rtInt}, rtInt)
+	case "json__array_get":
+		return cg.generateRuntimeCall(call, "lotus_json_array_get", []runtimeArgKind{rtInt, rtInt}, rtInt)
+	case "json__is_null":
+		return cg.generateRuntimeCall(call, "lotus_json_is_null", []runtimeArgKind{rtInt}, rtInt)
+	case "json__is_valid":
+		return cg.generateRuntimeCall(call, "lotus_json_is_valid", []runtimeArgKind{rtStr}, rtInt)
 
 	// Formatting functions
 	case "sprintf":
@@ -2596,18 +2913,9 @@ func (cg *LLVMCodeGenerator) generateCall(call *FunctionCall) (llvm.Value, error
 		}
 
 		// Type coercion: if the argument type doesn't match the parameter type, try to coerce it
+		// (integer widths, float widths, and int<->float)
 		if i < len(paramTypes) {
-			paramType := paramTypes[i]
-			argType := val.Type()
-
-			// If both are floating point types but different sizes, coerce
-			if argType.TypeKind() == llvm.DoubleTypeKind && paramType.TypeKind() == llvm.FloatTypeKind {
-				// Coerce double to float
-				val = cg.builder.CreateFPTrunc(val, paramType, "fptrunc")
-			} else if argType.TypeKind() == llvm.FloatTypeKind && paramType.TypeKind() == llvm.DoubleTypeKind {
-				// Coerce float to double
-				val = cg.builder.CreateFPExt(val, paramType, "fpext")
-			}
+			val = cg.coerceToType(val, paramTypes[i])
 		}
 
 		args[i] = val
@@ -2635,60 +2943,50 @@ func (cg *LLVMCodeGenerator) generatePrint(call *FunctionCall) (llvm.Value, erro
 		return llvm.Value{}, nil
 	}
 
-	arg, err := cg.generateExpression(call.Args[0])
-	if err != nil {
-		return llvm.Value{}, err
-	}
-
-	// Check argument type to determine how to print
-	argType := arg.Type()
+	// Print ALL arguments, space-separated, each formatted by its type.
+	// The argument strings are printf DATA, never format strings, so a %s
+	// inside a printed string is emitted literally (formatting is printf's job).
 	printf := cg.functions["printf"]
 
-	var formatStr llvm.Value
-	var result llvm.Value
+	formatParts := make([]string, 0, len(call.Args))
+	callArgs := make([]llvm.Value, 0, len(call.Args)+1)
 
-	if argType.TypeKind() == llvm.PointerTypeKind {
-		// String - use printf with %s format (not puts, as puts adds newline)
-		if isPrintln {
-			formatStr = cg.createGlobalString("%s\n")
-		} else {
-			formatStr = cg.createGlobalString("%s")
+	for _, argNode := range call.Args {
+		arg, err := cg.generateExpression(argNode)
+		if err != nil {
+			return llvm.Value{}, err
 		}
-		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
-	} else if argType.TypeKind() == llvm.IntegerTypeKind {
-		// Integer - use printf with %ld format
-		if isPrintln {
-			formatStr = cg.createGlobalString("%ld\n")
-		} else {
-			formatStr = cg.createGlobalString("%ld")
+		switch arg.Type().TypeKind() {
+		case llvm.PointerTypeKind:
+			formatParts = append(formatParts, "%s")
+		case llvm.DoubleTypeKind, llvm.FloatTypeKind:
+			// C varargs require float to be promoted to double
+			if arg.Type().TypeKind() == llvm.FloatTypeKind {
+				arg = cg.builder.CreateFPExt(arg, cg.context.DoubleType(), "fpext")
+			}
+			formatParts = append(formatParts, "%f")
+		default:
+			// Integers (including bool/char) - widen to i64 for %ld
+			if arg.Type().TypeKind() == llvm.IntegerTypeKind {
+				arg = cg.coerceToType(arg, cg.context.Int64Type())
+			}
+			formatParts = append(formatParts, "%ld")
 		}
-		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
-	} else if argType.TypeKind() == llvm.DoubleTypeKind || argType.TypeKind() == llvm.FloatTypeKind {
-		// Float - use printf with %f format
-		// C varargs require float to be promoted to double
-		if argType.TypeKind() == llvm.FloatTypeKind {
-			arg = cg.builder.CreateFPExt(arg, cg.context.DoubleType(), "fpext")
-		}
-		if isPrintln {
-			formatStr = cg.createGlobalString("%f\n")
-		} else {
-			formatStr = cg.createGlobalString("%f")
-		}
-		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
-	} else {
-		// Default: try to print as integer
-		if isPrintln {
-			formatStr = cg.createGlobalString("%ld\n")
-		} else {
-			formatStr = cg.createGlobalString("%ld")
-		}
-		result = cg.builder.CreateCall(printf.GlobalValueType(), printf, []llvm.Value{formatStr, arg}, "printftmp")
+		callArgs = append(callArgs, arg)
 	}
 
-	return result, nil
+	format := strings.Join(formatParts, " ")
+	if isPrintln {
+		format += "\n"
+	}
+	args := append([]llvm.Value{cg.createGlobalString(format)}, callArgs...)
+	return cg.builder.CreateCall(printf.GlobalValueType(), printf, args, "printftmp"), nil
 }
 
-// generatePrintf generates a printf call
+// generatePrintf generates a printf call.
+// NOTE: the first argument is passed directly to C printf as the format
+// string. It should be a string literal — passing runtime data as the format
+// is a classic format-string hazard (uncontrolled %s/%n).
 func (cg *LLVMCodeGenerator) generatePrintf(call *FunctionCall) (llvm.Value, error) {
 	if len(call.Args) == 0 {
 		return llvm.Value{}, fmt.Errorf("printf requires at least one argument")
@@ -2719,14 +3017,7 @@ func (cg *LLVMCodeGenerator) generateIf(i *IfStatement) error {
 	}
 
 	// Convert to boolean if needed
-	var condBool llvm.Value
-	if cond.Type().IntTypeWidth() == 1 {
-		// Already i1, use directly
-		condBool = cond
-	} else {
-		// Convert non-zero to true
-		condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "ifcond")
-	}
+	condBool := cg.toBool(cond, "ifcond")
 
 	// Create blocks
 	thenBlock := llvm.AddBasicBlock(cg.currentFn, "then")
@@ -2742,8 +3033,7 @@ func (cg *LLVMCodeGenerator) generateIf(i *IfStatement) error {
 			return err
 		}
 	}
-	if cg.builder.GetInsertBlock().LastInstruction().IsNil() ||
-		cg.builder.GetInsertBlock().LastInstruction().InstructionOpcode() != llvm.Ret {
+	if !cg.blockTerminated() {
 		cg.builder.CreateBr(mergeBlock)
 	}
 
@@ -2756,8 +3046,7 @@ func (cg *LLVMCodeGenerator) generateIf(i *IfStatement) error {
 			}
 		}
 	}
-	if cg.builder.GetInsertBlock().LastInstruction().IsNil() ||
-		cg.builder.GetInsertBlock().LastInstruction().InstructionOpcode() != llvm.Ret {
+	if !cg.blockTerminated() {
 		cg.builder.CreateBr(mergeBlock)
 	}
 
@@ -2789,12 +3078,7 @@ func (cg *LLVMCodeGenerator) generateWhile(w *WhileLoop) error {
 	if err != nil {
 		return err
 	}
-	var condBool llvm.Value
-	if cond.Type().IntTypeWidth() == 1 {
-		condBool = cond
-	} else {
-		condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "whilecond")
-	}
+	condBool := cg.toBool(cond, "whilecond")
 	cg.builder.CreateCondBr(condBool, bodyBlock, exitBlock)
 
 	// Body block
@@ -2804,7 +3088,9 @@ func (cg *LLVMCodeGenerator) generateWhile(w *WhileLoop) error {
 			return err
 		}
 	}
-	cg.builder.CreateBr(condBlock)
+	if !cg.blockTerminated() {
+		cg.builder.CreateBr(condBlock)
+	}
 
 	// Exit block
 	cg.builder.SetInsertPointAtEnd(exitBlock)
@@ -2848,12 +3134,7 @@ func (cg *LLVMCodeGenerator) generateFor(f *ForLoop) error {
 		if err != nil {
 			return err
 		}
-		var condBool llvm.Value
-		if cond.Type().IntTypeWidth() == 1 {
-			condBool = cond
-		} else {
-			condBool = cg.builder.CreateICmp(llvm.IntNE, cond, llvm.ConstInt(cond.Type(), 0, false), "forcond")
-		}
+		condBool := cg.toBool(cond, "forcond")
 		cg.builder.CreateCondBr(condBool, bodyBlock, exitBlock)
 	} else {
 		cg.builder.CreateBr(bodyBlock)
@@ -2866,7 +3147,9 @@ func (cg *LLVMCodeGenerator) generateFor(f *ForLoop) error {
 			return err
 		}
 	}
-	cg.builder.CreateBr(postBlock)
+	if !cg.blockTerminated() {
+		cg.builder.CreateBr(postBlock)
+	}
 
 	// Post (Update)
 	cg.builder.SetInsertPointAtEnd(postBlock)
@@ -2892,7 +3175,18 @@ func (cg *LLVMCodeGenerator) generateBreak(b *BreakStatement) error {
 	if cg.loopExitBlock.IsNil() {
 		return fmt.Errorf("break statement outside of loop")
 	}
-	cg.builder.CreateBr(cg.loopExitBlock)
+
+	// Run any finally blocks opened during THIS loop (not ones from an
+	// enclosing loop/scope, which break does not exit) before jumping out.
+	currentLoopExit := cg.loopExitBlock
+	if err := cg.runPendingFinally(func(f *finallyFrame) bool {
+		return f.loopExitAtPush == currentLoopExit
+	}); err != nil {
+		return err
+	}
+	if !cg.blockTerminated() {
+		cg.builder.CreateBr(cg.loopExitBlock)
+	}
 
 	// Create an unreachable block for any code after break
 	unreachable := llvm.AddBasicBlock(cg.currentFn, "afterbreak")
@@ -2906,7 +3200,16 @@ func (cg *LLVMCodeGenerator) generateContinue(c *ContinueStatement) error {
 	if cg.loopContinueBlock.IsNil() {
 		return fmt.Errorf("continue statement outside of loop")
 	}
-	cg.builder.CreateBr(cg.loopContinueBlock)
+
+	currentLoopExit := cg.loopExitBlock
+	if err := cg.runPendingFinally(func(f *finallyFrame) bool {
+		return f.loopExitAtPush == currentLoopExit
+	}); err != nil {
+		return err
+	}
+	if !cg.blockTerminated() {
+		cg.builder.CreateBr(cg.loopContinueBlock)
+	}
 
 	// Create an unreachable block for any code after continue
 	unreachable := llvm.AddBasicBlock(cg.currentFn, "aftercontinue")
@@ -2917,6 +3220,11 @@ func (cg *LLVMCodeGenerator) generateContinue(c *ContinueStatement) error {
 
 // generateAssignment generates an assignment
 func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
+	// Field assignment (`p.x = 10;`) - see SP-A-2 in FIXER_HANDOFF.md.
+	if fieldAccess, ok := a.Target.(*FieldAccess); ok {
+		return cg.generateFieldAssignment(fieldAccess, a.Value)
+	}
+
 	val, err := cg.generateExpression(a.Value)
 	if err != nil {
 		return err
@@ -2934,16 +3242,32 @@ func (cg *LLVMCodeGenerator) generateAssignment(a *Assignment) error {
 		// Coerce value to match variable type
 		val = cg.coerceToType(val, variable.ElementType)
 		cg.builder.CreateStore(val, variable.Alloca)
+		cg.recordVarClassName(id.Name, a.Value)
 		return nil
 	}
 
 	// Then check global variables
 	if globalVar, gok := cg.globalVars[id.Name]; gok {
+		val = cg.coerceToType(val, globalVar.GlobalValueType())
 		cg.builder.CreateStore(val, globalVar)
+		cg.recordVarClassName(id.Name, a.Value)
 		return nil
 	}
 
 	return fmt.Errorf("undefined variable: %s", id.Name)
+}
+
+// recordVarClassName records varName as holding an instance of the
+// struct/class named by valueExpr, if valueExpr is a StructLiteral or
+// ClassLiteral. Used by generateMethodCall/generateFieldAccess to resolve
+// the object's real type instead of guessing - see P1-5 in FIXER_HANDOFF.md.
+func (cg *LLVMCodeGenerator) recordVarClassName(varName string, valueExpr ASTNode) {
+	switch v := valueExpr.(type) {
+	case *StructLiteral:
+		cg.varClassNames[varName] = v.StructName
+	case *ClassLiteral:
+		cg.varClassNames[varName] = v.ClassName
+	}
 }
 
 // moduleDispatchPrefix returns the dispatch-name prefix for a stdlib module.
@@ -2957,6 +3281,11 @@ func moduleDispatchPrefix(moduleName string) string {
 		return "regex__"
 	case "http":
 		return "http__"
+	case "json":
+		// Bare names like "get" would otherwise collide with http's "get"
+		// dispatch (see SP-E in FIXER_HANDOFF.md) - json needs its own
+		// namespace like http/regex/sdl_mixer.
+		return "json__"
 	default:
 		return ""
 	}
@@ -3268,19 +3597,49 @@ func (cg *LLVMCodeGenerator) generateDecoratedFunction(d *DecoratedFunction) err
 			}
 		}
 
-		// Generate the wrapper body, replacing wrapped() calls with currentCallTarget
+		// Generate the wrapper body, rewriting bare wrapped() calls to call
+		// the actual wrapped function at this level with the original
+		// function's arguments forwarded. Previously wrapped() was always
+		// called with zero arguments (an arity mismatch for any wrapped
+		// function with parameters - invalid IR) and its result was always
+		// discarded, with every level unconditionally returning null/0
+		// instead of the wrapped call's actual result. The rewrite happens
+		// once on the AST (via walkAST, substituting the call name+args
+		// wherever wrapped() appears, including inside `ret wrapped();`)
+		// rather than a special-cased statement-by-statement walker, so the
+		// normal call/return codegen paths do the right thing for free. See
+		// SP-B-4 in FIXER_HANDOFF.md.
 		for _, stmt := range wrapperDef.Body {
-			if err := cg.generateDecoratorStatement(stmt, currentCallTarget, wrapperDef.WrappedArg); err != nil {
+			rewritten := CloneASTNode(stmt)
+			walkAST(rewritten, func(n ASTNode) {
+				if fc, ok := n.(*FunctionCall); ok && fc.Name == wrapperDef.WrappedArg {
+					fc.Name = currentCallTarget
+					fc.Args = make([]ASTNode, len(d.Function.Parameters))
+					for i, param := range d.Function.Parameters {
+						fc.Args[i] = &Identifier{Name: param.Name}
+					}
+				}
+			})
+			if err := cg.generateStatement(rewritten); err != nil {
 				return err
+			}
+			if cg.blockTerminated() {
+				// e.g. `ret wrapped();` - anything written after it in the
+				// wrapper source is unreachable; stop emitting into the
+				// now-terminated block instead of producing invalid IR.
+				break
 			}
 		}
 
-		// Add return if needed
-		if d.Function.ReturnType == TokenTypeVoid {
-			cg.builder.CreateRetVoid()
-		} else {
-			retType := cg.tokenTypeToLLVM(d.Function.ReturnType)
-			cg.builder.CreateRet(llvm.ConstNull(retType))
+		// Add a fallback return only if the wrapper body didn't already
+		// return explicitly (e.g. via `ret wrapped();`).
+		if !cg.blockTerminated() {
+			if d.Function.ReturnType == TokenTypeVoid {
+				cg.builder.CreateRetVoid()
+			} else {
+				retType := cg.tokenTypeToLLVM(d.Function.ReturnType)
+				cg.builder.CreateRet(llvm.ConstNull(retType))
+			}
 		}
 
 		// Update current call target for next decorator level
@@ -3290,49 +3649,36 @@ func (cg *LLVMCodeGenerator) generateDecoratedFunction(d *DecoratedFunction) err
 	return nil
 }
 
-// generateDecoratorStatement generates a statement from a wrapper body,
-// replacing calls to the wrapped function parameter with the actual wrapped function
-func (cg *LLVMCodeGenerator) generateDecoratorStatement(stmt ASTNode, wrappedFnName string, wrappedArgName string) error {
-	switch s := stmt.(type) {
-	case *FunctionCall:
-		// Check if this is calling the wrapped function
-		if s.Name == wrappedArgName {
-			// Call the actual wrapped function instead
-			fn, ok := cg.functions[wrappedFnName]
-			if !ok {
-				return fmt.Errorf("undefined function: %s", wrappedFnName)
-			}
-			fnType := fn.GlobalValueType()
-			retType := fnType.ReturnType()
-			if retType.TypeKind() == llvm.VoidTypeKind {
-				cg.builder.CreateCall(fnType, fn, []llvm.Value{}, "")
-			} else {
-				cg.builder.CreateCall(fnType, fn, []llvm.Value{}, "wrappedcall")
-			}
-			return nil
-		}
-		// Regular function call
-		_, err := cg.generateCall(s)
-		return err
-	default:
-		// For other statements, use normal generation
-		return cg.generateStatement(stmt)
-	}
-}
 
 // generatePartialApplication generates code for partial function application
 // partial(fn_name, arg1, arg2, ...) creates a closure
+// generatePartialApplication implements `partial(fn_name, arg1, ...)`.
+//
+// Previously this stored a hash of the function name where a function
+// pointer belonged, and returned the address of that heap struct;
+// call/call1/call2 (which IntToPtr their argument and jump to it) would
+// jump to a garbage address on the hash, or - once the hash was fixed to a
+// real function pointer - jump into the middle of the closure struct's raw
+// bytes if the struct's address were returned directly, since neither is a
+// callable address in its own right. See P1-3 in FIXER_HANDOFF.md.
+//
+// Fix: return the target function's address directly (ptrtoint), in the
+// same bare-i64 representation every other first-class-function path in
+// this codegen uses (see generateFunctionReference/resolveFunctionArg). The
+// bound arguments are still recorded in a heap-allocated struct for
+// documentation/introspection, but call/call1/call2 do not consult it - the
+// returned value calls the UNDERLYING function, not a curried version of it.
+// Real closure semantics (call* detecting a closure struct vs a raw
+// function pointer and splicing the bound args in ahead of the caller's
+// own) would need a representation change; out of scope here.
 func (cg *LLVMCodeGenerator) generatePartialApplication(p *PartialApplication) (llvm.Value, error) {
-	// For a simple implementation, we store bound args in a heap-allocated struct
-	// and return a pointer to it. When called, it retrieves the args.
+	targetFn, ok := cg.functions[p.FunctionName]
+	if !ok {
+		return llvm.Value{}, fmt.Errorf("partial: undefined function: %s", p.FunctionName)
+	}
+	fnPtrConst := cg.builder.CreatePtrToInt(targetFn, cg.context.Int64Type(), "fnptr")
 
-	// This is a simplified implementation that works for common cases:
-	// We create a small struct containing:
-	// - Function pointer (as i64)
-	// - Number of bound args
-	// - Bound arg values
-
-	// Allocate closure struct: [fn_ptr:8][num_bound:8][arg0:8][arg1:8]...
+	// Record the bound args in a heap struct: [fn_ptr:8][num_bound:8][arg0:8]...
 	numBound := len(p.BoundArgs)
 	structSize := llvm.ConstInt(cg.context.Int64Type(), uint64(16+numBound*8), false)
 
@@ -3340,24 +3686,15 @@ func (cg *LLVMCodeGenerator) generatePartialApplication(p *PartialApplication) (
 	closurePtr := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{structSize}, "closurealloc")
 	closureInt := cg.builder.CreatePtrToInt(closurePtr, cg.context.Int64Type(), "closureint")
 
-	// Store function pointer (as identifier for now)
-	// We'll use a hash of the function name as the identifier
-	fnHash := uint64(0)
-	for _, c := range p.FunctionName {
-		fnHash = fnHash*31 + uint64(c)
-	}
-	fnPtrConst := llvm.ConstInt(cg.context.Int64Type(), fnHash, false)
 	fnPtrAddr := cg.builder.CreateIntToPtr(closureInt, llvm.PointerType(cg.context.Int64Type(), 0), "fnptraddr")
 	cg.builder.CreateStore(fnPtrConst, fnPtrAddr)
 
-	// Store number of bound args
 	eight := llvm.ConstInt(cg.context.Int64Type(), 8, false)
 	numBoundOffset := cg.builder.CreateAdd(closureInt, eight, "numboundoffset")
 	numBoundPtr := cg.builder.CreateIntToPtr(numBoundOffset, llvm.PointerType(cg.context.Int64Type(), 0), "numboundptr")
 	numBoundVal := llvm.ConstInt(cg.context.Int64Type(), uint64(numBound), false)
 	cg.builder.CreateStore(numBoundVal, numBoundPtr)
 
-	// Store bound arguments
 	for i, arg := range p.BoundArgs {
 		argVal, err := cg.generateExpression(arg)
 		if err != nil {
@@ -3370,11 +3707,9 @@ func (cg *LLVMCodeGenerator) generatePartialApplication(p *PartialApplication) (
 		cg.builder.CreateStore(argVal, argPtr)
 	}
 
-	// Register this partial for later lookup when it's called
-	// Store the mapping: closureInt -> (functionName, boundArgs)
 	cg.partialApplications[p.FunctionName] = p
 
-	return closureInt, nil
+	return fnPtrConst, nil
 }
 
 // generatePipeExpression generates code for the pipe operator
@@ -3862,7 +4197,29 @@ func (cg *LLVMCodeGenerator) generateMatchExpression(m *MatchExpression) (llvm.V
 				if err != nil {
 					return llvm.Value{}, err
 				}
-				condition := cg.builder.CreateICmp(llvm.IntEQ, matchValue, patternValue, "match.cmp")
+				var condition llvm.Value
+				if matchValue.Type().TypeKind() == llvm.PointerTypeKind {
+					// String-typed match value: ICmp EQ on the two i8*
+					// compares pointer identity, not contents. Two
+					// identical literals happen to share one cached
+					// global (createGlobalString), so literal-vs-literal
+					// appeared to work, but matching any runtime-built
+					// string always fell through. See SP-B-6 in
+					// FIXER_HANDOFF.md.
+					cg.declareStringHelpers()
+					strcmpFn, ok := cg.functions["strcmp"]
+					if !ok {
+						strcmpType := llvm.FunctionType(cg.context.Int32Type(),
+							[]llvm.Type{llvm.PointerType(cg.context.Int8Type(), 0), llvm.PointerType(cg.context.Int8Type(), 0)}, false)
+						strcmpFn = llvm.AddFunction(cg.module, "strcmp", strcmpType)
+						strcmpFn.SetLinkage(llvm.ExternalLinkage)
+						cg.functions["strcmp"] = strcmpFn
+					}
+					cmp := cg.builder.CreateCall(strcmpFn.GlobalValueType(), strcmpFn, []llvm.Value{matchValue, patternValue}, "match.strcmp")
+					condition = cg.builder.CreateICmp(llvm.IntEQ, cmp, llvm.ConstInt(cg.context.Int32Type(), 0, false), "match.cmp")
+				} else {
+					condition = cg.builder.CreateICmp(llvm.IntEQ, matchValue, patternValue, "match.cmp")
+				}
 				cg.builder.CreateCondBr(condition, bodyBlocks[i], nextTestBlock)
 
 			case *RangePattern:
@@ -3892,8 +4249,16 @@ func (cg *LLVMCodeGenerator) generateMatchExpression(m *MatchExpression) (llvm.V
 		// Generate body block
 		cg.builder.SetInsertPointAtEnd(bodyBlocks[i])
 
-		// Set up binding pattern variable if needed
+		// Set up binding pattern variable if needed. The binding is scoped
+		// to this arm only - restored below after the arm is generated so
+		// it doesn't leak into code after the match (previously it stayed
+		// in cg.namedValues forever - see SP-B-6 in FIXER_HANDOFF.md).
+		var shadowedBinding LLVMVariable
+		var hadShadowedBinding bool
+		var bindingName string
 		if bp, ok := matchCase.Pattern.(*BindingPattern); ok {
+			bindingName = bp.Name
+			shadowedBinding, hadShadowedBinding = cg.namedValues[bp.Name]
 			alloca := cg.builder.CreateAlloca(matchValue.Type(), bp.Name)
 			cg.builder.CreateStore(matchValue, alloca)
 			cg.namedValues[bp.Name] = LLVMVariable{Alloca: alloca, ElementType: matchValue.Type()}
@@ -3914,11 +4279,17 @@ func (cg *LLVMCodeGenerator) generateMatchExpression(m *MatchExpression) (llvm.V
 			cg.builder.SetInsertPointAtEnd(guardedBlock)
 		}
 
-		// Generate case body statements
+		// Generate case body statements. MatchYield (the `case X => expr`
+		// sugar) yields its value to the match result PHI. A genuine `ret`
+		// written inside a block-bodied arm (`case X => { ret 5; }`) is NOT
+		// special-cased here - it flows through generateStatement like any
+		// other statement and actually returns from the function, instead
+		// of being silently reinterpreted as "yield this to the match
+		// expression". See SP-B-5 in FIXER_HANDOFF.md.
 		bodyTerminated := false
 		for _, stmt := range matchCase.Body {
-			if ret, ok := stmt.(*ReturnStatement); ok && ret.Value != nil {
-				result, err := cg.generateExpression(ret.Value)
+			if yield, ok := stmt.(*MatchYield); ok {
+				result, err := cg.generateExpression(yield.Value)
 				if err != nil {
 					return llvm.Value{}, err
 				}
@@ -3930,12 +4301,29 @@ func (cg *LLVMCodeGenerator) generateMatchExpression(m *MatchExpression) (llvm.V
 			if err := cg.generateStatement(stmt); err != nil {
 				return llvm.Value{}, err
 			}
+			if cg.blockTerminated() {
+				// An explicit ret/break/etc. inside the block already
+				// terminated this basic block - don't also append a
+				// synthetic branch to the match merge block below.
+				bodyTerminated = true
+				break
+			}
 		}
 
 		// If body didn't terminate, add default result and branch to merge
 		if !bodyTerminated {
 			results = append(results, phiEntry{llvm.ConstInt(cg.context.Int64Type(), 0, false), cg.builder.GetInsertBlock()})
 			cg.builder.CreateBr(mergeBlock)
+		}
+
+		// Restore whatever binding (or absence of one) the pattern's name
+		// held before this arm, so it doesn't leak into later arms/code.
+		if bindingName != "" {
+			if hadShadowedBinding {
+				cg.namedValues[bindingName] = shadowedBinding
+			} else {
+				delete(cg.namedValues, bindingName)
+			}
 		}
 	}
 
@@ -3971,6 +4359,5 @@ func (cg *LLVMCodeGenerator) Dispose() {
 
 // Helper to write bytes to file
 func writeFile(path string, data []byte) error {
-	// Use os.WriteFile in production
-	return nil // Placeholder - implement with os package
+	return os.WriteFile(path, data, 0644)
 }

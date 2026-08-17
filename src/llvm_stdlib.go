@@ -620,6 +620,15 @@ func (cg *LLVMCodeGenerator) generateArrayIntLen(call *FunctionCall) (llvm.Value
 }
 
 // generateArrayIntPush appends an element to the array
+// generateArrayIntPush appends to the array WITHOUT checking capacity - if
+// len == cap, this writes past the allocated block and corrupts the heap.
+// Callers must ensure enough capacity up front (array_int_new(cap)) or grow
+// explicitly via array_int_reserve/resize and reassign their variable to the
+// returned pointer before pushing past the current capacity. See P2-1 in
+// FIXER_HANDOFF.md - push does not auto-grow because doing so would need to
+// return the (possibly reallocated) pointer, changing this function's
+// established "returns status" contract; that's a larger, deliberate design
+// change this fix does not make silently.
 func (cg *LLVMCodeGenerator) generateArrayIntPush(call *FunctionCall) (llvm.Value, error) {
 	if len(call.Args) != 2 {
 		return llvm.Value{}, nil
@@ -767,20 +776,97 @@ func (cg *LLVMCodeGenerator) generateArrayIntCapacity(call *FunctionCall) (llvm.
 	return cg.builder.CreateLoad(cg.context.Int64Type(), capPtr, "arrcap"), nil
 }
 
-// generateArrayIntResize resizes the array (no-op for now, capacity is fixed)
+// arrayIntRealloc allocates a new array_int block with the given capacity,
+// copies min(len, newCap) elements from the old block, and returns the new
+// block's pointer (as i64) - the caller is expected to reassign their
+// variable to this, matching the old asm backend's contract
+// (generateCollectionsArrayIntResize et al. in lotus-dev/src/stdlib.go).
+// Shared by resize/reserve/shrink. See P2-1 in FIXER_HANDOFF.md - these were
+// previously no-ops that silently discarded the requested capacity change.
+func (cg *LLVMCodeGenerator) arrayIntRealloc(arrPtr, newCap llvm.Value) llvm.Value {
+	i64 := cg.context.Int64Type()
+	i8ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+	eight := llvm.ConstInt(i64, 8, false)
+	sixteen := llvm.ConstInt(i64, 16, false)
+
+	oldLenPtr := cg.builder.CreateIntToPtr(cg.builder.CreateAdd(arrPtr, eight, "oldlenoff"), llvm.PointerType(i64, 0), "oldlenptr")
+	oldLen := cg.builder.CreateLoad(i64, oldLenPtr, "oldlen")
+
+	// copyLen = min(oldLen, newCap)
+	oldLenLess := cg.builder.CreateICmp(llvm.IntSLT, oldLen, newCap, "oldlenless")
+	copyLen := cg.builder.CreateSelect(oldLenLess, oldLen, newCap, "copylen")
+
+	newSize := cg.builder.CreateAdd(sixteen, cg.builder.CreateMul(newCap, eight, "newdatasize"), "newtotalsize")
+	malloc := cg.functions["malloc"]
+	newRaw := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{newSize}, "arrrealloc")
+	newPtr := cg.builder.CreatePtrToInt(newRaw, i64, "newarrptr")
+
+	newCapPtr := cg.builder.CreateIntToPtr(newPtr, llvm.PointerType(i64, 0), "newcapptr")
+	cg.builder.CreateStore(newCap, newCapPtr)
+	newLenPtr := cg.builder.CreateIntToPtr(cg.builder.CreateAdd(newPtr, eight, "newlenoff"), llvm.PointerType(i64, 0), "newlenptr")
+	cg.builder.CreateStore(copyLen, newLenPtr)
+
+	cg.declareMemsetMemcpy()
+	memcpy := cg.functions["memcpy"]
+	oldData := cg.builder.CreateIntToPtr(cg.builder.CreateAdd(arrPtr, sixteen, "olddataoff"), i8ptr, "olddataptr")
+	newData := cg.builder.CreateIntToPtr(cg.builder.CreateAdd(newPtr, sixteen, "newdataoff"), i8ptr, "newdataptr")
+	copyBytes := cg.builder.CreateMul(copyLen, eight, "copybytes")
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{newData, oldData, copyBytes}, "")
+
+	return newPtr
+}
+
+// generateArrayIntResize(arr, newcap) -> new array pointer with the given capacity.
 func (cg *LLVMCodeGenerator) generateArrayIntResize(call *FunctionCall) (llvm.Value, error) {
-	// Simplified: just return 0 (no actual resize in this implementation)
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("array_int_resize requires 2 arguments (arr, newcap)")
+	}
+	arrPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	newCap, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	return cg.arrayIntRealloc(arrPtr, newCap), nil
 }
 
-// generateArrayIntReserve reserves capacity (no-op for now)
+// generateArrayIntReserve(arr, req) -> new array pointer with capacity
+// max(current capacity, req).
 func (cg *LLVMCodeGenerator) generateArrayIntReserve(call *FunctionCall) (llvm.Value, error) {
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	if len(call.Args) != 2 {
+		return llvm.Value{}, fmt.Errorf("array_int_reserve requires 2 arguments (arr, req)")
+	}
+	arrPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	req, err := cg.generateExpression(call.Args[1])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	capPtr := cg.builder.CreateIntToPtr(arrPtr, llvm.PointerType(cg.context.Int64Type(), 0), "reservecapptr")
+	curCap := cg.builder.CreateLoad(cg.context.Int64Type(), capPtr, "reservecurcap")
+	curCapLess := cg.builder.CreateICmp(llvm.IntSLT, curCap, req, "reservecaplt")
+	newCap := cg.builder.CreateSelect(curCapLess, req, curCap, "reservenewcap")
+	return cg.arrayIntRealloc(arrPtr, newCap), nil
 }
 
-// generateArrayIntShrink shrinks to fit (no-op for now)
+// generateArrayIntShrink(arr) -> new array pointer with capacity == length.
 func (cg *LLVMCodeGenerator) generateArrayIntShrink(call *FunctionCall) (llvm.Value, error) {
-	return llvm.ConstInt(cg.context.Int64Type(), 0, false), nil
+	if len(call.Args) != 1 {
+		return llvm.Value{}, fmt.Errorf("array_int_shrink requires 1 argument (arr)")
+	}
+	arrPtr, err := cg.generateExpression(call.Args[0])
+	if err != nil {
+		return llvm.Value{}, err
+	}
+	lenPtr := cg.builder.CreateIntToPtr(
+		cg.builder.CreateAdd(arrPtr, llvm.ConstInt(cg.context.Int64Type(), 8, false), "shrinklenoff"),
+		llvm.PointerType(cg.context.Int64Type(), 0), "shrinklenptr")
+	curLen := cg.builder.CreateLoad(cg.context.Int64Type(), lenPtr, "shrinkcurlen")
+	return cg.arrayIntRealloc(arrPtr, curLen), nil
 }
 
 // generateArrayIntFree frees the array

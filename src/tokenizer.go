@@ -399,6 +399,26 @@ func Tokenize(input string) []Token {
 					buf.WriteRune(runes[i])
 					i++
 				}
+				// Exponent notation: [eE][+-]?digits
+				if i < len(runes) && (runes[i] == 'e' || runes[i] == 'E') {
+					j := i + 1
+					if j < len(runes) && (runes[j] == '+' || runes[j] == '-') {
+						j++
+					}
+					if j < len(runes) && unicode.IsDigit(runes[j]) {
+						isFloat = true
+						buf.WriteRune(runes[i]) // e/E
+						i++
+						if runes[i] == '+' || runes[i] == '-' {
+							buf.WriteRune(runes[i])
+							i++
+						}
+						for i < len(runes) && unicode.IsDigit(runes[i]) {
+							buf.WriteRune(runes[i])
+							i++
+						}
+					}
+				}
 			}
 			i-- // Compensate for the loop increment
 

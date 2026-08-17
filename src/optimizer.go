@@ -8,9 +8,7 @@ package main
 // - Identity removal: Remove no-op operations like x + 0, x * 1
 // - Peephole optimizations: Local optimizations on small patterns
 
-import (
-	"math/bits"
-)
+import "reflect"
 
 // OptimizeAST applies optimization passes to an AST node tree.
 // Returns an optimized version of the AST.
@@ -283,13 +281,18 @@ func foldBitwiseOp(op *BitwiseOp) ASTNode {
 	return &IntLiteral{Value: result}
 }
 
-// reduceBinaryOp applies strength reduction and identity removal.
+// reduceBinaryOp applies identity removal.
 // Examples:
 // - x + 0 → x
 // - x * 1 → x
-// - x * 0 → 0
-// - x * 2 → x << 1 (power of 2 multiplication)
 // - x / 1 → x
+//
+// Rewrites that would discard an operand (x * 0 → 0, x % 1 → 0) are NOT
+// applied: the discarded expression may have side effects, and the literal 0
+// may have the wrong type when x is a float.
+// Multiply-by-power-of-2 is NOT rewritten into a shift here: the operand's
+// type is unknown at this stage (a shift on a float is invalid IR), and LLVM
+// performs this strength reduction itself.
 func reduceBinaryOp(op *BinaryOp) ASTNode {
 	// Check for constant on the right
 	if right, ok := op.Right.(*IntLiteral); ok {
@@ -303,31 +306,12 @@ func reduceBinaryOp(op *BinaryOp) ASTNode {
 				return op.Left // x - 0 = x
 			}
 		case TokenStar:
-			if right.Value == 0 {
-				return &IntLiteral{Value: 0} // x * 0 = 0
-			}
 			if right.Value == 1 {
 				return op.Left // x * 1 = x
-			}
-			// Strength reduction: multiply by power of 2 → shift
-			if right.Value > 0 && isPowerOfTwo(right.Value) {
-				shift := bits.TrailingZeros64(uint64(right.Value))
-				return &BitwiseOp{
-					Left:     op.Left,
-					Operator: TokenLShift,
-					Right:    &IntLiteral{Value: shift},
-				}
 			}
 		case TokenSlash:
 			if right.Value == 1 {
 				return op.Left // x / 1 = x
-			}
-			// Strength reduction: divide by power of 2 → shift (for positive values)
-			// Note: This is only valid for unsigned division; for signed we need extra care
-			// For now, we'll skip this optimization for safety
-		case TokenPercent:
-			if right.Value == 1 {
-				return &IntLiteral{Value: 0} // x % 1 = 0
 			}
 		}
 	}
@@ -340,20 +324,8 @@ func reduceBinaryOp(op *BinaryOp) ASTNode {
 				return op.Right // 0 + x = x
 			}
 		case TokenStar:
-			if left.Value == 0 {
-				return &IntLiteral{Value: 0} // 0 * x = 0
-			}
 			if left.Value == 1 {
 				return op.Right // 1 * x = x
-			}
-			// Strength reduction for power of 2
-			if left.Value > 0 && isPowerOfTwo(left.Value) {
-				shift := bits.TrailingZeros64(uint64(left.Value))
-				return &BitwiseOp{
-					Left:     op.Right,
-					Operator: TokenLShift,
-					Right:    &IntLiteral{Value: shift},
-				}
 			}
 		}
 	}
@@ -372,7 +344,7 @@ func reduceBitwiseOp(op *BitwiseOp) ASTNode {
 	if right, ok := op.Right.(*IntLiteral); ok {
 		switch op.Operator {
 		case TokenAmpersand:
-			if right.Value == 0 {
+			if right.Value == 0 && isPureExpr(op.Left) {
 				return &IntLiteral{Value: 0} // x & 0 = 0
 			}
 			if right.Value == -1 { // All bits set
@@ -382,7 +354,7 @@ func reduceBitwiseOp(op *BitwiseOp) ASTNode {
 			if right.Value == 0 {
 				return op.Left // x | 0 = x
 			}
-			if right.Value == -1 {
+			if right.Value == -1 && isPureExpr(op.Left) {
 				return &IntLiteral{Value: -1} // x | -1 = -1
 			}
 		case TokenCaret:
@@ -397,6 +369,28 @@ func reduceBitwiseOp(op *BitwiseOp) ASTNode {
 	}
 
 	return nil
+}
+
+// isPureExpr reports whether evaluating the expression can have no side
+// effects, so it is safe to discard. Conservative: anything unrecognized is
+// treated as impure.
+func isPureExpr(expr ASTNode) bool {
+	switch e := expr.(type) {
+	case *IntLiteral, *FloatLiteral, *BoolLiteral, *StringLiteral, *CharLiteral, *NullLiteral, *Identifier:
+		return true
+	case *UnaryOp:
+		return isPureExpr(e.Operand)
+	case *BinaryOp:
+		return isPureExpr(e.Left) && isPureExpr(e.Right)
+	case *BitwiseOp:
+		return isPureExpr(e.Left) && isPureExpr(e.Right)
+	case *Comparison:
+		return isPureExpr(e.Left) && isPureExpr(e.Right)
+	case *LogicalOp:
+		return isPureExpr(e.Left) && isPureExpr(e.Right)
+	default:
+		return false
+	}
 }
 
 // isPowerOfTwo checks if n is a power of two.
@@ -439,20 +433,28 @@ func foldComparison(cmp *Comparison) ASTNode {
 }
 
 // foldLogicalOp attempts to evaluate a logical operation at compile time.
-// Also applies short-circuit optimizations.
+// Folds that would discard a non-pure operand are skipped: codegen evaluates
+// both sides of && and || (no short-circuit), so discarding an operand with
+// side effects would change program behavior.
 func foldLogicalOp(op *LogicalOp) ASTNode {
-	// Check for constant left operand (short-circuit optimization)
+	// Check for constant left operand
 	if leftBool := evaluateConstantBool(op.Left); leftBool != nil {
 		switch op.Operator {
 		case TokenAnd:
 			if !*leftBool {
-				return &BoolLiteral{Value: false} // false && x = false
+				if isPureExpr(op.Right) {
+					return &BoolLiteral{Value: false} // false && x = false
+				}
+				return nil
 			}
 			// true && x = x
 			return op.Right
 		case TokenOr:
 			if *leftBool {
-				return &BoolLiteral{Value: true} // true || x = true
+				if isPureExpr(op.Right) {
+					return &BoolLiteral{Value: true} // true || x = true
+				}
+				return nil
 			}
 			// false || x = x
 			return op.Right
@@ -464,13 +466,19 @@ func foldLogicalOp(op *LogicalOp) ASTNode {
 		switch op.Operator {
 		case TokenAnd:
 			if !*rightBool {
-				return &BoolLiteral{Value: false} // x && false = false
+				if isPureExpr(op.Left) {
+					return &BoolLiteral{Value: false} // x && false = false
+				}
+				return nil
 			}
 			// x && true = x
 			return op.Left
 		case TokenOr:
 			if *rightBool {
-				return &BoolLiteral{Value: true} // x || true = true
+				if isPureExpr(op.Left) {
+					return &BoolLiteral{Value: true} // x || true = true
+				}
+				return nil
 			}
 			// x || false = x
 			return op.Left
@@ -678,14 +686,29 @@ func EliminateUnusedFunctions(statements []ASTNode) []ASTNode {
 		}
 	}
 
-	// Find all called functions starting from "main"
+	// Find all called functions. Roots are "main" plus every top-level
+	// non-function statement (global initializers, namespaces, classes,
+	// templates, decorated functions, ...), so a function referenced only
+	// from those is never eliminated.
 	calledFunctions := make(map[string]bool)
-	if mainFn, ok := functions["main"]; ok {
-		markCalledFunctions(mainFn, functions, calledFunctions)
+	var mark func(name string)
+	mark = func(name string) {
+		if calledFunctions[name] {
+			return
+		}
+		calledFunctions[name] = true
+		if fn, ok := functions[name]; ok {
+			for _, callee := range findFunctionCalls(fn.Body) {
+				mark(callee)
+			}
+		}
 	}
-
-	// Always keep main
-	calledFunctions["main"] = true
+	mark("main")
+	for _, stmt := range nonFunctions {
+		for _, callee := range findCallsInNode(stmt) {
+			mark(callee)
+		}
+	}
 
 	// Build result with only used functions
 	result := make([]ASTNode, 0, len(statements))
@@ -699,22 +722,6 @@ func EliminateUnusedFunctions(statements []ASTNode) []ASTNode {
 	return result
 }
 
-// markCalledFunctions recursively marks all functions called from the given function.
-func markCalledFunctions(fn *FunctionDefinition, allFunctions map[string]*FunctionDefinition, called map[string]bool) {
-	if fn == nil || called[fn.Name] {
-		return
-	}
-	called[fn.Name] = true
-
-	// Find all function calls in this function's body
-	callsInBody := findFunctionCalls(fn.Body)
-	for _, callName := range callsInBody {
-		if calledFn, ok := allFunctions[callName]; ok {
-			markCalledFunctions(calledFn, allFunctions, called)
-		}
-	}
-}
-
 // findFunctionCalls finds all function names called in a list of statements.
 func findFunctionCalls(statements []ASTNode) []string {
 	var calls []string
@@ -724,77 +731,78 @@ func findFunctionCalls(statements []ASTNode) []string {
 	return calls
 }
 
-// findCallsInNode finds all function calls in a single AST node.
+// findCallsInNode finds all function names referenced in a single AST node.
+// It walks the node generically (see walkAST) so that no node kind or child
+// field can be missed.
 func findCallsInNode(node ASTNode) []string {
-	if node == nil {
-		return nil
-	}
-
 	var calls []string
-	switch n := node.(type) {
-	case *FunctionCall:
-		calls = append(calls, n.Name)
-		for _, arg := range n.Args {
-			calls = append(calls, findCallsInNode(arg)...)
+	walkAST(node, func(n ASTNode) {
+		switch v := n.(type) {
+		case *FunctionCall:
+			calls = append(calls, v.Name)
+		case *PipeExpression:
+			calls = append(calls, v.Function)
+		case *FunctionReference:
+			calls = append(calls, v.FunctionName)
+		case *PartialApplication:
+			calls = append(calls, v.FunctionName)
 		}
-	case *VariableDeclaration:
-		calls = append(calls, findCallsInNode(n.Value)...)
-	case *Assignment:
-		calls = append(calls, findCallsInNode(n.Value)...)
-	case *ReturnStatement:
-		calls = append(calls, findCallsInNode(n.Value)...)
-	case *IfStatement:
-		calls = append(calls, findCallsInNode(n.Condition)...)
-		calls = append(calls, findFunctionCalls(n.ThenBody)...)
-		calls = append(calls, findFunctionCalls(n.ElseBody)...)
-	case *WhileLoop:
-		calls = append(calls, findCallsInNode(n.Condition)...)
-		calls = append(calls, findFunctionCalls(n.Body)...)
-	case *ForLoop:
-		if n.Init != nil {
-			calls = append(calls, findCallsInNode(n.Init)...)
-		}
-		calls = append(calls, findCallsInNode(n.Condition)...)
-		if n.Update != nil {
-			calls = append(calls, findCallsInNode(n.Update)...)
-		}
-		calls = append(calls, findFunctionCalls(n.Body)...)
-	case *BinaryOp:
-		calls = append(calls, findCallsInNode(n.Left)...)
-		calls = append(calls, findCallsInNode(n.Right)...)
-	case *UnaryOp:
-		calls = append(calls, findCallsInNode(n.Operand)...)
-	case *Comparison:
-		calls = append(calls, findCallsInNode(n.Left)...)
-		calls = append(calls, findCallsInNode(n.Right)...)
-	case *LogicalOp:
-		calls = append(calls, findCallsInNode(n.Left)...)
-		calls = append(calls, findCallsInNode(n.Right)...)
-	case *TernaryOp:
-		calls = append(calls, findCallsInNode(n.Condition)...)
-		calls = append(calls, findCallsInNode(n.TrueExpr)...)
-		calls = append(calls, findCallsInNode(n.FalseExpr)...)
-	case *PipeExpression:
-		calls = append(calls, findCallsInNode(n.Left)...)
-		calls = append(calls, n.Function) // The function being piped into
-	case *MethodCall:
-		calls = append(calls, findCallsInNode(n.Object)...)
-		for _, arg := range n.Args {
-			calls = append(calls, findCallsInNode(arg)...)
-		}
-	case *FunctionReference:
-		calls = append(calls, n.FunctionName)
-	case *OptionExpression:
-		calls = append(calls, findCallsInNode(n.Value)...)
-	case *ResultExpression:
-		calls = append(calls, findCallsInNode(n.Value)...)
-	case *MatchExpression:
-		calls = append(calls, findCallsInNode(n.Value)...)
-		for _, c := range n.Cases {
-			calls = append(calls, findFunctionCalls(c.Body)...)
+	})
+	return calls
+}
+
+// walkAST invokes visit on node and on every ASTNode reachable through its
+// exported fields (including slices, maps, and nested value structs), using
+// reflection so the traversal is exhaustive by construction.
+func walkAST(node ASTNode, visit func(ASTNode)) {
+	if node == nil {
+		return
+	}
+	rv := reflect.ValueOf(node)
+	if rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return
+	}
+	visit(node)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+	if rv.Kind() == reflect.Struct {
+		for i := 0; i < rv.NumField(); i++ {
+			walkASTValue(rv.Field(i), visit)
 		}
 	}
-	return calls
+}
+
+func walkASTValue(v reflect.Value, visit func(ASTNode)) {
+	switch v.Kind() {
+	case reflect.Interface, reflect.Ptr:
+		if v.IsNil() || !v.CanInterface() {
+			return
+		}
+		if child, ok := v.Interface().(ASTNode); ok {
+			walkAST(child, visit)
+		} else if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct {
+			// Non-ASTNode struct pointer: walk its fields for nested nodes
+			elem := v.Elem()
+			for i := 0; i < elem.NumField(); i++ {
+				walkASTValue(elem.Field(i), visit)
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			walkASTValue(v.Index(i), visit)
+		}
+	case reflect.Map:
+		iter := v.MapRange()
+		for iter.Next() {
+			walkASTValue(iter.Value(), visit)
+		}
+	case reflect.Struct:
+		// Value struct field (e.g. MatchCase): walk its fields
+		for i := 0; i < v.NumField(); i++ {
+			walkASTValue(v.Field(i), visit)
+		}
+	}
 }
 
 // FindUnusedVariables analyzes statements and returns a list of unused variable names.

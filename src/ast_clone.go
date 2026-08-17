@@ -80,10 +80,12 @@ func CloneASTNode(node ASTNode) ASTNode {
 
 	case *VariableDeclaration:
 		return &VariableDeclaration{
-			Name:    n.Name,
-			Type:    n.Type,
-			Value:   CloneASTNode(n.Value),
-			Storage: n.Storage,
+			Name:     n.Name,
+			Type:     n.Type,
+			TypeName: n.TypeName,
+			Value:    CloneASTNode(n.Value),
+			Storage:  n.Storage,
+			IsArray:  n.IsArray,
 		}
 
 	case *Assignment:
@@ -96,6 +98,31 @@ func CloneASTNode(node ASTNode) ASTNode {
 		return &ReturnStatement{
 			Value: CloneASTNode(n.Value),
 		}
+
+	case *MatchYield:
+		return &MatchYield{Value: CloneASTNode(n.Value)}
+
+	case *ThrowStatement:
+		return &ThrowStatement{Exception: CloneASTNode(n.Exception)}
+
+	case *TryStatement:
+		tryBlock := make([]ASTNode, len(n.TryBlock))
+		for i, stmt := range n.TryBlock {
+			tryBlock[i] = CloneASTNode(stmt)
+		}
+		catches := make([]*CatchClause, len(n.CatchClauses))
+		for i, c := range n.CatchClauses {
+			body := make([]ASTNode, len(c.Body))
+			for j, stmt := range c.Body {
+				body[j] = CloneASTNode(stmt)
+			}
+			catches[i] = &CatchClause{ExceptionType: c.ExceptionType, ExceptionVar: c.ExceptionVar, Body: body}
+		}
+		finallyBlock := make([]ASTNode, len(n.FinallyBlock))
+		for i, stmt := range n.FinallyBlock {
+			finallyBlock[i] = CloneASTNode(stmt)
+		}
+		return &TryStatement{TryBlock: tryBlock, CatchClauses: catches, FinallyBlock: finallyBlock}
 
 	case *IfStatement:
 		thenBody := make([]ASTNode, len(n.ThenBody))

@@ -32,7 +32,7 @@
 - **Virtual functions** - `vrt fn` for virtual methods, `override fn` for overrides
 - **Scope modifiers** - `static`, `lcl` (local), `gbl` (global) for explicit storage control
 - **Basic structs and enums** - snake_case identifiers with fundamental OOP support
-- **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions
+- **Error handling** - `try`/`catch`/`finally` and `throw` for exceptions, unwinding across function calls
 - **Optional types** - `Some(value)` and `None` syntax (parser support, advanced operations in development)
 - **Functional programming** - Pipe operator (`|>`), wrappers/decorators (`@`), currying (`partial`)
 - **Void return type** - `fn void foo()` for functions with no return value
@@ -328,19 +328,34 @@ fn void main() {
 ### Error Handling
 
 ```lotus
-fn int risky_operation() {
-    try {
-        // Code that might fail
-        int result = dangerous_call();
-        ret result;
-    } catch {
-        printf("Error occurred\n");
-        ret -1;
-    } finally {
-        cleanup();
+use "io";
+
+fn int risky(int x) {
+    if x < 0 {
+        throw "negative input";
     }
+    ret x * 2;
+}
+
+fn int main() {
+    try {
+        int r = risky(-1);
+        println(r);
+    } catch (string e) {
+        println("caught:");
+        println(e);
+    } finally {
+        println("cleanup runs either way");
+    }
+    ret 0;
 }
 ```
+
+- `try { ... } catch (...) { ... } finally { ... }` - at least one of `catch`/`finally` is required.
+- `throw expr;` can appear anywhere, including inside a function called from the `try` block - it unwinds straight to the nearest enclosing `try`, wherever that is on the call stack.
+- `catch { ... }` (no parentheses) catches without binding a variable; `catch (e) { ... }` binds the exception as `int` by default; `catch (TYPE e) { ... }` reinterprets the thrown value as `TYPE` (one of `int`, `string`, `bool`, `float`, `char`) - this is a static reinterpretation like `bitcast<Type>(...)`, not a runtime type check, since Lotus values carry no runtime type tag. For that reason **only one `catch` clause per `try` is allowed** - a second clause could never actually be selected over the first.
+- `finally` always runs - on normal completion, when the exception is caught, when it isn't (after which it re-propagates to the next enclosing `try`), and even if the `try`/`catch` body exits early via `ret`/`break`/`continue`.
+- An uncaught `throw` prints an error and exits the program with status 1.
 
 ### Functional Programming
 
@@ -839,6 +854,7 @@ The language showcases several powerful features through practical examples:
 - [pattern_matching.lts](examples/pattern_matching.lts) - Complete pattern matching with literals, ranges, guards, and bindings
 - [template_comprehensive_test.lts](examples/template_comprehensive_test.lts) - Generic functions with type inference
 - [optional_test.lts](examples/optional_test.lts) - Optional type syntax (`Some`/`None`)
+- [error_handling.lts](examples/error_handling.lts) - `try`/`catch`/`finally`/`throw`, including unwinding across a function call
 
 **Language Features in Development:**
 - Complex struct operations with parameters and return types

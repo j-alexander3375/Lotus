@@ -198,10 +198,19 @@ func (c *Compiler) buildBinaryWithLLVM(llvmGen *LLVMCodeGenerator) error {
 	}
 	defer os.Remove(tmpIR)
 
+	// Write the embedded support-runtime C source (hashmaps, JSON, hashing,
+	// IPv6/DNS, etc. - see llvm_runtime.go) so clang can compile it alongside
+	// the generated IR.
+	tmpRuntime := filepath.Join(os.TempDir(), "lotus_runtime.c")
+	if err := os.WriteFile(tmpRuntime, []byte(lotusRuntimeC), 0644); err != nil {
+		return fmt.Errorf("failed to write runtime support source: %w", err)
+	}
+	defer os.Remove(tmpRuntime)
+
 	// Use clang to compile LLVM IR to binary
 	assembleStart := time.Now()
 	optFlag := fmt.Sprintf("-O%d", c.Options.OptLevel)
-	cmd := exec.Command("clang", optFlag, "-o", c.Options.OutPath, tmpIR, "-lm", "-lSDL3")
+	cmd := exec.Command("clang", optFlag, "-o", c.Options.OutPath, tmpIR, tmpRuntime, "-lm", "-lSDL3")
 
 	if c.Options.TargetTriple != "" {
 		cmd.Args = append(cmd.Args, "-target", c.Options.TargetTriple)
@@ -326,8 +335,15 @@ func (c *Compiler) runBinary() error {
 		log.Printf("Executing: %s", c.Options.OutPath)
 	}
 
-	// Execute the binary with inherited stdio
-	cmd := exec.Command("./" + c.Options.OutPath)
+	// Execute the binary with inherited stdio. Only prepend "./" for a bare
+	// filename (no path separator) - blindly prepending it turned "-o
+	// /tmp/app" into ".//tmp/app" and "-o ./app" into ".//./app". See SP-B-10
+	// in FIXER_HANDOFF.md.
+	runPath := c.Options.OutPath
+	if !strings.ContainsRune(runPath, filepath.Separator) {
+		runPath = "./" + runPath
+	}
+	cmd := exec.Command(runPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

@@ -153,6 +153,10 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 		return p.parseBreakStatement()
 	case TokenContinue:
 		return p.parseContinueStatement()
+	case TokenTry:
+		return p.parseTryStatement()
+	case TokenThrow:
+		return p.parseThrowStatement()
 	case TokenMatch:
 		return p.parseMatchExpression()
 	case TokenUnion:
@@ -200,9 +204,10 @@ func (p *Parser) parseStatement() (ASTNode, error) {
 
 			// Return variable declaration with custom type
 			return &VariableDeclaration{
-				Name:  varName,
-				Type:  TokenIdentifier, // Custom type (struct/class)
-				Value: value,
+				Name:     varName,
+				Type:     TokenIdentifier, // Custom type (struct/class)
+				TypeName: name,
+				Value:    value,
 			}, nil
 		case TokenLParen:
 			// Back up to re-parse as function call
@@ -397,6 +402,119 @@ func (p *Parser) parseWhileLoop() (*WhileLoop, error) {
 	}
 
 	return &WhileLoop{Condition: cond, Body: body}, nil
+}
+
+// parseTryStatement parses:
+//
+//	try { ... } [catch [(type name)] { ... }] [finally { ... }]
+//
+// At least one of catch/finally is required. At most one catch clause is
+// supported: Lotus has no runtime exception type tagging, so a second catch
+// clause could never actually be selected over the first - accepting it
+// silently would be a footgun (see FIXER_HANDOFF.md's own stated
+// philosophy: "silent acceptance is the worst option"). See SP-A-1 in
+// FIXER_HANDOFF.md - this used to be tokenized and full AST nodes existed,
+// but the parser had zero handling for these keywords.
+func (p *Parser) parseTryStatement() (*TryStatement, error) {
+	if err := p.expect(TokenTry); err != nil {
+		return nil, err
+	}
+	tryBody, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	var catches []*CatchClause
+	for p.current().Type == TokenCatch {
+		clause, err := p.parseCatchClause()
+		if err != nil {
+			return nil, err
+		}
+		if len(catches) >= 1 {
+			return nil, p.formatErrorWithCode(ErrExpectedToken,
+				"only one catch clause per try is supported (Lotus has no runtime exception type tagging to select between multiple)")
+		}
+		catches = append(catches, clause)
+	}
+
+	var finallyBody []ASTNode
+	if p.current().Type == TokenFinally {
+		p.advance()
+		finallyBody, err = p.parseBlock()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(catches) == 0 && len(finallyBody) == 0 {
+		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'catch' or 'finally' after 'try' block")
+	}
+
+	return &TryStatement{TryBlock: tryBody, CatchClauses: catches, FinallyBlock: finallyBody}, nil
+}
+
+// parseCatchClause parses `catch { ... }`, `catch (name) { ... }`, or
+// `catch (type name) { ... }`. An explicit type is a static reinterpretation
+// of the thrown payload (like bitcast<Type>(...) elsewhere in the language),
+// not a runtime type check - see generateTryStatement's doc comment for why.
+func (p *Parser) parseCatchClause() (*CatchClause, error) {
+	if err := p.expect(TokenCatch); err != nil {
+		return nil, err
+	}
+
+	clause := &CatchClause{}
+	if p.current().Type == TokenLParen {
+		p.advance()
+		if isTypeToken(p.current().Type) {
+			clause.ExceptionType = catchExceptionTypeName(p.current().Type)
+			p.advance()
+		}
+		if p.current().Type != TokenIdentifier {
+			return nil, p.formatErrorWithCode(ErrExpectedToken, MsgMissingIdentifier+" in catch clause, got "+TokenTypeName(p.current().Type))
+		}
+		clause.ExceptionVar = p.current().Value
+		p.advance()
+		if err := p.expect(TokenRParen); err != nil {
+			return nil, err
+		}
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	clause.Body = body
+	return clause, nil
+}
+
+// catchExceptionTypeName maps a catch clause's declared built-in type token
+// to the canonical name generateTryStatement/interpreter's evalTry switch on
+// when reinterpreting the caught exception payload.
+func catchExceptionTypeName(t TokenType) string {
+	switch t {
+	case TokenTypeString:
+		return "string"
+	case TokenTypeBool:
+		return "bool"
+	case TokenTypeFloat32, TokenTypeFloat64:
+		return "float"
+	case TokenTypeChar:
+		return "char"
+	default:
+		return "int"
+	}
+}
+
+// parseThrowStatement parses `throw <expr>;`
+func (p *Parser) parseThrowStatement() (*ThrowStatement, error) {
+	if err := p.expect(TokenThrow); err != nil {
+		return nil, err
+	}
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &ThrowStatement{Exception: value}, nil
 }
 
 // parseForLoop parses a C-style for loop:
@@ -636,7 +754,7 @@ func (p *Parser) parseMatchExpression() (*MatchExpression, error) {
 			if err != nil {
 				return nil, err
 			}
-			matchCase.Body = []ASTNode{&ReturnStatement{Value: expr}}
+			matchCase.Body = []ASTNode{&MatchYield{Value: expr}}
 		}
 
 		cases = append(cases, matchCase)
@@ -847,12 +965,19 @@ func (p *Parser) parseReturnStatement() (*ReturnStatement, error) {
 		return nil, p.formatErrorWithCode(ErrExpectedToken, "expected 'ret' or 'return', got "+TokenTypeName(p.current().Type))
 	}
 
-	// Return value can be any expression (optional)
+	// Return value can be any expression (optional). Rather than whitelist
+	// which token kinds may start an expression - which previously omitted
+	// TokenSome/TokenNone/TokenOk/TokenErr, TokenInterpolatedString,
+	// TokenChar, TokenPipe (lambdas), TokenLBracket (array literals),
+	// TokenPartial, TokenBitcast, and TokenTilde, silently turning
+	// `ret Some(x)` into a bare `ret;` followed by a parse error - just try
+	// to parse an expression whenever the next token isn't a statement
+	// terminator. See SP-A-6 in FIXER_HANDOFF.md.
 	var value ASTNode
-	// If next token looks like start of an expression, parse it
 	switch p.current().Type {
-	case TokenInt, TokenString, TokenBool, TokenFloat, TokenIdentifier, TokenLParen,
-		TokenMinus, TokenExclaim, TokenAmpersand, TokenStar, TokenMatch:
+	case TokenSemi, TokenRBrace, TokenNewline, TokenEOF:
+		// no return value
+	default:
 		expr, err := p.parseExpression()
 		if err != nil {
 			return nil, err
@@ -1628,10 +1753,8 @@ func parseIntToken(s string) (int, error) {
 	return int(val), err
 }
 
-func parseFloatToken(s string) (int64, error) {
-	var val float64
-	_, err := fmt.Sscanf(s, "%f", &val)
-	return int64(val * 1000), err
+func parseFloatToken(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }
 
 // parseFunctionDefinition parses a C-style function declaration prefixed with 'fn'

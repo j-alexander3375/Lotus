@@ -8,3 +8,5 @@ golang.org/x/sys v0.0.0-20220310020820-b874c991c1a5 h1:y/woIyUBFbpQGKS0u1aHF/40W
 golang.org/x/sys v0.0.0-20220310020820-b874c991c1a5/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 tinygo.org/x/go-llvm v0.0.0-20240518103902-697964f2a9dc h1:TCzibFa4oLu+njEP3fnRUmZ+QQeb8BjtOwctgcjzL0k=
 tinygo.org/x/go-llvm v0.0.0-20240518103902-697964f2a9dc/go.mod h1:GFbusT2VTA4I+l4j80b17KFK+6whv69Wtny5U+T8RR0=
+tinygo.org/x/go-llvm v0.0.0-20260721072906-185673ef46a5 h1:0PKRhM1INWAi7PdIng1BHMPTDaRcOmv1UymdTgZ76Jo=
+tinygo.org/x/go-llvm v0.0.0-20260721072906-185673ef46a5/go.mod h1:GFbusT2VTA4I+l4j80b17KFK+6whv69Wtny5U+T8RR0=

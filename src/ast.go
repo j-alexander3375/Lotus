@@ -51,11 +51,12 @@ func (r *ReturnStatement) astNode() {}
 // VariableDeclaration represents a variable declaration with type and initial value
 type VariableDeclaration struct {
 	BaseNode
-	Name    string
-	Type    TokenType
-	Value   ASTNode
-	Storage StorageClass // Storage class modifier (static, lcl, gbl)
-	IsArray bool         // Whether this is an array type declaration (e.g., int[])
+	Name     string
+	Type     TokenType
+	TypeName string // Struct/class name when Type == TokenIdentifier (e.g. "point" in `point p;`)
+	Value    ASTNode
+	Storage  StorageClass // Storage class modifier (static, lcl, gbl)
+	IsArray  bool         // Whether this is an array type declaration (e.g., int[])
 }
 
 func (v *VariableDeclaration) astNode() {}
@@ -145,10 +146,9 @@ type BoolLiteral struct {
 func (b *BoolLiteral) astNode() {}
 
 // FloatLiteral represents a floating-point constant
-// Value is stored as int * 1000 for precision
 type FloatLiteral struct {
 	BaseNode
-	Value int64
+	Value float64
 }
 
 func (f *FloatLiteral) astNode() {}

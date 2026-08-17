@@ -1,13 +1,13 @@
 # Maintainer: Joshua Alexander <j-alexander3375@users.noreply.github.com>
 
 pkgname=lotus-lang
-pkgver=1.10.0
+pkgver=1.11.0
 pkgrel=1
 pkgdesc="A systems programming language with type-first syntax, LLVM backend, and an interactive REPL"
 arch=('x86_64')
 url="https://github.com/j-alexander3375/Lotus"
 license=('MIT')
-depends=('llvm' 'clang' 'sdl3')
+depends=('llvm>=22' 'llvm<23' 'clang' 'sdl3')
 makedepends=('go>=1.20')
 source=("lotus-lang-${pkgver}.tar.gz::https://github.com/j-alexander3375/Lotus/archive/refs/tags/${pkgver}.tar.gz")
 sha256sums=('SKIP')
@@ -34,8 +34,9 @@ check() {
     cd ..
 
     # Verify LLVM compilation and basic execution on examples
-    ./lotus examples/control_flow_if.lts -o /tmp/lotus_check_if && /tmp/lotus_check_if || true
-    ./lotus examples/control_flow_for.lts -o /tmp/lotus_check_for && /tmp/lotus_check_for || true
+    # (flags must come before the input file)
+    ./lotus -o /tmp/lotus_check_if examples/control_flow_if.lts && /tmp/lotus_check_if
+    ./lotus -o /tmp/lotus_check_for examples/control_flow_for.lts && /tmp/lotus_check_for
 }
 
 package() {

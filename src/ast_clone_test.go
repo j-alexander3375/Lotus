@@ -28,7 +28,7 @@ func TestCloneIntLiteral(t *testing.T) {
 }
 
 func TestCloneFloatLiteral(t *testing.T) {
-	original := &FloatLiteral{Value: 3140} // Stored as int64 * 1000
+	original := &FloatLiteral{Value: 3.14}
 	cloned := CloneASTNode(original)
 
 	clonedFloat, ok := cloned.(*FloatLiteral)
@@ -37,7 +37,7 @@ func TestCloneFloatLiteral(t *testing.T) {
 	}
 
 	if clonedFloat.Value != original.Value {
-		t.Errorf("Expected value %d, got %d", original.Value, clonedFloat.Value)
+		t.Errorf("Expected value %g, got %g", original.Value, clonedFloat.Value)
 	}
 }
 

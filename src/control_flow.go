@@ -88,6 +88,20 @@ type MatchExpression struct {
 
 func (m *MatchExpression) astNode() {}
 
+// MatchYield represents the implicit "produce this value as the match
+// expression's result" sugar for a single-expression arm (`case X => expr`).
+// It is distinct from ReturnStatement, which the parser previously reused
+// for this - conflating the sugar with a genuine explicit `ret` written
+// inside a block-bodied arm (`case X => { ret 5; }`), so codegen could not
+// tell them apart and the explicit `ret` never actually returned from the
+// function. See SP-B-5 in FIXER_HANDOFF.md.
+type MatchYield struct {
+	BaseNode
+	Value ASTNode
+}
+
+func (m *MatchYield) astNode() {}
+
 // MatchCase represents a single case in a match expression
 type MatchCase struct {
 	Pattern   ASTNode   // The pattern to match (literal, identifier, wildcard)

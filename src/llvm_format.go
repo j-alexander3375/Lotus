@@ -12,6 +12,8 @@ package main
 // Format syntax: %[flags][width][.precision][length]specifier
 
 import (
+	"fmt"
+
 	"tinygo.org/x/go-llvm"
 )
 
@@ -266,42 +268,83 @@ func (cg *LLVMCodeGenerator) generateFormatHex(call *FunctionCall) (llvm.Value, 
 	return buf, nil
 }
 
-// generateFormatBinary formats an integer as binary
-// format_bin(value, prefix) -> string
+// generateFormatBinary formats an integer as binary.
+// format_bin(value) -> string (e.g. format_bin(5) -> "101"; format_bin(0) -> "0")
+// Extracts bits from the top down with a real loop (no leading zeros, and no
+// sprintf("%ld") shortcut - see P1-2 in FIXER_HANDOFF.md).
 func (cg *LLVMCodeGenerator) generateFormatBinary(call *FunctionCall) (llvm.Value, error) {
 	if len(call.Args) < 1 {
-		return llvm.Value{}, nil
+		return llvm.Value{}, fmt.Errorf("format_bin requires 1 argument")
 	}
 
 	val, err := cg.generateExpression(call.Args[0])
 	if err != nil {
 		return llvm.Value{}, err
 	}
+	val = cg.coerceToType(val, cg.context.Int64Type())
 
-	// Allocate buffer (72 bytes for 64-bit binary + "0b" prefix + null)
-	bufSize := llvm.ConstInt(cg.context.Int64Type(), 72, false)
+	i64 := cg.context.Int64Type()
+	i8 := cg.context.Int8Type()
+	i1 := cg.context.Int1Type()
+
+	// Buffer: 64 bits + null terminator.
+	bufSize := llvm.ConstInt(i64, 65, false)
 	malloc := cg.functions["malloc"]
 	buf := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{bufSize}, "binbuf")
-	bufInt := cg.builder.CreatePtrToInt(buf, cg.context.Int64Type(), "bufint")
 
-	// Generate binary string manually
-	// This is a loop that extracts bits and writes '0' or '1'
-	cg.generateBinaryStringLoop(val, bufInt)
+	bitAlloca := cg.builder.CreateAlloca(i64, "bin_bit")
+	idxAlloca := cg.builder.CreateAlloca(i64, "bin_idx")
+	startedAlloca := cg.builder.CreateAlloca(i1, "bin_started")
+	cg.builder.CreateStore(llvm.ConstInt(i64, 63, false), bitAlloca)
+	cg.builder.CreateStore(llvm.ConstInt(i64, 0, false), idxAlloca)
+	cg.builder.CreateStore(llvm.ConstInt(i1, 0, false), startedAlloca)
+
+	condBlock := llvm.AddBasicBlock(cg.currentFn, "bin_cond")
+	bodyBlock := llvm.AddBasicBlock(cg.currentFn, "bin_body")
+	writeBlock := llvm.AddBasicBlock(cg.currentFn, "bin_write")
+	nextBlock := llvm.AddBasicBlock(cg.currentFn, "bin_next")
+	doneBlock := llvm.AddBasicBlock(cg.currentFn, "bin_done")
+
+	cg.builder.CreateBr(condBlock)
+
+	// while (bit >= 0)
+	cg.builder.SetInsertPointAtEnd(condBlock)
+	bit := cg.builder.CreateLoad(i64, bitAlloca, "bit")
+	cond := cg.builder.CreateICmp(llvm.IntSGE, bit, llvm.ConstInt(i64, 0, false), "bincond")
+	cg.builder.CreateCondBr(cond, bodyBlock, doneBlock)
+
+	// bitVal = (val >> bit) & 1 ; write if it's a 1, we've already started, or
+	// this is the last (lowest) bit and nothing was written yet (value == 0).
+	cg.builder.SetInsertPointAtEnd(bodyBlock)
+	bit = cg.builder.CreateLoad(i64, bitAlloca, "bit")
+	shifted := cg.builder.CreateLShr(val, bit, "binshift")
+	bitVal := cg.builder.CreateAnd(shifted, llvm.ConstInt(i64, 1, false), "binmask")
+	isOne := cg.builder.CreateICmp(llvm.IntNE, bitVal, llvm.ConstInt(i64, 0, false), "binisone")
+	started := cg.builder.CreateLoad(i1, startedAlloca, "started")
+	isLastBit := cg.builder.CreateICmp(llvm.IntEQ, bit, llvm.ConstInt(i64, 0, false), "binislast")
+	shouldWrite := cg.builder.CreateOr(cg.builder.CreateOr(isOne, started, "binor1"), isLastBit, "binor2")
+	cg.builder.CreateCondBr(shouldWrite, writeBlock, nextBlock)
+
+	cg.builder.SetInsertPointAtEnd(writeBlock)
+	cg.builder.CreateStore(llvm.ConstInt(i1, 1, false), startedAlloca)
+	idx := cg.builder.CreateLoad(i64, idxAlloca, "idx")
+	digit := cg.builder.CreateSelect(isOne, llvm.ConstInt(i8, '1', false), llvm.ConstInt(i8, '0', false), "digit")
+	digitPtr := cg.builder.CreateGEP(i8, buf, []llvm.Value{idx}, "digitptr")
+	cg.builder.CreateStore(digit, digitPtr)
+	cg.builder.CreateStore(cg.builder.CreateAdd(idx, llvm.ConstInt(i64, 1, false), "idxnext"), idxAlloca)
+	cg.builder.CreateBr(nextBlock)
+
+	cg.builder.SetInsertPointAtEnd(nextBlock)
+	bit = cg.builder.CreateLoad(i64, bitAlloca, "bit")
+	cg.builder.CreateStore(cg.builder.CreateSub(bit, llvm.ConstInt(i64, 1, false), "bitnext"), bitAlloca)
+	cg.builder.CreateBr(condBlock)
+
+	cg.builder.SetInsertPointAtEnd(doneBlock)
+	finalIdx := cg.builder.CreateLoad(i64, idxAlloca, "finalidx")
+	endPtr := cg.builder.CreateGEP(i8, buf, []llvm.Value{finalIdx}, "binend")
+	cg.builder.CreateStore(llvm.ConstInt(i8, 0, false), endPtr)
 
 	return buf, nil
-}
-
-// generateBinaryStringLoop generates a loop to convert int to binary string
-func (cg *LLVMCodeGenerator) generateBinaryStringLoop(val, bufPtr llvm.Value) {
-	// Simplified: just call sprintf with %ld for now
-	// A real implementation would extract bits in a loop
-
-	fmtStr := cg.createGlobalString("%ld")
-	buf := cg.builder.CreateIntToPtr(bufPtr, llvm.PointerType(cg.context.Int8Type(), 0), "buf")
-
-	cg.declareSprintf()
-	sprintf := cg.functions["sprintf"]
-	cg.builder.CreateCall(sprintf.GlobalValueType(), sprintf, []llvm.Value{buf, fmtStr, val}, "")
 }
 
 // declareSprintf declares sprintf if not already declared
@@ -325,56 +368,143 @@ func (cg *LLVMCodeGenerator) declareSprintf() {
 // PAD/ALIGN HELPERS
 // ============================================================================
 
-// generatePadLeft pads a string on the left to reach target width
+// declareMemsetMemcpy declares the libc memset/memcpy externs used by the
+// pad helpers below, if not already declared.
+func (cg *LLVMCodeGenerator) declareMemsetMemcpy() {
+	i8ptr := llvm.PointerType(cg.context.Int8Type(), 0)
+	if _, ok := cg.functions["memset"]; !ok {
+		memsetType := llvm.FunctionType(i8ptr, []llvm.Type{i8ptr, cg.context.Int32Type(), cg.context.Int64Type()}, false)
+		fn := llvm.AddFunction(cg.module, "memset", memsetType)
+		fn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["memset"] = fn
+	}
+	if _, ok := cg.functions["memcpy"]; !ok {
+		memcpyType := llvm.FunctionType(i8ptr, []llvm.Type{i8ptr, i8ptr, cg.context.Int64Type()}, false)
+		fn := llvm.AddFunction(cg.module, "memcpy", memcpyType)
+		fn.SetLinkage(llvm.ExternalLinkage)
+		cg.functions["memcpy"] = fn
+	}
+}
+
+// padArgs evaluates the (str, width, char) arguments shared by pad_left and
+// pad_right. width and char accept any runtime expression, not just literals
+// - the value is already an llvm.Value, there is no reason to require a
+// literal here (see P1-2 in FIXER_HANDOFF.md).
+func (cg *LLVMCodeGenerator) padArgs(call *FunctionCall) (str, width, padChar llvm.Value, err error) {
+	str, err = cg.generateExpression(call.Args[0])
+	if err != nil {
+		return
+	}
+	widthVal, err2 := cg.generateExpression(call.Args[1])
+	if err2 != nil {
+		err = err2
+		return
+	}
+	width = cg.coerceToType(widthVal, cg.context.Int64Type())
+
+	padChar = llvm.ConstInt(cg.context.Int32Type(), ' ', false)
+	if len(call.Args) >= 3 {
+		c, err3 := cg.generateExpression(call.Args[2])
+		if err3 != nil {
+			err = err3
+			return
+		}
+		padChar = cg.coerceToType(c, cg.context.Int32Type())
+	}
+	return
+}
+
+// generatePadLeft pads a string on the left to reach target width.
 // pad_left(str, width, char) -> string
+// Buffer is sized max(width, strlen)+1 so a string longer than width cannot
+// overflow it; the string is never truncated.
 func (cg *LLVMCodeGenerator) generatePadLeft(call *FunctionCall) (llvm.Value, error) {
 	if len(call.Args) < 2 {
-		return llvm.Value{}, nil
+		return llvm.Value{}, fmt.Errorf("pad_left requires at least 2 arguments (str, width)")
 	}
-
-	str, err := cg.generateExpression(call.Args[0])
-	if err != nil {
-		return llvm.Value{}, err
-	}
-	width, err := cg.generateExpression(call.Args[1])
+	str, width, padChar, err := cg.padArgs(call)
 	if err != nil {
 		return llvm.Value{}, err
 	}
 
-	// Get padding character (default space)
-	padChar := llvm.ConstInt(cg.context.Int8Type(), ' ', false)
-	if len(call.Args) >= 3 {
-		if charLit, ok := call.Args[2].(*IntLiteral); ok {
-			padChar = llvm.ConstInt(cg.context.Int8Type(), uint64(charLit.Value), false)
-		}
-	}
-
-	// Get string length
 	cg.declareStringHelpers()
-	strlen := cg.functions["strlen"]
-	strLen := cg.builder.CreateCall(strlen.GlobalValueType(), strlen, []llvm.Value{str}, "strlen")
+	cg.declareMemsetMemcpy()
+	strlenFn := cg.functions["strlen"]
+	strLen := cg.builder.CreateCall(strlenFn.GlobalValueType(), strlenFn, []llvm.Value{str}, "strlen")
 
-	// Allocate buffer (width + 1 for null)
-	one := llvm.ConstInt(cg.context.Int64Type(), 1, false)
-	bufSize := cg.builder.CreateAdd(width, one, "bufsize")
+	i64 := cg.context.Int64Type()
+	zero := llvm.ConstInt(i64, 0, false)
+	one := llvm.ConstInt(i64, 1, false)
+
+	// padNeeded = max(width - strlen, 0)
+	rawPad := cg.builder.CreateSub(width, strLen, "rawpad")
+	padNeg := cg.builder.CreateICmp(llvm.IntSLT, rawPad, zero, "padneg")
+	padNeeded := cg.builder.CreateSelect(padNeg, zero, rawPad, "padneeded")
+
+	// bufLen = max(width, strlen)
+	widthLess := cg.builder.CreateICmp(llvm.IntSLT, width, strLen, "widthless")
+	bufLen := cg.builder.CreateSelect(widthLess, strLen, width, "buflen")
+	bufSize := cg.builder.CreateAdd(bufLen, one, "bufsize")
+
 	malloc := cg.functions["malloc"]
 	buf := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{bufSize}, "padbuf")
 
-	// Calculate padding needed
-	padNeeded := cg.builder.CreateSub(width, strLen, "padneeded")
-	_ = padChar
-	_ = padNeeded
+	memset := cg.functions["memset"]
+	cg.builder.CreateCall(memset.GlobalValueType(), memset, []llvm.Value{buf, padChar, padNeeded}, "")
 
-	// For now, just copy the string (simplified)
-	strcpy := cg.functions["strcpy"]
-	cg.builder.CreateCall(strcpy.GlobalValueType(), strcpy, []llvm.Value{buf, str}, "")
+	// Copy the string right after the padding: buf + padNeeded
+	dst := cg.builder.CreateGEP(cg.context.Int8Type(), buf, []llvm.Value{padNeeded}, "paddst")
+	strLenPlus1 := cg.builder.CreateAdd(strLen, one, "strlenp1")
+	memcpy := cg.functions["memcpy"]
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{dst, str, strLenPlus1}, "")
 
 	return buf, nil
 }
 
-// generatePadRight pads a string on the right to reach target width
+// generatePadRight pads a string on the right to reach target width.
 // pad_right(str, width, char) -> string
+// Mirror of pad_left: copy the string first, then fill the remaining width
+// with the pad character (overwriting the copied null terminator, then
+// re-terminating at the end).
 func (cg *LLVMCodeGenerator) generatePadRight(call *FunctionCall) (llvm.Value, error) {
-	// Similar to padLeft but pads on the right
-	return cg.generatePadLeft(call) // Simplified for now
+	if len(call.Args) < 2 {
+		return llvm.Value{}, fmt.Errorf("pad_right requires at least 2 arguments (str, width)")
+	}
+	str, width, padChar, err := cg.padArgs(call)
+	if err != nil {
+		return llvm.Value{}, err
+	}
+
+	cg.declareStringHelpers()
+	cg.declareMemsetMemcpy()
+	strlenFn := cg.functions["strlen"]
+	strLen := cg.builder.CreateCall(strlenFn.GlobalValueType(), strlenFn, []llvm.Value{str}, "strlen")
+
+	i64 := cg.context.Int64Type()
+	zero := llvm.ConstInt(i64, 0, false)
+	one := llvm.ConstInt(i64, 1, false)
+
+	rawPad := cg.builder.CreateSub(width, strLen, "rawpad")
+	padNeg := cg.builder.CreateICmp(llvm.IntSLT, rawPad, zero, "padneg")
+	padNeeded := cg.builder.CreateSelect(padNeg, zero, rawPad, "padneeded")
+
+	widthLess := cg.builder.CreateICmp(llvm.IntSLT, width, strLen, "widthless")
+	bufLen := cg.builder.CreateSelect(widthLess, strLen, width, "buflen")
+	bufSize := cg.builder.CreateAdd(bufLen, one, "bufsize")
+
+	malloc := cg.functions["malloc"]
+	buf := cg.builder.CreateCall(malloc.GlobalValueType(), malloc, []llvm.Value{bufSize}, "padbuf")
+
+	memcpy := cg.functions["memcpy"]
+	cg.builder.CreateCall(memcpy.GlobalValueType(), memcpy, []llvm.Value{buf, str, strLen}, "")
+
+	// Fill [strLen, strLen+padNeeded) with padChar, then null-terminate at bufLen
+	fillDst := cg.builder.CreateGEP(cg.context.Int8Type(), buf, []llvm.Value{strLen}, "filldst")
+	memset := cg.functions["memset"]
+	cg.builder.CreateCall(memset.GlobalValueType(), memset, []llvm.Value{fillDst, padChar, padNeeded}, "")
+
+	endPtr := cg.builder.CreateGEP(cg.context.Int8Type(), buf, []llvm.Value{bufLen}, "endptr")
+	cg.builder.CreateStore(llvm.ConstInt(cg.context.Int8Type(), 0, false), endPtr)
+
+	return buf, nil
 }

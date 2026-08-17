@@ -423,11 +423,12 @@ func substituteNode(node ASTNode, ctx *TemplateContext) ASTNode {
 			concreteType = concrete
 		}
 		return &VariableDeclaration{
-			Name:    n.Name,
-			Type:    concreteType,
-			Value:   substituteNode(n.Value, ctx),
-			Storage: n.Storage,
-			IsArray: n.IsArray,
+			Name:     n.Name,
+			Type:     concreteType,
+			TypeName: n.TypeName,
+			Value:    substituteNode(n.Value, ctx),
+			Storage:  n.Storage,
+			IsArray:  n.IsArray,
 		}
 
 	case *ReturnStatement:

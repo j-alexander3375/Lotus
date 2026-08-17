@@ -16,6 +16,7 @@ package llvm
 #include "llvm-c/Core.h"
 #include "llvm-c/Comdat.h"
 #include "IRBindings.h"
+#include "deprecated.h"
 #include <stdlib.h>
 */
 import "C"
@@ -76,7 +77,6 @@ type (
 	ComdatSelectionKind C.LLVMComdatSelectionKind
 	IntPredicate        C.LLVMIntPredicate
 	FloatPredicate      C.LLVMRealPredicate
-	LandingPadClause    int32 // C.LLVMLandingPadClauseTy removed in LLVM 21
 	InlineAsmDialect    C.LLVMInlineAsmDialect
 )
 
@@ -195,6 +195,15 @@ const (
 	ShuffleVector  Opcode = C.LLVMShuffleVector
 	ExtractValue   Opcode = C.LLVMExtractValue
 	InsertValue    Opcode = C.LLVMInsertValue
+
+	// Exception Handling Operators
+	Resume      Opcode = C.LLVMResume
+	LandingPad  Opcode = C.LLVMLandingPad
+	CleanupRet  Opcode = C.LLVMCleanupRet
+	CatchRet    Opcode = C.LLVMCatchRet
+	CatchPad    Opcode = C.LLVMCatchPad
+	CleanupPad  Opcode = C.LLVMCleanupPad
+	CatchSwitch Opcode = C.LLVMCatchSwitch
 )
 
 const (
@@ -336,15 +345,6 @@ const (
 )
 
 //-------------------------------------------------------------------------
-// llvm.LandingPadClause
-//-------------------------------------------------------------------------
-
-const (
-	LandingPadCatch  LandingPadClause = 0 // C.LLVMLandingPadCatch removed in LLVM 21
-	LandingPadFilter LandingPadClause = 1 // C.LLVMLandingPadFilter removed in LLVM 21
-)
-
-//-------------------------------------------------------------------------
 // llvm.InlineAsmDialect
 //-------------------------------------------------------------------------
 
@@ -358,7 +358,7 @@ const (
 //-------------------------------------------------------------------------
 
 func NewContext() Context    { return Context{C.LLVMContextCreate()} }
-func GlobalContext() Context { return Context{C.LLVMGetGlobalContext()} }
+func GlobalContext() Context { return Context{C.LLVMGetGlobalContext_wrap()} }
 func (c Context) Dispose()   { C.LLVMContextDispose(c.C) }
 
 func (c Context) MDKindID(name string) (id int) {
@@ -369,10 +369,7 @@ func (c Context) MDKindID(name string) (id int) {
 }
 
 func MDKindID(name string) (id int) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	id = int(C.LLVMGetMDKindID(cname, C.unsigned(len(name))))
-	return
+	return GlobalContext().MDKindID(name)
 }
 
 //-------------------------------------------------------------------------
@@ -611,14 +608,7 @@ func (c Context) StructType(elementTypes []Type, packed bool) (t Type) {
 }
 
 func StructType(elementTypes []Type, packed bool) (t Type) {
-	var pt *C.LLVMTypeRef
-	var ptlen C.unsigned
-	if len(elementTypes) > 0 {
-		pt = llvmTypeRefPtr(&elementTypes[0])
-		ptlen = C.unsigned(len(elementTypes))
-	}
-	t.C = C.LLVMStructType(pt, ptlen, boolToLLVMBool(packed))
-	return
+	return GlobalContext().StructType(elementTypes, packed)
 }
 
 func (c Context) StructCreateNamed(name string) (t Type) {
@@ -793,6 +783,18 @@ func (v Value) Operand(i int) (rv Value)   { rv.C = C.LLVMGetOperand(v.C, C.unsi
 func (v Value) SetOperand(i int, op Value) { C.LLVMSetOperand(v.C, C.unsigned(i), op.C) }
 func (v Value) OperandsCount() int         { return int(C.LLVMGetNumOperands(v.C)) }
 
+// Operations on terminator instructions (br, switch, etc). Unlike operands,
+// the number and meaning of successors has been stable across LLVM versions,
+// making these a safe, version-independent way to enumerate the destination
+// blocks of a switch instruction: successor 0 is the default destination,
+// and successors 1..N-1 correspond to case 0..N-2 (see GetSwitchCaseValue for
+// the matching case value).
+func (v Value) SuccessorsCount() int { return int(C.LLVMGetNumSuccessors(v.C)) }
+func (v Value) Successor(i int) (bb BasicBlock) {
+	bb.C = C.LLVMGetSuccessor(v.C, C.unsigned(i))
+	return
+}
+
 // Operations on constants of any type
 func ConstNull(t Type) (v Value)        { v.C = C.LLVMConstNull(t.C); return }
 func ConstAllOnes(t Type) (v Value)     { v.C = C.LLVMConstAllOnes(t.C); return }
@@ -871,11 +873,7 @@ func ConstNamedStruct(t Type, constVals []Value) (v Value) {
 	return
 }
 func ConstString(str string, addnull bool) (v Value) {
-	cstr := C.CString(str)
-	defer C.free(unsafe.Pointer(cstr))
-	v.C = C.LLVMConstString(cstr,
-		C.unsigned(len(str)), boolToLLVMBool(!addnull))
-	return
+	return GlobalContext().ConstString(str, addnull)
 }
 func ConstArray(t Type, constVals []Value) (v Value) {
 	ptr, nvals := llvmValueRefs(constVals)
@@ -883,9 +881,7 @@ func ConstArray(t Type, constVals []Value) (v Value) {
 	return
 }
 func ConstStruct(constVals []Value, packed bool) (v Value) {
-	ptr, nvals := llvmValueRefs(constVals)
-	v.C = C.LLVMConstStruct(ptr, nvals, boolToLLVMBool(packed))
-	return
+	return GlobalContext().ConstStruct(constVals, packed)
 }
 func ConstVector(scalarConstVals []Value, packed bool) (v Value) {
 	ptr, nvals := llvmValueRefs(scalarConstVals)
@@ -912,7 +908,6 @@ func AlignOf(t Type) (v Value)             { v.C = C.LLVMAlignOf(t.C); return }
 func SizeOf(t Type) (v Value)              { v.C = C.LLVMSizeOf(t.C); return }
 func ConstNeg(v Value) (rv Value)          { rv.C = C.LLVMConstNeg(v.C); return }
 func ConstNSWNeg(v Value) (rv Value)       { rv.C = C.LLVMConstNSWNeg(v.C); return }
-func ConstNUWNeg(v Value) (rv Value)       { rv.C = C.LLVMConstNUWNeg(v.C); return }
 func ConstNot(v Value) (rv Value)          { rv.C = C.LLVMConstNot(v.C); return }
 func ConstAdd(lhs, rhs Value) (v Value)    { v.C = C.LLVMConstAdd(lhs.C, rhs.C); return }
 func ConstNSWAdd(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNSWAdd(lhs.C, rhs.C); return }
@@ -920,19 +915,7 @@ func ConstNUWAdd(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNUWAdd(lhs.C, rhs.
 func ConstSub(lhs, rhs Value) (v Value)    { v.C = C.LLVMConstSub(lhs.C, rhs.C); return }
 func ConstNSWSub(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNSWSub(lhs.C, rhs.C); return }
 func ConstNUWSub(lhs, rhs Value) (v Value) { v.C = C.LLVMConstNUWSub(lhs.C, rhs.C); return }
-func ConstMul(lhs, rhs Value) (v Value)    { panic("ConstMul removed in LLVM 21") }
-func ConstNSWMul(lhs, rhs Value) (v Value) { panic("ConstNSWMul removed in LLVM 21") }
-func ConstNUWMul(lhs, rhs Value) (v Value) { panic("ConstNUWMul removed in LLVM 21") }
 func ConstXor(lhs, rhs Value) (v Value)    { v.C = C.LLVMConstXor(lhs.C, rhs.C); return }
-
-func ConstICmp(pred IntPredicate, lhs, rhs Value) (v Value) {
-	panic("ConstICmp removed in LLVM 21")
-}
-func ConstFCmp(pred FloatPredicate, lhs, rhs Value) (v Value) {
-	panic("ConstFCmp removed in LLVM 21")
-}
-
-func ConstShl(lhs, rhs Value) (v Value) { panic("ConstShl removed in LLVM 21") }
 
 func ConstGEP(t Type, v Value, indices []Value) (rv Value) {
 	ptr, nvals := llvmValueRefs(indices)
@@ -1205,16 +1188,10 @@ func (c Context) InsertBasicBlock(ref BasicBlock, name string) (bb BasicBlock) {
 	return
 }
 func AddBasicBlock(f Value, name string) (bb BasicBlock) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	bb.C = C.LLVMAppendBasicBlock(f.C, cname)
-	return
+	return GlobalContext().AddBasicBlock(f, name)
 }
 func InsertBasicBlock(ref BasicBlock, name string) (bb BasicBlock) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	bb.C = C.LLVMInsertBasicBlock(ref.C, cname)
-	return
+	return GlobalContext().InsertBasicBlock(ref, name)
 }
 func (bb BasicBlock) EraseFromParent()          { C.LLVMDeleteBasicBlock(bb.C) }
 func (bb BasicBlock) MoveBefore(pos BasicBlock) { C.LLVMMoveBasicBlockBefore(bb.C, pos.C) }
@@ -1240,6 +1217,17 @@ func (v Value) InstructionCallConv() CallConv {
 }
 func (v Value) AddCallSiteAttribute(i int, a Attribute) {
 	C.LLVMAddCallSiteAttribute(v.C, C.LLVMAttributeIndex(i), a.C)
+}
+func (v Value) GetCallSiteEnumAttribute(i int, kind uint) (a Attribute) {
+	a.C = C.LLVMGetCallSiteEnumAttribute(v.C, C.LLVMAttributeIndex(i), C.unsigned(kind))
+	return
+}
+func (v Value) GetCallSiteStringAttribute(i int, kind string) (a Attribute) {
+	ckind := C.CString(kind)
+	defer C.free(unsafe.Pointer(ckind))
+	a.C = C.LLVMGetCallSiteStringAttribute(v.C, C.LLVMAttributeIndex(i),
+		ckind, C.unsigned(len(kind)))
+	return
 }
 func (v Value) SetInstrParamAlignment(i int, align int) {
 	C.LLVMSetInstrParamAlignment(v.C, C.unsigned(i), C.unsigned(align))
@@ -1388,11 +1376,86 @@ func (b Builder) CreateInvoke(t Type, fn Value, args []Value, then, catch BasicB
 }
 func (b Builder) CreateUnreachable() (rv Value) { rv.C = C.LLVMBuildUnreachable(b.C); return }
 
+// Exception Handling
+
+func (b Builder) CreateResume(ex Value) (v Value) {
+	v.C = C.LLVMBuildResume(b.C, ex.C)
+	return
+}
+
+func (b Builder) CreateLandingPad(t Type, nclauses int, name string) (l Value) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	l.C = C.LLVMBuildLandingPad(b.C, t.C, nil, C.unsigned(nclauses), cname)
+	return l
+}
+
+func (b Builder) CreateCleanupRet(catchpad Value, bb BasicBlock) (v Value) {
+	v.C = C.LLVMBuildCleanupRet(b.C, catchpad.C, bb.C)
+	return
+}
+
+func (b Builder) CreateCatchRet(catchpad Value, bb BasicBlock) (v Value) {
+	v.C = C.LLVMBuildCatchRet(b.C, catchpad.C, bb.C)
+	return
+}
+
+func (b Builder) CreateCatchPad(parentPad Value, args []Value, name string) (v Value) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	ptr, nvals := llvmValueRefs(args)
+	v.C = C.LLVMBuildCatchPad(b.C, parentPad.C, ptr, nvals, cname)
+	return
+}
+
+func (b Builder) CreateCleanupPad(parentPad Value, args []Value, name string) (v Value) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	ptr, nvals := llvmValueRefs(args)
+	v.C = C.LLVMBuildCleanupPad(b.C, parentPad.C, ptr, nvals, cname)
+	return
+}
+func (b Builder) CreateCatchSwitch(parentPad Value, unwindBB BasicBlock, numHandlers int, name string) (v Value) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	v.C = C.LLVMBuildCatchSwitch(b.C, parentPad.C, unwindBB.C, C.unsigned(numHandlers), cname)
+	return
+}
+
 // Add a case to the switch instruction
 func (v Value) AddCase(on Value, dest BasicBlock) { C.LLVMAddCase(v.C, on.C, dest.C) }
 
 // Add a destination to the indirectbr instruction
 func (v Value) AddDest(dest BasicBlock) { C.LLVMAddDestination(v.C, dest.C) }
+
+// Add a destination to the catchswitch instruction.
+func (v Value) AddHandler(bb BasicBlock) { C.LLVMAddHandler(v.C, bb.C) }
+
+// Obtain the basic blocks acting as handlers for a catchswitch instruction.
+func (v Value) GetHandlers() []BasicBlock {
+	num := C.LLVMGetNumHandlers(v.C)
+	if num == 0 {
+		return nil
+	}
+	blocks := make([]BasicBlock, num)
+	C.LLVMGetHandlers(v.C, &blocks[0].C)
+	return blocks
+}
+
+// Get the parent catchswitch instruction of a catchpad instruction.
+//
+// This only works on catchpad instructions.
+func (v Value) GetParentCatchSwitch() (rv Value) {
+	rv.C = C.LLVMGetParentCatchSwitch(v.C)
+	return
+}
+
+// Set the parent catchswitch instruction of a catchpad instruction.
+//
+// This only works on llvm::CatchPadInst instructions.
+func (v Value) SetParentCatchSwitch(catchSwitch Value) {
+	C.LLVMSetParentCatchSwitch(v.C, catchSwitch.C)
+}
 
 // Arithmetic
 func (b Builder) CreateAdd(lhs, rhs Value, name string) (v Value) {
@@ -1561,12 +1624,6 @@ func (b Builder) CreateNSWNeg(v Value, name string) (rv Value) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	rv.C = C.LLVMBuildNSWNeg(b.C, v.C, cname)
-	return
-}
-func (b Builder) CreateNUWNeg(v Value, name string) (rv Value) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	rv.C = C.LLVMBuildNUWNeg(b.C, v.C, cname)
 	return
 }
 func (b Builder) CreateFNeg(v Value, name string) (rv Value) {
@@ -1875,24 +1932,12 @@ func (b Builder) CreatePtrDiff(t Type, lhs, rhs Value, name string) (v Value) {
 	return
 }
 
-func (b Builder) CreateLandingPad(t Type, nclauses int, name string) (l Value) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	l.C = C.LLVMBuildLandingPad(b.C, t.C, nil, C.unsigned(nclauses), cname)
-	return l
-}
-
 func (l Value) AddClause(v Value) {
 	C.LLVMAddClause(l.C, v.C)
 }
 
 func (l Value) SetCleanup(cleanup bool) {
 	C.LLVMSetCleanup(l.C, boolToLLVMBool(cleanup))
-}
-
-func (b Builder) CreateResume(ex Value) (v Value) {
-	v.C = C.LLVMBuildResume(b.C, ex.C)
-	return
 }
 
 //-------------------------------------------------------------------------
